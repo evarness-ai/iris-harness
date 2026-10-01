@@ -74,6 +74,21 @@ def test_required_service_down_is_red_with_its_start_command(
         assert by_name[name].action, f"{name} alert must carry its start command"
 
 
+def test_wildcard_bind_host_is_probed_on_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``iris serve --host 0.0.0.0`` binds every interface, but nothing answers
+    a probe sent to 0.0.0.0 itself — it has to ask loopback instead."""
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    checks = service_checks(host="0.0.0.0", prober=lambda _url: 200)  # noqa: S104
+    assert all(c.endpoint and c.endpoint.startswith("http://127.0.0.1:") for c in checks)
+
+
+def test_wildcard_bind_host_from_env_is_probed_on_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.setenv("IRIS_API_HOST", "0.0.0.0")  # noqa: S104
+    checks = service_checks(prober=lambda _url: 200)
+    assert all(c.endpoint and c.endpoint.startswith("http://127.0.0.1:") for c in checks)
+
+
 # ── a remote model backend (OLLAMA_BASE_URL) ────────────────────────────────
 
 

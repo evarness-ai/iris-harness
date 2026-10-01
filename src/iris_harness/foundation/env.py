@@ -30,6 +30,21 @@ import os
 
 _FALSE_VALUES = frozenset({"", "0", "false", "no", "off"})
 
+# A wildcard bind address answers on every interface but none of them *is* the
+# address — nothing reachable sits at 0.0.0.0 itself. `IRIS_API_HOST=0.0.0.0`
+# (from `iris serve --host 0.0.0.0`) is a bind address; a health probe or a local
+# HTTP call needs the loopback address instead.
+_WILDCARD_BIND_HOSTS = {
+    "0.0.0.0": "127.0.0.1",  # noqa: S104 - detecting the bind address, not binding to it
+    "::": "[::1]",
+}
+
+
+def probe_host(host: str) -> str:
+    """``host`` translated for a local probe: a wildcard bind address becomes
+    its loopback equivalent, anything else is returned unchanged."""
+    return _WILDCARD_BIND_HOSTS.get(host, host)
+
 
 def env_flag(name: str, *, default: bool) -> bool:
     """Read ``name`` as a boolean.
@@ -56,4 +71,4 @@ def env_flag_on(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-__all__ = ["env_flag", "env_flag_on"]
+__all__ = ["env_flag", "env_flag_on", "probe_host"]

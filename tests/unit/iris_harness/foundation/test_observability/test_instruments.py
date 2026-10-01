@@ -17,11 +17,11 @@ def _install_module(monkeypatch, name: str, module: types.ModuleType) -> None:
     monkeypatch.setitem(sys.modules, name, module)
 
 
-def test_instrument_runtime_disabled_is_noop(monkeypatch) -> None:
+def test_instrument_runtime_without_a_provider_is_noop() -> None:
+    # No provider = no OTLP endpoint configured (otlp_setup builds none).
     instruments._reset_instrumentation_state()
-    monkeypatch.setenv("IRIS_OTEL_ENABLED", "0")
 
-    state = instruments.instrument_runtime(tracer_provider=object())
+    state = instruments.instrument_runtime(tracer_provider=None)
 
     assert state.enabled is False
     assert state.instrumented_targets == ()
@@ -48,8 +48,8 @@ def test_instrument_runtime_is_idempotent(monkeypatch) -> None:
 
     instruments._reset_instrumentation_state()
     provider = object()
-    first = instruments.instrument_runtime(provider, enabled=True)
-    second = instruments.instrument_runtime(provider, enabled=True)
+    first = instruments.instrument_runtime(provider)
+    second = instruments.instrument_runtime(provider)
 
     assert first.enabled is True
     assert first.initialized_now is True
@@ -61,13 +61,11 @@ def test_instrument_runtime_is_idempotent(monkeypatch) -> None:
 
 def test_instrument_runtime_records_missing_dependency(monkeypatch) -> None:
     instruments._reset_instrumentation_state()
-    monkeypatch.setenv("IRIS_OTEL_ENABLED", "1")
     broken_httpx = types.ModuleType("opentelemetry.instrumentation.httpx")
     _install_module(monkeypatch, "opentelemetry.instrumentation.httpx", broken_httpx)
 
     state = instruments.instrument_runtime(
         tracer_provider=object(),
-        enabled=True,
         enable_langchain=False,
         enable_httpx=True,
     )

@@ -729,7 +729,7 @@ class TurnCapture:
     ) -> None:
         # Stamp the correlation chain so every learning signal is auditable back
         # to its turn + span (learning-observability.md §4.1). trace/span ids are
-        # populated only when tracing is live (Phoenix on); learning never
+        # populated only when tracing is live (an OTLP endpoint set); learning never
         # depends on them being present (D1). resolved_tier is the tier of the
         # model that actually answered — not the requested one (D4).
         trace_id, span_id = current_trace_ids()

@@ -40,9 +40,6 @@ optional_extras:
   - name: email
     module: googleapiclient
     purpose: the email assistant (`iris email`, Gmail)
-  - name: phoenix
-    module: phoenix
-    purpose: local Phoenix trace UI
   - name: ml
     module: sentence_transformers
     purpose: semantic email discovery and BGE rerank

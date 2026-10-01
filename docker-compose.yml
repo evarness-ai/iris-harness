@@ -2,7 +2,7 @@
 #
 # Brings up the full privacy-first stack — containerized Ollama (Tier 1/2 local
 # models, auto-pulled on first run), the Governor policy service, and the IRIS
-# chat API with embedded Arize Phoenix observability. No .env is required: dev
+# chat API. No .env is required: dev
 # defaults boot a working local-only instance; drop a .env beside this file to
 # add real credentials / overrides.
 #
@@ -12,7 +12,7 @@
 #
 # Every published port is bound to 127.0.0.1: the stack is for this machine only. A bare
 # "8003:8003" listens on every interface (on Linux, past the host firewall), which put
-# Ollama and Phoenix, neither of which asks for a token, on the LAN. To reach IRIS from
+# Ollama, which asks for no token, on the LAN. To reach IRIS from
 # another device, put an authenticated tunnel (e.g. `tailscale serve`) in front instead.
 #
 # Every container: no Linux capabilities and no privilege gain after start
@@ -64,10 +64,6 @@ services:
   governor:
     build:
       context: .
-      # Same image as iris-api, so the same build args: the `phoenix` extra (the
-      # Elastic-2.0 trace UI the core install leaves out) for iris-api's embedded Phoenix.
-      args:
-        POETRY_EXTRAS: phoenix
     image: iris:latest
     command: uvicorn iris_harness.server.governor.main:app --host 0.0.0.0 --port 8080
     ports:
@@ -92,17 +88,16 @@ services:
     restart: unless-stopped
 
   # ── IRIS API ──────────────────────────────────────────────────────────────
-  # Main chat API. Embedded Arize Phoenix observability UI on port 6006.
+  # Main chat API. Traces export over OTLP only when .env sets OTEL_EXPORTER_OTLP_ENDPOINT
+  # to a backend you run (from a container, e.g. http://host.docker.internal:4318);
+  # see docs/guides/tracing.md. No trace UI is bundled (ADR-0128).
   iris-api:
     build:
       context: .
-      args:
-        POETRY_EXTRAS: phoenix   # embedded Phoenix below needs the `phoenix` extra
     image: iris:latest
     command: uvicorn iris_harness.server.iris_api.main:app --host 0.0.0.0 --port 8003
     ports:
       - "127.0.0.1:8003:8003"
-      - "127.0.0.1:6006:6006"   # Arize Phoenix observability UI
     volumes:
       - iris-data:/app/data
       - ./config:/app/config:ro
@@ -120,13 +115,6 @@ services:
       # Required — no default. A shipped default would be a publicly-known
       # shared secret; compose fails fast with this message if it is unset.
       IRIS_AUTH_SECRET: "${IRIS_AUTH_SECRET:?set IRIS_AUTH_SECRET (e.g. in .env) to a long random string}"
-      # Embedded Phoenix/OTEL observability, persisted to the data volume.
-      IRIS_PHOENIX_ENABLED: "1"
-      IRIS_PHOENIX_PORT: "6006"
-      IRIS_PHOENIX_WORKING_DIR: "/app/data/phoenix"
-      IRIS_OTEL_ENABLED: "1"
-      IRIS_OTEL_LANGCHAIN_ENABLED: "1"
-      IRIS_OTEL_HTTPX_ENABLED: "1"
     depends_on:
       governor:
         condition: service_healthy
@@ -145,5 +133,5 @@ services:
 
 
 volumes:
-  iris-data:       # SQLite databases + ChromaDB vectors + persisted Phoenix traces
+  iris-data:       # SQLite databases + ChromaDB vectors
   ollama-models:   # Downloaded Ollama model weights

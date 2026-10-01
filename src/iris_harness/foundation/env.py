@@ -4,7 +4,7 @@ There were six copies of this across the tree when M6.3 counted them, in **three
 variants that disagree**. Two read a deny-list ("is this not off"):
 
 - `{"", "0", "false", "no", "off"}` — `FLAG=` (set but empty) is OFF.
-  Used by `server/iris_api`, `foundation/observability/{instruments,phoenix_setup}`.
+  Used by `server/iris_api`, `foundation/observability/{instruments,otlp_setup}`.
 - `{"0", "false", "no", "off"}` — `FLAG=` is **ON**.
   Used by `runtime/bootstrap` and `server/channel_gateway`.
 

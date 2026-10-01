@@ -29,7 +29,7 @@ _KEY_PACKAGES: tuple[str, ...] = (
     "langchain-ollama",
     "ollama",
     "httpx",
-    "arize-phoenix",
+    "opentelemetry-sdk",
 )
 
 

@@ -95,7 +95,7 @@ p.node(
     680,
     40,
     "io",
-)  # noqa: E501
+)
 p.node("rt", "IrisRuntime (composition root, bootstrap.py)", 40, 130, 320, 40, "core")
 p.node(
     "core",
@@ -105,7 +105,7 @@ p.node(
     680,
     40,
     "core",
-)  # noqa: E501
+)
 p.node(
     "gov",
     "Governance kernel — mandatory passage: classify · egress · vault · hooks · evaluator · approvals · audit",
@@ -114,7 +114,7 @@ p.node(
     680,
     50,
     "gov",
-)  # noqa: E501
+)
 p.node(
     "agents",
     "9 agents: email · finance · planner · system · calendar · rag · filemanager · coding · code_exec",
@@ -123,12 +123,12 @@ p.node(
     420,
     50,
     "cap",
-)  # noqa: E501
+)
 p.node("tools", "Tools · Sandbox (Docker / gVisor)", 490, 350, 230, 50, "cap")
 p.node("cog", "Cognition: Memory · Wiki · Learning (+ replay-eval)", 40, 430, 320, 40, "cog")
 p.node("tiers", "TierRouter → local (Ollama / LM Studio) + cloud", 390, 430, 330, 40, "cog")
 p.node("stores", "Data stores: SQLite · ChromaDB · Fernet vault", 40, 510, 320, 40, "store")
-p.node("obs", "Observability: OpenTelemetry · Phoenix · session log", 390, 510, 330, 40, "aux")
+p.node("obs", "Observability: OpenTelemetry (OTLP export) · session log", 390, 510, 330, 40, "aux")
 p.edge("ui", "rt")
 p.edge("rt", "core")
 p.edge("core", "agents")
@@ -162,7 +162,7 @@ p.node(
     470,
     50,
     "cap",
-)  # noqa: E501
+)
 p.node("tool", "Tool: web · memory · wiki · rag · MCP", 540, 220, 240, 50, "cap")
 p.node("rc", "Response Curator", 40, 300, 160, 40, "core")
 p.node("gov", "Governance (guard at every LLM/tool call)", 850, 130, 240, 40, "gov")
@@ -204,7 +204,7 @@ p.node(
     360,
     50,
     "cog",
-)  # noqa: E501
+)
 p.node(
     "mem",
     "Memory — SemanticIndex (5 ChromaDB collections) + retriever · compaction · wiki · episodic",
@@ -213,7 +213,7 @@ p.node(
     360,
     50,
     "cog",
-)  # noqa: E501
+)
 p.node(
     "loop",
     "The loop — AgenticCore ReAct: IntentRouter → TaskPlanner → ReAct → ResponseCurator",
@@ -222,7 +222,7 @@ p.node(
     360,
     60,
     "core",
-)  # noqa: E501
+)
 p.node(
     "tools",
     "Tools — built-in/core · skill tools · MCP (one flat list, see 02.5)",
@@ -231,7 +231,7 @@ p.node(
     360,
     50,
     "cap",
-)  # noqa: E501
+)
 p.node(
     "skills",
     "Skills — SkillRegistry + SemanticSkillRouter (cosine >= 0.45); brief auto-wrap",
@@ -240,7 +240,7 @@ p.node(
     360,
     50,
     "cap",
-)  # noqa: E501
+)
 p.node(
     "gov",
     "Governance — mandatory passage: classify · egress · vault · approvals · audit · threat guards",
@@ -249,7 +249,7 @@ p.node(
     360,
     60,
     "gov",
-)  # noqa: E501
+)
 p.node("hb", "Heartbeats (22) + EventBus + Missions", 40, 380, 360, 50, "aux")
 p.node(
     "learn",
@@ -260,7 +260,7 @@ p.node(
     50,
     "aux",
 )
-p.node("obs", "Observability — OpenTelemetry · Phoenix · session log", 440, 420, 360, 50, "aux")
+p.node("obs", "Observability — OpenTelemetry (OTLP export) · session log", 440, 420, 360, 50, "aux")
 p.edge("mem", "ctx")
 p.edge("ctx", "loop")
 p.edge("loop", "tools")
@@ -288,7 +288,7 @@ p.node(
     360,
     50,
     "cog",
-)  # noqa: E501
+)
 p.node(
     "ext",
     "External: Gmail · Google Drive/Calendar · MCP · iCloud/Photos (read)",
@@ -297,9 +297,9 @@ p.node(
     360,
     50,
     "cap",
-)  # noqa: E501
+)
 p.node("stores", "Local stores: SQLite · ChromaDB · Fernet vault", 440, 340, 320, 50, "store")
-p.node("obs", "Observability: OpenTelemetry · Phoenix · session log", 240, 430, 320, 40, "aux")
+p.node("obs", "Observability: OpenTelemetry (OTLP export) · session log", 240, 430, 320, 40, "aux")
 p.edge("user", "ch")
 p.edge("ch", "rt")
 p.edge("rt", "local", "private tiers first")
@@ -321,7 +321,7 @@ p.node(
     720,
     40,
     "io",
-)  # noqa: E501
+)
 p.node(
     "short",
     "Deterministic short-circuits: reminder · time/date · routine-mgmt · routine-authoring · calendar writes",
@@ -330,7 +330,7 @@ p.node(
     720,
     40,
     "core",
-)  # noqa: E501
+)
 p.node(
     "core",
     "Agentic core (5 stages): IntentRouter → TaskPlanner → ReAct → AgentExecutor → ResponseCurator (in-process multi-headed judge)",
@@ -339,7 +339,7 @@ p.node(
     720,
     50,
     "core",
-)  # noqa: E501
+)
 p.node(
     "gov",
     "Governance kernel (mandatory passage): hooks (PreClassify/PreLLMCall/PreToolUse/PostToolUse/PostStep) · classifier+egress · vault+broker · evaluator · approvals (in-chat + Action Center) · audit+archive · threat G1/G2/G3 · MCP signing",
@@ -348,7 +348,7 @@ p.node(
     720,
     80,
     "gov",
-)  # noqa: E501
+)
 p.node(
     "tiers",
     "TierRouter (1/2/3 + router) + OllamaArbiter · ResourceGovernor",
@@ -366,7 +366,7 @@ p.node(
     720,
     60,
     "cap",
-)  # noqa: E501
+)
 p.node(
     "cog",
     "Memory & knowledge: MemoryRetriever+SemanticIndex · WikiEngine · LearningEngine/ExperimentLoop · SkillCrystallizer + replay-eval pre-flight · escalation judge · ProvenanceLedger",
@@ -375,7 +375,7 @@ p.node(
     720,
     70,
     "cog",
-)  # noqa: E501
+)
 p.node(
     "proactive",
     "Proactive autonomy: HeartbeatScheduler (22) · MissionEngine · ChannelGateway · SystemHealth",
@@ -384,7 +384,7 @@ p.node(
     720,
     40,
     "aux",
-)  # noqa: E501
+)
 p.node("stores", "Data stores (see page 03)", 40, 650, 360, 40, "store")
 p.edge("ch", "short")
 p.edge("ch", "core")
@@ -411,7 +411,7 @@ p.node(
     400,
     40,
     "core",
-)  # noqa: E501
+)
 # registered
 p.node("reg", "AgentExecutor-registered handlers", 40, 130, 350, 30, "aux", "title")
 p.node("a_email", "email", 40, 170, 100, 40, "cap")
@@ -454,7 +454,7 @@ p.node(
     720,
     110,
     "aux",
-)  # noqa: E501
+)
 p.node("email", "email", 40, 200, 120, 40, "cap")
 p.node("finance", "finance", 180, 200, 120, 40, "cap")
 p.node("reminders", "calendar / reminders", 320, 200, 180, 40, "cap")
@@ -487,7 +487,7 @@ p.node(
     30,
     "aux",
     "title",
-)  # noqa: E501
+)
 p.node("msg", "user message", 40, 70, 180, 40, "io")
 p.node("loop", "ReAct loop (offered one flat tool list)", 40, 150, 300, 50, "core")
 # source 1
@@ -500,7 +500,7 @@ p.node(
     380,
     70,
     "cap",
-)  # noqa: E501
+)
 # source 2
 p.node("s2", "2 · Skill tools (config/skills/*)", 380, 185, 380, 30, "aux", "title")
 p.node(
@@ -536,7 +536,7 @@ p.node(
     300,
     70,
     "gov",
-)  # noqa: E501
+)
 p.node("prov", "ProvenanceLedger → grounding judge", 40, 380, 300, 50, "cog")
 p.node(
     "direct",
@@ -546,7 +546,7 @@ p.node(
     300,
     60,
     "core",
-)  # noqa: E501
+)
 p.edge("msg", "loop")
 p.edge("loop", "direct", "knows it")
 p.edge("bt", "loop")
@@ -575,7 +575,7 @@ p.node(
     30,
     "aux",
     "title",
-)  # noqa: E501
+)
 p.node("a2", "audit.db — kernel governance ledger", 40, 100, 230, 50, "store", "cylinder")
 p.node("a1", "data/audit.db — governor-guard + router", 290, 100, 230, 50, "store", "cylinder")
 p.node("v", "vault.db — Fernet-over-SQLite", 540, 100, 200, 50, "store", "cylinder")
@@ -589,7 +589,7 @@ p.node(
     50,
     "store",
     "cylinder",
-)  # noqa: E501
+)
 p.node("c", "Cognition (ChromaDB + SQLite)", 40, 250, 400, 30, "aux", "title")
 p.node(
     "chroma",
@@ -600,7 +600,7 @@ p.node(
     50,
     "store",
     "cylinder",
-)  # noqa: E501
+)
 p.node("docs", "iris_documents — data/chroma_docs (RAG)", 390, 290, 250, 50, "store", "cylinder")
 p.node("learn", "data/learning.db", 40, 360, 200, 50, "store", "cylinder")
 p.node("d", "Domain (SQLite)", 40, 440, 400, 30, "aux", "title")
@@ -613,7 +613,7 @@ p.node(
     50,
     "store",
     "cylinder",
-)  # noqa: E501
+)
 p.node("email", "data/email.db", 440, 480, 160, 50, "store", "cylinder")
 p.node("fin", "data/finance.db", 620, 480, 150, 50, "store", "cylinder")
 p.node("rag", "data/rag.db", 40, 550, 150, 50, "store", "cylinder")
@@ -627,7 +627,7 @@ p.node(
     50,
     "store",
     "cylinder",
-)  # noqa: E501
+)
 p.node("mem", "MemoryStore · MissionStore · RoutineStore", 40, 620, 330, 50, "store", "cylinder")
 pages.append(p)
 
@@ -649,7 +649,7 @@ p.node(
     320,
     40,
     "gov",
-)  # noqa: E501
+)
 p.node("pg", "Llama Prompt Guard 2 (86M, transformers/ONNX, local)", 280, 280, 320, 40, "cog")
 p.node("cur", "ResponseCurator — multi-headed judge (in-process)", 40, 360, 380, 30, "aux", "title")
 p.node("det", "safety · schema · consistency (deterministic)", 40, 400, 330, 40, "core")

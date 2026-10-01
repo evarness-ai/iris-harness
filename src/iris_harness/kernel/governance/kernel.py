@@ -73,7 +73,7 @@ _AUDITED_PAYLOAD_KEYS: tuple[str, ...] = (
 def _current_trace_id_hex() -> str | None:
     """Return the active OpenTelemetry trace id, when a span is recording.
 
-    Lets audit rows cross-reference Phoenix traces. Best-effort: returns
+    Lets audit rows cross-reference traces in the OTLP backend. Best-effort: returns
     ``None`` when OTel is absent, no span is current, or the span is a
     non-recording placeholder.
     """

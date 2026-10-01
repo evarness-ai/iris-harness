@@ -39,17 +39,17 @@ class InstrumentationState:
 def instrument_runtime(
     tracer_provider: Any | None,
     *,
-    enabled: bool | None = None,
     enable_langchain: bool | None = None,
     enable_httpx: bool | None = None,
 ) -> InstrumentationState:
     """Best-effort OTEL instrumentation for LangChain + httpx.
 
-    The function is intentionally idempotent because multiple FastAPI lifespans
-    may bootstrap tracing within the same Python process during tests.
+    Runs only when there is a tracer provider, which exists only when an OTLP endpoint
+    is configured (``otlp_setup``); with no provider it is a no-op. The function is
+    intentionally idempotent because multiple FastAPI lifespans may bootstrap tracing
+    within the same Python process during tests.
     """
-    enabled_flag = _env_flag("IRIS_OTEL_ENABLED", default=True) if enabled is None else enabled
-    if not enabled_flag or tracer_provider is None:
+    if tracer_provider is None:
         return InstrumentationState(enabled=False)
 
     langchain_flag = (

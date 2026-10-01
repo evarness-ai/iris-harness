@@ -144,7 +144,7 @@ jobs:
       # The core install (R19): what a plain `pip install iris-harness` puts in an
       # environment, no extras, resolved fresh as a user's install is. Every
       # distribution's license must be on scripts/license_policy.toml's allow list;
-      # arize-phoenix (Elastic-2.0) is denied outright -- it is the [phoenix] extra.
+      # arize-phoenix (Elastic-2.0) is denied outright, a guard: IRIS no longer depends on it.
       - name: Core install into a fresh venv
         run: |
           python -m venv "$RUNNER_TEMP/core"

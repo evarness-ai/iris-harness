@@ -133,15 +133,17 @@ apscheduler = "^3.10.0"
 pillow = "^12.1.0"
 pytesseract = "^0.3.13"
 
-# Observability. OpenTelemetry is core: spans export over OTLP to any backend.
-# The Arize Phoenix server and trace UI is the OPTIONAL extra `phoenix`: it is
-# Elastic-2.0, not OSI, so the core install stays OSI-only (OSS plan R19). Lazy-imported
-# in foundation/observability/phoenix_setup.py; install with `poetry install -E phoenix`.
-# >=20: older pins strawberry-graphql to a vulnerable 0.314.
-arize-phoenix = {version = ">=20.0", optional = true}
+# Observability. OpenTelemetry is core: spans export over OTLP to whatever backend the
+# standard OTEL_EXPORTER_OTLP_* variables name (foundation/observability/otlp_setup.py).
+# No trace UI is bundled (ADR-0128): Phoenix, Jaeger, Tempo and the rest run as the
+# user's own backend.
 opentelemetry-api = ">=1.20.0"
 opentelemetry-sdk = ">=1.20.0"
 opentelemetry-exporter-otlp = ">=1.20.0"
+# httpx client spans (IRIS_OTEL_HTTPX_ENABLED, default on). The contrib instrumentation
+# line is versioned 0.Nb and pins opentelemetry-instrumentation/semantic-conventions to
+# the same 0.Nb, which match one SDK 1.x release: 0.62b1 goes with SDK 1.41.1.
+opentelemetry-instrumentation-httpx = ">=0.62b1"
 openinference-instrumentation-langchain = ">=0.1.0"
 ddgs = "^9.14"
 pyarrow = ">=15.0"
@@ -198,8 +200,7 @@ import-linter = "^2.15"
 # names a main dependency would make it extra-only in the wheel.
 email = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "scikit-learn"]
 ml = ["sentence-transformers"]
-phoenix = ["arize-phoenix"]
-all = ["sentence-transformers", "arize-phoenix", "google-api-python-client", "google-auth", "google-auth-oauthlib", "scikit-learn"]
+all = ["sentence-transformers", "google-api-python-client", "google-auth", "google-auth-oauthlib", "scikit-learn"]
 
 [build-system]
 requires = ["poetry-core"]
@@ -323,13 +324,6 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "git.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# The optional `phoenix` extra (arize-phoenix, OSS plan R19). Its import name is
-# `phoenix`, not `arize_phoenix`: the override named the distribution, so a no-extras
-# type-check (the public tree's, CI's) failed on foundation/observability/phoenix_setup.py.
-module = ["phoenix", "phoenix.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

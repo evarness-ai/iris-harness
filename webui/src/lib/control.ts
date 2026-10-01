@@ -76,7 +76,7 @@ export interface MetricsBackend {
   kind: string;
   enabled: boolean;
   healthy: boolean;
-  phoenix_url: string | null;
+  endpoint: string | null;
   instrumented_targets: string[];
   error: string | null;
 }

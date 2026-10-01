@@ -19,16 +19,13 @@ from importlib.abc import MetaPathFinder
 from importlib.machinery import ModuleSpec
 from typing import Any
 
-# The packages `poetry install -E ml` adds and a no-extras install does not. `phoenix`
-# is the `phoenix` extra's import root (arize-phoenix, and arize-phoenix-otel with it),
-# absent from a no-extras install for the same reason.
+# The packages `poetry install -E ml` adds and a no-extras install does not.
 BLOCKED = (
     "sentence_transformers",
     "torch",
     "torchvision",
     "torchaudio",
     "transformers",
-    "phoenix",
 )
 
 

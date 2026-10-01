@@ -39,9 +39,8 @@ RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
 
 WORKDIR /app
 
-# Optional extras from pyproject, space-separated (e.g. "phoenix"). Empty = the lean
-# core. The local stack (docker-compose.yml) passes "phoenix" for its embedded trace UI;
-# the cloud server image leaves Phoenix out.
+# Optional extras from pyproject, space-separated (e.g. "ml"). Empty = the lean core,
+# which is what docker-compose.yml and the server image build.
 ARG POETRY_EXTRAS=""
 
 # Install deps first so this layer is cached until lockfile changes
@@ -79,4 +78,4 @@ COPY --from=webui /webui/dist /app/webui/dist
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
-EXPOSE 8003 8080 6006
+EXPOSE 8003 8080

@@ -151,7 +151,7 @@ def create_app(
                 app.state.observability = setup_tracing_state()
                 app.state.tracer = app.state.observability.tracer
             except Exception:  # noqa: BLE001
-                logger.warning("tracing setup failed; running without Phoenix")
+                logger.warning("tracing setup failed; running without trace export")
         else:
             logger.info("channel gateway tracing disabled")
 

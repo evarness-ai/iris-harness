@@ -39,10 +39,12 @@ licenses = [
     "CC0-1.0",
 ]
 
-# Never in the core install, whatever their license says. arize-phoenix is Elastic-2.0
-# (source-available, not OSI): it is the optional `[phoenix]` extra (R19).
+# Never in the install, whatever their license says. arize-phoenix is Elastic-2.0
+# (source-available, not OSI). IRIS bundled it as the `[phoenix]` extra until 2026-10-01;
+# it is gone now (ADR-0128: OTLP to the user's own backend) and this entry keeps it from
+# coming back as a dependency. Running Phoenix as your own trace backend is unaffected.
 [deny]
-arize-phoenix = "Elastic-2.0, not OSI: the optional [phoenix] extra only (R19)"
+arize-phoenix = "Elastic-2.0, not OSI: not a dependency of IRIS (ADR-0128)"
 
 # Free-text `License:` values and trove classifiers, mapped to SPDX ids. A value that is
 # neither an SPDX expression nor listed here falls through to the classifiers, then to

@@ -110,7 +110,7 @@ def agent_settings(
 def agent_metrics(name: str, report: Any) -> dict[str, Any] | None:
     """Roll up the learning-intelligence outcome matrix (per intent x tier) to ONE
     agent, over its intents (ADR-0074 metrics). Reuses measured telemetry — no new
-    instrumentation, no Phoenix. ``report`` is a build_intelligence() result."""
+    instrumentation, no trace backend. ``report`` is a build_intelligence() result."""
     meta = agent_meta(name)
     if meta is None:
         return None

@@ -7,20 +7,19 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
-from .phoenix_setup import config_with_port, initialize_phoenix, load_phoenix_setup_config
+from .otlp_setup import TracingState, initialize_tracing
 
 logger = logging.getLogger(__name__)
 
 
-def setup_tracing(*, phoenix_port: int = 6006) -> Any:
-    """Return a configured tracer or ``None`` when tracing is disabled/unavailable."""
-    return setup_tracing_state(phoenix_port=phoenix_port).tracer
+def setup_tracing() -> Any:
+    """Return a configured tracer, or ``None`` when no OTLP endpoint is configured."""
+    return setup_tracing_state().tracer
 
 
-def setup_tracing_state(*, phoenix_port: int = 6006) -> Any:
-    """Return the full Phoenix bootstrap result for callers that need metadata."""
-    config = config_with_port(load_phoenix_setup_config(), phoenix_port)
-    return initialize_phoenix(config)
+def setup_tracing_state() -> TracingState:
+    """Return the full tracing bootstrap result for callers that need metadata."""
+    return initialize_tracing()
 
 
 @contextmanager
@@ -57,8 +56,8 @@ def current_trace_ids() -> tuple[str | None, str | None]:
 
     Lets learning signals correlate to the exact span that produced them
     (learning-observability.md §4.1, D3). Returns ``(None, None)`` when tracing
-    is off or no span is recording — learning must never depend on Phoenix/OTel
-    being enabled (D1), so this is purely additive context. Never raises.
+    is off or no span is recording — learning must never depend on OTel trace
+    export being enabled (D1), so this is purely additive context. Never raises.
     """
     try:
         from opentelemetry import trace

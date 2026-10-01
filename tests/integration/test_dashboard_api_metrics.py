@@ -45,7 +45,7 @@ def test_llm_metrics_returns_summary_and_backend_status(tmp_path, monkeypatch) -
         lambda **_: SimpleNamespace(
             enabled=True,
             tracer=object(),
-            phoenix_url="http://localhost:6006",
+            endpoint="http://localhost:4318/v1/traces",
             instrumented_targets=("langchain", "httpx"),
             error=None,
         ),
@@ -59,7 +59,8 @@ def test_llm_metrics_returns_summary_and_backend_status(tmp_path, monkeypatch) -
     assert resp.status_code == 200
     body = resp.json()
     assert body["backend"]["healthy"] is True
-    assert body["backend"]["phoenix_url"] == "http://localhost:6006"
+    assert body["backend"]["endpoint"] == "http://localhost:4318/v1/traces"
+    assert body["backend"]["kind"] == "otlp"
     assert body["summary"]["llm_call_count"] == 1
     assert body["summary"]["llm_error_count"] == 1
     assert body["summary"]["total_tokens"] == 42
@@ -74,9 +75,9 @@ def test_llm_metrics_handles_unavailable_backend_gracefully(tmp_path, monkeypatc
         lambda **_: SimpleNamespace(
             enabled=True,
             tracer=None,
-            phoenix_url=None,
+            endpoint=None,
             instrumented_targets=(),
-            error="phoenix unavailable",
+            error="otlp exporter unavailable",
         ),
     )
 
@@ -88,7 +89,7 @@ def test_llm_metrics_handles_unavailable_backend_gracefully(tmp_path, monkeypatc
     assert resp.status_code == 200
     body = resp.json()
     assert body["backend"]["healthy"] is False
-    assert body["backend"]["error"] == "phoenix unavailable"
+    assert body["backend"]["error"] == "otlp exporter unavailable"
     assert body["summary"]["llm_call_count"] == 0
 
 

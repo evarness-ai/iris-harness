@@ -12,7 +12,7 @@
 # Usage:
 #   scripts/ci_local.sh              # both jobs, exactly what CI ran
 #   scripts/ci_local.sh --fast       # changed-scope tests instead of the full suite
-#   scripts/ci_local.sh --no-ml      # also hide the `ml` + `phoenix` extras from pytest (below)
+#   scripts/ci_local.sh --no-ml      # also hide the `ml` extra from pytest (below)
 #   scripts/ci_local.sh --quality    # skip the identity scan
 #   scripts/ci_local.sh --scan       # only the identity scan
 #   scripts/ci_local.sh --webui      # force the webui viewport smoke (auto when webui/ changed)
@@ -36,8 +36,7 @@
 #   2. CI installed from poetry.lock with NO extras; this venv has `-E ml`
 #      (sentence-transformers -> torch). So a module-level import of an ml-only
 #      package passes here and would have failed there. `--no-ml` closes that gap by
-#      making those packages unimportable for the pytest step. The `phoenix` extra
-#      (arize-phoenix) is hidden with them, since CI installs without it too.
+#      making those packages unimportable for the pytest step.
 #   3. CI installed from a fresh clone, so it proved the lock resolves at all. The
 #      closest local check is `poetry check --lock`, which this script runs.
 # Bash 3.2 compatible (macOS /bin/bash): no associative arrays, no mapfile.

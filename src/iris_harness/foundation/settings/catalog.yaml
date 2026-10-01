@@ -186,7 +186,8 @@ settings:
     default: false
     applies: restart
     label: Channel gateway tracing
-    description: Sets up Phoenix/OTEL tracing for the channel gateway service at startup.
+    description: Sets up OpenTelemetry tracing for the channel gateway service at startup; spans
+      export only when an OTLP endpoint is set (OTEL_EXPORTER_OTLP_ENDPOINT).
     tab: advanced
   IRIS_COMPACTION_KEEP_RECENT:
     kind: int
@@ -1104,90 +1105,21 @@ settings:
     tab: none
     editable: false
     not_editable_reason: port
-  IRIS_OTEL_ENABLED:
-    kind: bool
-    default: true
-    applies: restart
-    label: OTEL instrumentation
-    description: Would gate OTEL instrumentation of LangChain and httpx, but the only production
-      caller passes enabled=True, so the env value is never consulted in production.
-    tab: none
-    editable: false
-    not_editable_reason: 'no production effect: the only production caller passes enabled=True'
   IRIS_OTEL_HTTPX_ENABLED:
     kind: bool
     default: true
     applies: restart
     label: HTTPX tracing
-    description: When on, instruments httpx calls for OpenTelemetry tracing.
+    description: When on, instruments httpx calls for OpenTelemetry tracing (only while an OTLP
+      endpoint is set).
     tab: advanced
   IRIS_OTEL_LANGCHAIN_ENABLED:
     kind: bool
     default: true
     applies: restart
     label: LangChain OTEL instrumentation
-    description: Enables OpenTelemetry instrumentation of LangChain when tracing is on.
+    description: Enables OpenTelemetry instrumentation of LangChain while an OTLP endpoint is set.
     tab: advanced
-  IRIS_PHOENIX_ENABLED:
-    kind: bool
-    default: false
-    applies: restart
-    label: Phoenix tracing
-    description: When on, sets up Arize Phoenix OpenTelemetry tracing (embedded mode by default).
-    tab: advanced
-  IRIS_PHOENIX_ENDPOINT:
-    kind: url
-    default: null
-    applies: restart
-    label: Phoenix traces endpoint
-    description: Base URL or full /v1/traces endpoint of a Phoenix collector that traces are exported
-      to; unset means no external endpoint.
-    tab: none
-    guarded: true
-    guard_reason: Traces sent to an external endpoint can carry private prompt data off the machine.
-    editable: false
-    not_editable_reason: URL
-  IRIS_PHOENIX_LAUNCH_SLEEP_MS:
-    kind: int
-    default: 1000
-    applies: restart
-    label: Phoenix launch wait (ms)
-    description: Milliseconds to wait after launching Phoenix during tracing setup.
-    tab: advanced
-  IRIS_PHOENIX_MODE:
-    kind: enum
-    default: embedded
-    applies: restart
-    label: Phoenix mode
-    description: Chooses whether Phoenix tracing runs embedded in-process or exports to an external
-      Phoenix (embedded/external).
-    tab: advanced
-  IRIS_PHOENIX_PORT:
-    kind: url
-    default: 6006
-    applies: restart
-    label: Phoenix tracing port
-    description: Port for the Phoenix tracing endpoint, but setup_tracing_state overrides it with
-      its phoenix_port argument (default 6006) in the API and gateway servers.
-    tab: none
-    editable: false
-    not_editable_reason: 'no production effect: production callers pass their own phoenix_port'
-  IRIS_PHOENIX_PROJECT:
-    kind: str
-    default: iris
-    applies: restart
-    label: Phoenix project name
-    description: Sets the Phoenix tracing project name traces are sent under.
-    tab: advanced
-  IRIS_PHOENIX_WORKING_DIR:
-    kind: path
-    default: ~/.iris/phoenix
-    applies: restart
-    label: Phoenix working directory
-    description: Directory Phoenix persists traces to; an empty value disables persistence.
-    tab: none
-    editable: false
-    not_editable_reason: Directory path
   IRIS_PLAYGROUND_DIR:
     kind: path
     default: null

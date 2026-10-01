@@ -28,7 +28,6 @@ HEAVY = sys.argv[1:] or [
     "piper",
     "langchain",
     "langchain_community",
-    "phoenix",
     "onnxruntime",
     "tokenizers",
     "torch",

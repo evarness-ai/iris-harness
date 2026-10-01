@@ -130,10 +130,11 @@ logger = logging.getLogger(__name__)
 class ObservabilityBackendStatus(BaseModel):
     """Backend health for rollout observability."""
 
-    kind: str = "phoenix"
+    kind: str = "otlp"
     enabled: bool
     healthy: bool
-    phoenix_url: str | None = None
+    # The OTLP traces endpoint spans export to (credentials stripped); None when unset.
+    endpoint: str | None = None
     instrumented_targets: list[str] = Field(default_factory=list)
     error: str | None = None
 
@@ -377,7 +378,7 @@ def create_app(
             app.state.observability = setup_tracing_state()
             app.state.tracer = app.state.observability.tracer
         except Exception:  # noqa: BLE001
-            logger.warning("tracing setup failed; running without Phoenix")
+            logger.warning("tracing setup failed; running without trace export")
             app.state.observability = None
             app.state.tracer = None
 
@@ -559,8 +560,8 @@ def create_app(
             "mcp_bridge_enabled": bridge.config.enabled,
             "enabled_server_count": len(bridge.list_enabled_servers()),
             "runtime_ready": app.state.runtime is not None,
-            "phoenix_url": getattr(observability, "phoenix_url", None),
-            "phoenix_enabled": bool(getattr(observability, "enabled", False)),
+            "tracing_enabled": bool(getattr(observability, "enabled", False)),
+            "otlp_endpoint": getattr(observability, "endpoint", None),
             "otel_targets": list(getattr(observability, "instrumented_targets", ())),
             "observability_error": getattr(observability, "error", None),
         }
@@ -585,7 +586,7 @@ def create_app(
         backend = ObservabilityBackendStatus(
             enabled=bool(getattr(observability, "enabled", False)),
             healthy=getattr(observability, "tracer", None) is not None,
-            phoenix_url=getattr(observability, "phoenix_url", None),
+            endpoint=getattr(observability, "endpoint", None),
             instrumented_targets=list(getattr(observability, "instrumented_targets", ())),
             error=getattr(observability, "error", None),
         )

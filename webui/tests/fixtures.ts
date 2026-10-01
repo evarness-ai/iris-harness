@@ -492,7 +492,7 @@ export const OVERRIDES: Record<string, unknown> = {
       kind: "none",
       enabled: false,
       healthy: false,
-      phoenix_url: null,
+      endpoint: null,
       instrumented_targets: [],
     },
     summary: {

@@ -193,7 +193,7 @@ def install_agent_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
     def agent_metrics_endpoint(name: str, window_days: int = 7) -> dict[str, Any]:
         """Per-agent metrics (ADR-0074) — measured success/correction/token telemetry
         rolled up from the learning-intelligence matrix over the agent's intents.
-        Reuses existing data; no Phoenix. 404 for an unregistered agent."""
+        Reuses existing data; no trace backend. 404 for an unregistered agent."""
 
         from iris_harness.runtime.agent_console import agent_metrics
         from iris_harness.services.learning.intelligence import build_intelligence

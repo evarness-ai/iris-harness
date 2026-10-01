@@ -69,7 +69,7 @@ cycle. `src/iris_harness/sdk/stable_tier.yaml` lists them.
     | `IRIS_BEHAVIOR_MINER` | bool | `off` | restart | Turns on the local-tier behavior-pattern miner (digital-twin layer 1) that proposes behaviors for user approval; this env value is the default the learning console reverts to on restart. |
     | `IRIS_CHANNEL_GATEWAY_PORT` | url | `8006` | restart | Port the channel gateway listens on (launcher) and that the health check probes; default 8006. |
     | `IRIS_CHANNEL_GATEWAY_TELEGRAM_ENABLED` | bool | `on` | restart | When on, the channel gateway runs the Telegram long-poller; when off (and IRIS_RUNTIME_TELEGRAM_POLLER_ENABLED unset) the runtime's own Telegram poller starts instead. **Guarded.** |
-    | `IRIS_CHANNEL_GATEWAY_TRACING_ENABLED` | bool | `off` | restart | Sets up Phoenix/OTEL tracing for the channel gateway service at startup. |
+    | `IRIS_CHANNEL_GATEWAY_TRACING_ENABLED` | bool | `off` | restart | Sets up OpenTelemetry tracing for the channel gateway service at startup; spans export only when an OTLP endpoint is set (OTEL_EXPORTER_OTLP_ENDPOINT). |
     | `IRIS_COMPACTION_KEEP_RECENT` | int | `10` | restart | Sets how many of the most recent conversation turns are kept verbatim when the conversation is compacted. |
     | `IRIS_COMPACTION_RATIO` | float | `0.8` | restart | Fraction of the compactor's token budget the running history must reach before it is compacted (values outside 0-1 fall back to 0.8); also sizes the kept-verbatim window. |
     | `IRIS_COMPACTION_THRESHOLD` | int | `20` | restart | Turn-count floor at which a conversation is compacted into a summary (with the token budget also able to trigger compaction). |
@@ -169,16 +169,8 @@ cycle. `src/iris_harness/sdk/stable_tier.yaml` lists them.
     | `IRIS_OBSERVABILITY_METRICS_ENABLED` | bool | `off` | next call | When on, the /observability/llm-metrics endpoint returns an LLM metrics summary; when off it returns 404. |
     | `IRIS_OLLAMA_BREAKER` | bool | `on` | next call | When on, the circuit breaker applies to local-provider LLM calls; 0/false/no/off disables it. |
     | `IRIS_OLLAMA_PORT` | url | `11434` | next run | Port used to reach Ollama for its health probe and the local model inventory. |
-    | `IRIS_OTEL_ENABLED` | bool | `on` | restart | Would gate OTEL instrumentation of LangChain and httpx, but the only production caller passes enabled=True, so the env value is never consulted in production. |
-    | `IRIS_OTEL_HTTPX_ENABLED` | bool | `on` | restart | When on, instruments httpx calls for OpenTelemetry tracing. |
-    | `IRIS_OTEL_LANGCHAIN_ENABLED` | bool | `on` | restart | Enables OpenTelemetry instrumentation of LangChain when tracing is on. |
-    | `IRIS_PHOENIX_ENABLED` | bool | `off` | restart | When on, sets up Arize Phoenix OpenTelemetry tracing (embedded mode by default). |
-    | `IRIS_PHOENIX_ENDPOINT` | url |  | restart | Base URL or full /v1/traces endpoint of a Phoenix collector that traces are exported to; unset means no external endpoint. **Guarded.** |
-    | `IRIS_PHOENIX_LAUNCH_SLEEP_MS` | int | `1000` | restart | Milliseconds to wait after launching Phoenix during tracing setup. |
-    | `IRIS_PHOENIX_MODE` | enum | `embedded` | restart | Chooses whether Phoenix tracing runs embedded in-process or exports to an external Phoenix (embedded/external). |
-    | `IRIS_PHOENIX_PORT` | url | `6006` | restart | Port for the Phoenix tracing endpoint, but setup_tracing_state overrides it with its phoenix_port argument (default 6006) in the API and gateway servers. |
-    | `IRIS_PHOENIX_PROJECT` | str | `iris` | restart | Sets the Phoenix tracing project name traces are sent under. |
-    | `IRIS_PHOENIX_WORKING_DIR` | path | `~/.iris/phoenix` | restart | Directory Phoenix persists traces to; an empty value disables persistence. |
+    | `IRIS_OTEL_HTTPX_ENABLED` | bool | `on` | restart | When on, instruments httpx calls for OpenTelemetry tracing (only while an OTLP endpoint is set). |
+    | `IRIS_OTEL_LANGCHAIN_ENABLED` | bool | `on` | restart | Enables OpenTelemetry instrumentation of LangChain while an OTLP endpoint is set. |
     | `IRIS_PLAYGROUND_DIR` | path |  | next call | Directory holding playground scenario suites; unset uses playground/ in the resolved config directory (IRIS_CONFIG_DIR, else the checkout's config/, else the packaged defaults). |
     | `IRIS_PLUGINS_DISABLE` | list |  | restart | Comma-separated plugin names removed from the active profile. **Guarded.** |
     | `IRIS_PLUGINS_ENABLE` | list |  | restart | Comma-separated plugin names forced on over the profile. **Guarded.** |

@@ -49,7 +49,7 @@ function SignalHealth() {
     return (
       <Section title="Signal health">
         <Notice>
-          Observability metrics are off. Set IRIS_OBSERVABILITY_METRICS_ENABLED=1 (Phoenix on) to
+          Observability metrics are off. Set IRIS_OBSERVABILITY_METRICS_ENABLED=1 to
           populate self-learning signal health.
         </Notice>
       </Section>

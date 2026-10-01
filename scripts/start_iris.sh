@@ -1,29 +1,22 @@
 #!/usr/bin/env bash
 # Start the full IRIS stack (Governor + Evaluator + IRIS API + Channel Gateway +
-# Phoenix observability + Web UI) with .env loaded, in dependency order, then
-# drop into the chat REPL. Single entry point for bringing IRIS up locally.
+# Web UI) with .env loaded, in dependency order, then drop into the chat REPL.
+# Single entry point for bringing IRIS up locally.
 #
-# Phoenix runs as its OWN process (`phoenix serve`, managed like every other
-# service) and iris_api exports spans to it over OTLP — so the Phoenix server
-# and its growing trace store stay OUT of the iris_api process (the single
-# biggest driver of the harness's RAM footprint). Its trace UI is served at
-# http://127.0.0.1:6006 and traces persist under $IRIS_PHOENIX_WORKING_DIR.
-# Enabling it also turns on /observability/llm-metrics so the Web UI Overview
-# is populated.
-#
-# Phoenix is the optional `phoenix` extra (`poetry install -E phoenix`; it is
-# Elastic-2.0, so the core install leaves it out). Without it the script does not
-# launch it: spans still export over OTLP when IRIS_PHOENIX_ENDPOINT names a
-# backend of your own, and tracing is off otherwise.
+# Tracing: no trace UI is launched (ADR-0128). Spans export over OTLP when the
+# standard OTEL_EXPORTER_OTLP_ENDPOINT names a backend you run yourself (Phoenix,
+# Jaeger, Tempo, a collector); see docs/guides/tracing.md. The Web UI's Call Trace
+# and Sessions read IRIS's own session logs and need no backend. The script turns
+# on /observability/llm-metrics (IRIS_OBSERVABILITY_METRICS_ENABLED, session-log
+# based) so the Web UI Overview is populated.
 #
 # Usage:
-#   scripts/start_iris.sh                 # all services + Phoenix + Web UI + REPL
-#   scripts/start_iris.sh --services-only # services + Phoenix + Web UI, no REPL
+#   scripts/start_iris.sh                 # all services + Web UI + REPL
+#   scripts/start_iris.sh --services-only # services + Web UI, no REPL
 #   scripts/start_iris.sh --no-ui         # skip the Web UI (combine with the above)
-#   scripts/start_iris.sh --no-phoenix    # skip Phoenix + metrics
 #   scripts/start_iris.sh --enable-writes # set IRIS_WEBUI_ALLOW_WRITES=1 for this run
 #   scripts/start_iris.sh --env K=V        # override/add env var(s) for this run
-#   scripts/start_iris.sh --status        # list running services (incl. Phoenix)
+#   scripts/start_iris.sh --status        # list running services
 #   scripts/start_iris.sh --stop          # stop all services
 #   scripts/start_iris.sh --restart=NAME  # stop + start ONE service (e.g. governor);
 #                                         # the health watch's repair (ADR-0116)
@@ -33,13 +26,11 @@
 #   IRIS_EVALUATOR_PORT=8090
 #   IRIS_API_PORT=8003
 #   IRIS_CHANNEL_GATEWAY_PORT=8006
-#   IRIS_PHOENIX_PORT=6006
 #   IRIS_WEBUI_PORT=5181
 #
 # Other overrides:
 #   IRIS_API_HOST=127.0.0.1           # binds all services to this host
 #   IRIS_WEBUI_ENABLED=0              # same as --no-ui
-#   IRIS_PHOENIX_ENABLED=0           # same as --no-phoenix
 #   IRIS_WEBUI_ALLOW_WRITES=1         # same as --enable-writes
 #   IRIS_LOG_DIR=~/.iris/logs
 #   IRIS_ENV_FILE=.env                # path to env file (relative to repo root)
@@ -93,8 +84,6 @@ mkdir -p "$LOG_DIR"
 # ── Argument parsing (mode + flags, order-independent) ───────────────
 MODE="default"            # default | services | status | stop | restart
 WEBUI_ENABLED="${IRIS_WEBUI_ENABLED:-1}"
-PHOENIX_ENABLED="${IRIS_PHOENIX_ENABLED:-1}"   # own `phoenix serve` process by default
-PHOENIX_PORT="${IRIS_PHOENIX_PORT:-6006}"
 RUNTIME_ENV_OVERRIDES=()
 RESTART_NAME=""
 for arg in "$@"; do
@@ -108,7 +97,6 @@ for arg in "$@"; do
       [[ "$RESTART_NAME" =~ ^[a-z_]+$ ]] || { echo "invalid service name in $arg" >&2; exit 2; }
       ;;
     --no-ui)  WEBUI_ENABLED=0 ;;
-    --no-phoenix) PHOENIX_ENABLED=0 ;;
     --enable-writes) RUNTIME_ENV_OVERRIDES+=("IRIS_WEBUI_ALLOW_WRITES=1") ;;
     --disable-writes) RUNTIME_ENV_OVERRIDES+=("IRIS_WEBUI_ALLOW_WRITES=0") ;;
     --env=*)
@@ -118,7 +106,7 @@ for arg in "$@"; do
       [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "invalid env key in $arg" >&2; exit 2; }
       RUNTIME_ENV_OVERRIDES+=("$kv")
       ;;
-    -h|--help) sed -n '2,33p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,37p' "$0"; exit 0 ;;
     *) echo "unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
@@ -132,59 +120,15 @@ if [[ "${#RUNTIME_ENV_OVERRIDES[@]}" -gt 0 ]]; then
   done
 fi
 
-# ── Phoenix is the optional `phoenix` extra: launch it only when it is installed.
-# PHOENIX_ENABLED = spans are exported; PHOENIX_LAUNCH = this script runs the Phoenix
-# server they go to. Without the extra, an IRIS_PHOENIX_ENDPOINT the operator set
-# (any OTLP backend) keeps tracing on; with neither, tracing is off. Checked only
-# when starting something: --stop/--status must still see a Phoenix left running.
-PHOENIX_LAUNCH="$PHOENIX_ENABLED"
-PHOENIX_EXTRA_HINT="install iris-harness[phoenix] (poetry install -E phoenix)"
-if [[ "$PHOENIX_ENABLED" == "1" && "$MODE" != "stop" && "$MODE" != "status" ]]; then
-  if ! poetry run python -c 'import importlib.metadata as m; m.version("arize-phoenix")' \
-      >/dev/null 2>&1; then
-    PHOENIX_LAUNCH=0
-    if [[ -n "${IRIS_PHOENIX_ENDPOINT:-}" ]]; then
-      echo "Phoenix is not installed, so it is not launched; spans export over OTLP to" \
-        "$IRIS_PHOENIX_ENDPOINT. For the local trace UI, $PHOENIX_EXTRA_HINT."
-    else
-      PHOENIX_ENABLED=0
-      echo "Phoenix is not installed: tracing is off. For the local trace UI," \
-        "$PHOENIX_EXTRA_HINT; or set IRIS_PHOENIX_ENDPOINT to any OTLP backend."
-    fi
-  fi
-fi
-
-# ── Observability: Phoenix runs as its own `phoenix serve` process (added to
-# the service registry below) and iris_api exports spans to it over OTLP in
-# EXTERNAL mode — keeping the Phoenix server out of iris_api. Turning it on also
-# enables the /observability/llm-metrics endpoint the Web UI reads.
-PHOENIX_WORKING_DIR="${IRIS_PHOENIX_WORKING_DIR:-$HOME/.iris/phoenix}"
-if [[ "$PHOENIX_ENABLED" == "1" ]]; then
-  export IRIS_PHOENIX_ENABLED=1
-  export IRIS_PHOENIX_MODE=external
-  export IRIS_PHOENIX_PORT="$PHOENIX_PORT"
-  export IRIS_PHOENIX_ENDPOINT="${IRIS_PHOENIX_ENDPOINT:-http://$HOST:$PHOENIX_PORT}"
-  export IRIS_OBSERVABILITY_METRICS_ENABLED="${IRIS_OBSERVABILITY_METRICS_ENABLED:-1}"
-  if [[ "$PHOENIX_LAUNCH" == "1" ]]; then
-    export IRIS_PHOENIX_URL="${IRIS_PHOENIX_URL:-http://$HOST:$PHOENIX_PORT}"
-    mkdir -p "$PHOENIX_WORKING_DIR"
-  fi
-else
-  export IRIS_PHOENIX_ENABLED=0
-fi
+# ── The LLM-metrics route the Web UI Overview reads (session-log based, no
+# tracing backend needed). On by default for a local stack; .env can turn it off.
+export IRIS_OBSERVABILITY_METRICS_ENABLED="${IRIS_OBSERVABILITY_METRICS_ENABLED:-1}"
 
 # ── Service registry: NAME|PORT|COMMAND, in startup order (earlier =
 # dependency of later). The command runs under `bash -c` with $HOST and
 # $PORT exported, so it stays declarative. The Web UI (Vite) is a
 # first-class service started last — it proxies /api to iris_api.
-SERVICES=()
-# Phoenix first: iris_api exports spans to it at startup, so it must be up
-# before iris_api. `phoenix serve` reads PHOENIX_HOST/PORT/WORKING_DIR from env
-# (no host/port flags), so we pass them explicitly rather than via $HOST/$PORT.
-if [[ "$PHOENIX_LAUNCH" == "1" ]]; then
-  SERVICES+=("phoenix|$PHOENIX_PORT|PHOENIX_HOST=\"\$HOST\" PHOENIX_PORT=\"\$PORT\" PHOENIX_WORKING_DIR=\"$PHOENIX_WORKING_DIR\" exec poetry run phoenix serve")
-fi
-SERVICES+=(
+SERVICES=(
   "governor|${IRIS_GOVERNOR_PORT:-8080}|poetry run python -m uvicorn iris_harness.server.governor.main:app --host \"\$HOST\" --port \"\$PORT\""
   "evaluator|${IRIS_EVALUATOR_PORT:-8090}|poetry run python -m uvicorn iris_harness.server.evaluator.main:app --host \"\$HOST\" --port \"\$PORT\""
   "iris_api|${IRIS_API_PORT:-8003}|poetry run python -m uvicorn iris_harness.server.iris_api.main:app --host \"\$HOST\" --port \"\$PORT\""
@@ -228,11 +172,10 @@ ensure_webui_deps() {
 # Per-service readiness budget (in 0.5s ticks). iris_api is heavy — runtime
 # build + eager memory embed + model warmup legitimately take ~60-80s cold; a
 # short wait would wrongly flag it failed and skip everything after it (the Web
-# UI). Phoenix serve also has a slow cold import (its web app + DB migrations).
+# UI).
 tries_for() {
   case "$1" in
     iris_api) echo 160 ;;  # ~80s
-    phoenix)  echo 80 ;;   # ~40s — cold import + SQLite migrations
     webui)    echo 40 ;;   # vite is fast
     *)        echo 60 ;;   # ~30s
   esac
@@ -315,8 +258,6 @@ status() {
       printf "%-18s %-7s %-7s %s\n" "$name" "$port" "stopped" "-"
     fi
   done
-  # Phoenix is a managed service now (its own pid), so the loop above already
-  # lists it when enabled — no special-case probe needed.
 }
 
 case "$MODE" in
@@ -348,7 +289,6 @@ case "$MODE" in
     start_all
     print_elapsed
     echo "all services up. stop with: $0 --stop"
-    [[ "$PHOENIX_LAUNCH" == "1" ]] && echo "Phoenix  → http://$HOST:$PHOENIX_PORT  (traces, own process)"
     [[ "$WEBUI_ENABLED" == "1" ]] && echo "Web UI   → http://$HOST:${IRIS_WEBUI_PORT:-5181}"
     exit 0
     ;;
@@ -365,7 +305,6 @@ export IRIS_GOVERNOR_URL="${IRIS_GOVERNOR_URL:-http://$HOST:${IRIS_GOVERNOR_PORT
 export IRIS_EVALUATOR_URL="${IRIS_EVALUATOR_URL:-http://$HOST:${IRIS_EVALUATOR_PORT:-8090}}"
 export IRIS_CHANNEL_GATEWAY_URL="${IRIS_CHANNEL_GATEWAY_URL:-http://$HOST:${IRIS_CHANNEL_GATEWAY_PORT:-8006}}"
 
-[[ "$PHOENIX_LAUNCH" == "1" ]] && echo "Phoenix → http://$HOST:$PHOENIX_PORT  (trace UI, own process)"
 [[ "$WEBUI_ENABLED" == "1" ]] && echo "Web UI → http://$HOST:${IRIS_WEBUI_PORT:-5181}  (Chat, Call Trace, Knowledge, …)"
 echo "→ launching iris chat (services stay running in background; stop with: $0 --stop)"
 poetry run python -m iris_harness.main

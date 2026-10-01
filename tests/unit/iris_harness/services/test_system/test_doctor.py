@@ -28,7 +28,7 @@ _CONFIG = dr.DoctorConfig(
     data_headroom_gb=2,
     warn_free_gb=20,
     starter_models=_STARTER,
-    optional_extras=(dr.OptionalExtra("phoenix", "phoenix", "trace UI"),),
+    optional_extras=(dr.OptionalExtra("ml", "sentence_transformers", "semantic discovery"),),
 )
 
 
@@ -105,7 +105,7 @@ def test_shipped_config_loads_the_fallback_starter() -> None:
     assert [m.name for m in cfg.starter_models] == ["qwen2.5:7b-instruct"]
     assert cfg.ram_floor_gb == 16
     assert cfg.ram_demo_gb == 8
-    assert {"email", "phoenix"} <= {e.name for e in cfg.optional_extras}
+    assert {"email", "ml"} <= {e.name for e in cfg.optional_extras}
 
 
 def test_config_without_a_threshold_is_an_error(tmp_path: Path) -> None:
@@ -248,7 +248,7 @@ def test_vault_key_check_states() -> None:
 
 
 def test_extras_are_information_only() -> None:
-    extra = dr.OptionalExtra("phoenix", "phoenix", "trace UI")
+    extra = dr.OptionalExtra("ml", "sentence_transformers", "semantic discovery")
     assert dr.check_extra(extra, False).state is HealthState.GREY
     assert dr.check_extra(extra, True).state is HealthState.GREY
 

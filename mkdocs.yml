@@ -82,6 +82,7 @@ nav:
       - Write a skill: guides/writing-a-skill.md
       - The email assistant: guides/email.md
       - Run with Docker: guides/docker.md
+      - Send traces to your backend: guides/tracing.md
       - Examples: guides/examples.md
   - Concepts:
       - Architecture: concepts/architecture.md

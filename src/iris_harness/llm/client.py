@@ -1000,7 +1000,8 @@ class GovernedPromptCall:
 def _llm_invoke_span(client: CodingLLMClient) -> Iterator[Any]:
     """Span around one model invocation, via the global OTel tracer.
 
-    Uses the globally registered tracer provider (set by Phoenix bootstrap)
+    Uses the globally registered tracer provider (set by the OTLP bootstrap,
+    ``foundation/observability/otlp_setup.py``)
     so no per-client wiring is needed; when tracing is off this yields a
     non-recording span at negligible cost. Made current so it parents under
     the active pipeline-stage span.

@@ -1,5 +1,6 @@
 name: system
 version: 0.1.0
+summary: Tell you the time and date, and check whether anything in IRIS is broken.
 description: >-
   Harness self-inspection: the deterministic time/date intercept, the
   system_health tool the model calls to answer "is anything broken?", and the

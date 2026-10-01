@@ -2,6 +2,7 @@
 
     POST   /chat
     POST   /chat/stream
+    POST   /chat/welcome
     POST   /chat/cancel
     POST   /warmup
 
@@ -99,6 +100,30 @@ class ChatResponse(BaseModel):
     has_errors: bool
     error_summary: str | None
     metadata: dict[str, Any]
+
+
+class WelcomeRequest(BaseModel):
+    """Body for ``POST /chat/welcome``: which surface opened the chat."""
+
+    channel: str = Field(default="console", max_length=32)
+    audience: Literal["owner", "other"] = "owner"
+
+
+class WelcomeResponse(BaseModel):
+    """The first-chat welcome: the turn that just ran, or the one that ran before.
+
+    ``created`` is true only for the call that ran it; every later call gets the same
+    session back with ``created`` false, so a surface shows it only when it is new.
+    """
+
+    session_id: str
+    created: bool
+    response: str
+    trace_id: str
+    at: str
+    # A home that already had conversations: no welcome ran, and none will.
+    skipped: bool = False
+    skip_reason: str = ""
 
 
 class WarmupRequest(BaseModel):
@@ -217,6 +242,31 @@ def install_chat_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
                 yield (json.dumps({"event": "error", "error": str(exc)}) + "\n").encode("utf-8")
 
         return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+    @app.post("/chat/welcome", response_model=WelcomeResponse)
+    def chat_welcome(request: WelcomeRequest | None = None) -> WelcomeResponse:
+        """The first-chat welcome (ADR-0127): run it if it is due, else return it.
+
+        Every surface calls this when a chat opens; the harness decides. It is due once
+        per IRIS_HOME, and then it runs as a real turn through the governed pipeline, with
+        no model. Repeating the call is safe: it returns the welcome that already ran.
+        """
+        rt: IrisRuntime | None = app.state.runtime
+        if rt is None:
+            raise HTTPException(status_code=503, detail="runtime unavailable")
+        # Every field has a default, so a bare POST (curl, a custom client) is a console
+        # welcome rather than a 422.
+        request = request or WelcomeRequest()
+        outcome = rt.welcome.ensure(channel=request.channel, audience=request.audience)
+        return WelcomeResponse(
+            session_id=outcome.session_id,
+            created=outcome.created,
+            response=outcome.response,
+            trace_id=outcome.trace_id,
+            at=outcome.at,
+            skipped=outcome.skipped,
+            skip_reason=outcome.skip_reason,
+        )
 
     @app.post("/chat/cancel")
     def chat_cancel(request: ChatCancelRequest) -> dict[str, Any]:

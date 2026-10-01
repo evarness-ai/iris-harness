@@ -1,5 +1,6 @@
 name: code_exec
 version: 0.1.0
+summary: Run code in a sandbox to calculate, transform data or make a file.
 description: >-
   The sandboxed code-execution agent: a bounded LLM <-> sandbox loop that runs
   shell commands in a container to calculate, scrape a page, transform data, or

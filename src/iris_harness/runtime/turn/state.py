@@ -39,6 +39,10 @@ class TurnRequest:
     # and the pipeline runs without its `intercept` stage. See `pipeline.RESUME_STAGES`.
     resume_run_id: str | None = None
     resume_step_id: int | None = None
+    # A turn the system opened with no user message (ADR-0127): the name of the opener
+    # (``config/intercepts.yaml`` ``openers:``) that answers it. ``message`` is empty and
+    # the pipeline runs ``OPENER_STAGES``: open → guard → record.
+    opener: str | None = None
 
     @property
     def resume_point(self) -> tuple[str, int] | None:

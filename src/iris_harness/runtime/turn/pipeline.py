@@ -25,6 +25,7 @@ from iris_harness.runtime.turn.stages import (
     execute,
     guard,
     intercept,
+    opener,
     plan,
     record,
     route,
@@ -63,6 +64,7 @@ STAGES: tuple[tuple[str, Stage], ...] = (
 # A turn the screen refused runs `record` alone: it writes the refusal to the session
 # log, so it reaches the transcript through the one recording path.
 STAGE_AUDIENCE: dict[str, str] = {
+    "open": "all",
     "screen": "all",
     "intercept": "all",
     "classify": "generated",
@@ -99,10 +101,22 @@ def serves(name: str, state: TurnState) -> bool:
 RESUME_STAGES: tuple[tuple[str, Stage], ...] = tuple(
     stage for stage in STAGES if stage[0] not in {"screen", "intercept"}
 )
+# A turn the system opens with no user message (ADR-0127): the first-chat welcome. There
+# is no input, so `screen` and `intercept` have nothing to read; `open` records the
+# turn's start (``turn_open``, never a forged ``user_message``) and runs the named
+# opener, a deterministic handler. `guard` then gives its answer the same response
+# check, with the same audit row, as any handler's answer, and `record` files it. The
+# model path is not here at all: an opener answers, or the turn fails.
+OPENER_STAGES: tuple[tuple[str, Stage], ...] = (
+    ("open", opener.run),
+    ("guard", guard.run),
+    ("record", record.run),
+)
 # Who the session log credits with an LLM call made while a stage runs. The execute
 # stage's name is only the default: AgentExecutor narrows it to the task's agent
 # (``email``, ``system`` …), and a handler may narrow it again.
 STAGE_AGENTS: dict[str, str] = {
+    "open": "intercept",
     "screen": "governance",
     "intercept": "intercept",
     "classify": "intent_router",
@@ -194,4 +208,4 @@ def drain(events: Iterator[StreamEvent]) -> ChatResult:
     raise RuntimeError("turn ended without a result")
 
 
-__all__ = ["RESUME_STAGES", "STAGES", "Stage", "drain", "run_turn"]
+__all__ = ["OPENER_STAGES", "RESUME_STAGES", "STAGES", "Stage", "drain", "run_turn"]

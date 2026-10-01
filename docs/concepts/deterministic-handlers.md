@@ -57,7 +57,16 @@ model or a handler produced it:
   generated answer (`pre_response`: credentials, identity secrets, internal details).
   A blocked answer is replaced with the refusal text.
 - **On the record.** Each check is audited with `deterministic: true` and the handler's
-  name, and the answer reaches the session log through the one recording path.
+  name, and the answer reaches the session log through the one recording path. The
+  log also records which handler answered (`handler.end`) and what the response check
+  decided (`guard.end`), so the turn is listed in Sessions and drawn in Call trace:
+  request, handler, response check, answer, with the audit rows beside them.
+
+A turn the system opens has no message to read, so it is answered by an **opener**: a
+deterministic handler declared under `openers:` in `config/intercepts.yaml` and run by
+name (`IrisRuntime.open_turn`). It skips the input screen, since nothing arrived, and
+gets the same response check, audit row and session log as any handler's answer. The
+first-chat welcome is the one opener today.
 
 Declare `guard_output=True` when the answer repeats text someone else wrote (an email
 subject, a sender, a headline): the model-based output guard then runs on your

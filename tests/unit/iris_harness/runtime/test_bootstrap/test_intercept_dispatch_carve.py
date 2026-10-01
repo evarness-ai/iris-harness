@@ -113,7 +113,13 @@ def _host_declared() -> set[str]:
 
 def test_intercept_dispatch_host_declares_exactly_what_the_module_reaches() -> None:
     assert _host_reached() == _host_declared()
-    assert _host_declared() == {"continuations", "intercept_chain", "plugin_registry", "profile"}
+    assert _host_declared() == {
+        "continuations",
+        "intercept_chain",
+        "openers",
+        "plugin_registry",
+        "profile",
+    }
 
 
 def test_nothing_reaches_for_the_moved_dispatch_members_off_a_runtime() -> None:

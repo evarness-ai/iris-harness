@@ -8,9 +8,11 @@ First match answers the turn: no classifier or model runs, and the answer goes t
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 from typing import Any
 
+from iris_harness.foundation.observability.session_log import log_timeline_event
 from iris_harness.runtime.turn.host import TurnHost
 from iris_harness.runtime.turn.state import TurnState
 from iris_harness.runtime.types import StreamEvent
@@ -20,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 def run(runtime: TurnHost, state: TurnState) -> Iterator[StreamEvent]:
     message, session_id = state.message, state.session_id
+    started = time.perf_counter()
     # §4.2: attribute a measured outcome (user_correction) to the prior turn now
     # that we can see how the user responded to it.
     runtime.capture.evaluate_prior_turn_outcome(session_id, message)
@@ -36,6 +39,8 @@ def run(runtime: TurnHost, state: TurnState) -> Iterator[StreamEvent]:
             span=state.span,
         )
         state.intercepted = True
+        state.handler = "memory_question"
+        _log_handler_end(state, started, intent=state.result.intent if state.result else None)
         yield StreamEvent(
             kind="trace",
             text="memory_question.end",
@@ -71,3 +76,24 @@ def run(runtime: TurnHost, state: TurnState) -> Iterator[StreamEvent]:
     state.intercepted = True
     state.handler = spec.name
     state.guard_output = spec.guard_output
+    _log_handler_end(state, started, intent=hit.result.intent)
+
+
+def _log_handler_end(state: TurnState, started: float, *, intent: str | None) -> None:
+    """Put the deterministic answer on the turn's record (``handler.end``).
+
+    Without it a handler-answered turn logged only its request and its answer, so Sessions
+    and Call trace, which list the turns that went through the pipeline, left it out. The
+    duration is this stage's own time: the handler that answered plus any handler ahead of
+    it in the chain that passed.
+    """
+    log_timeline_event(
+        "handler.end",
+        phase="handler.end",
+        payload={
+            "handler": state.handler,
+            "intent": intent,
+            "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
+        },
+        session_id=state.session_id,
+    )

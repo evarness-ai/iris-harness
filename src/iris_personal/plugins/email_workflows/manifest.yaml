@@ -1,5 +1,6 @@
 name: email_workflows
 version: 0.1.0
+summary: Sort your inbox, flag what needs a reply and summarize what came in.
 description: >-
   Email WORKFLOWS, on top of the mailbox access the harness provides itself:
   kNN-then-LLM triage of new mail, dynamic category discovery and acceptance,

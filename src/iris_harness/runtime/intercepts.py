@@ -271,6 +271,43 @@ def load_intercept_chain(config_path: Path | None = None) -> tuple[InterceptSpec
     return tuple(s for s in specs if s.enabled)
 
 
+# Hardcoded fallback for ``openers:`` — kept in sync with config/intercepts.yaml, used
+# only when the YAML is missing or unreadable.
+DEFAULT_OPENERS: tuple[InterceptSpec, ...] = (
+    InterceptSpec("welcome", "welcome.compose", trace_text="First-chat welcome"),
+)
+
+
+def load_openers(config_path: Path | None = None) -> dict[str, InterceptSpec]:
+    """The declared openers (ADR-0127), by name: handlers for a turn the system opens.
+
+    An opener answers a turn no one typed, so unlike the chain it is not dispatched in
+    order over a message: the caller names the one it wants (``IrisRuntime.open_turn``).
+    Same row shape and the same fallback rule as the chain; disabled rows are dropped.
+    """
+    path = config_path or _config_path()
+    defaults = {s.name: s for s in DEFAULT_OPENERS}
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return defaults
+    except (OSError, yaml.YAMLError) as exc:
+        logger.warning("intercepts.yaml unreadable (%s); using built-in default openers", exc)
+        return defaults
+    entries = (raw or {}).get("openers")
+    if entries is None:
+        return defaults
+    if not isinstance(entries, list):
+        logger.warning("intercepts.yaml 'openers' is not a list; using built-in default openers")
+        return defaults
+    try:
+        specs = tuple(_spec_from_dict(e) for e in entries if isinstance(e, dict))
+    except (KeyError, TypeError, ValueError) as exc:
+        logger.warning("intercepts.yaml openers malformed (%s); using built-in defaults", exc)
+        return defaults
+    return {s.name: s for s in specs if s.enabled}
+
+
 def resolve_runtime_handler(host: object, handler: str) -> Any:
     """The callable a core ``handler:`` row names on ``host``, or ``None`` if it is missing.
 

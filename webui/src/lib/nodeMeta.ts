@@ -16,6 +16,8 @@ export const KIND_META: Record<NodeKind, { color: string; glyph: string; title: 
   tool: { color: "rgb(var(--node-action))", glyph: "⚒", title: "Tool" },
   governance: { color: "rgb(var(--node-governance))", glyph: "⛨", title: "Governance" },
   response_curator: { color: "rgb(var(--node-perception))", glyph: "✓", title: "Response Curator" },
+  handler: { color: "rgb(var(--node-action))", glyph: "◇", title: "Deterministic Handler" },
+  guard: { color: "rgb(var(--node-governance))", glyph: "⊡", title: "Response Check" },
 };
 
 export function fmtMs(ms: number): string {

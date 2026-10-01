@@ -181,6 +181,22 @@ class TelegramIrisChatBridge:
         if self._owns_client:
             self._client.close()
 
+    def welcome(self, audience: Audience = "owner") -> str | None:
+        """The first-chat welcome (ADR-0127) when this call ran it; None when it ran before.
+
+        Raises when the API cannot answer, so the poller asks again on the next message.
+        """
+        response = self._client.post(
+            f"{self._iris_api_url}/chat/welcome",
+            json={"channel": "telegram", "audience": audience},
+        )
+        response.raise_for_status()
+        body = response.json()
+        if not isinstance(body, dict) or body.get("created") is not True:
+            return None
+        text = body.get("response")
+        return text if isinstance(text, str) and text.strip() else None
+
     def reply(self, text: str, session_id: str, audience: Audience = "owner") -> str:
         payload = {
             "message": text,
@@ -323,6 +339,7 @@ def build_telegram_runtime_from_env(
         connector=connector,
         chat_handler=bridge.reply,
         command_handler=commands,
+        opener=bridge.welcome,
         allowed_chat_ids=allowed_chat_ids,
         allowed_user_ids=allowed_user_ids_from_env(),
         base_url=telegram_base_url,

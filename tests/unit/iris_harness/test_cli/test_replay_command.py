@@ -27,6 +27,24 @@ def test_session_turns_group_events_by_user_message() -> None:
     ]
 
 
+def test_a_turn_the_system_opened_is_a_turn_of_its_own() -> None:
+    """ADR-0127: the first-chat welcome starts with ``turn_open``, not a user message."""
+    events = [
+        {"kind": "turn_open", "opener": "welcome", "label": "First-chat welcome"},
+        {"kind": "handler.end"},
+        {"kind": "agent_response", "response": "Hi"},
+        {"kind": "user_message", "text": "thanks"},
+        {"kind": "agent_response", "response": "ok"},
+    ]
+
+    turns = _session_turns(events)
+
+    assert [turn[0]["kind"] for turn in turns] == ["turn_open", "user_message"]
+    _ts, label, detail = _replay_event_summary(events[0])
+    assert label == "open"
+    assert detail == "First-chat welcome (opened by IRIS, no user message)"
+
+
 def test_replay_event_summary_renders_llm_start_payload() -> None:
     event = {
         "kind": "agent.trace",

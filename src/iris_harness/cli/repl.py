@@ -47,6 +47,7 @@ from .render import (
     sample_system_metrics,
 )
 from .session import Session, SessionManager
+from .welcome import fetch_welcome
 
 _HISTORY_FILE = Path.home() / ".iris" / "history"
 _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -348,6 +349,11 @@ def run_repl(
     )
 
     redraw_banner()
+    # The first chat on this install opens with IRIS's welcome (ADR-0127); the harness
+    # decides whether it is due, and says so only once.
+    welcome = fetch_welcome(api_url, channel="console")
+    if welcome:
+        print_response(welcome)
 
     with patch_stdout(raw=True):
         while True:

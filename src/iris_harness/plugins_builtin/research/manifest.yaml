@@ -1,5 +1,6 @@
 name: research
 version: 0.1.0
+summary: Search the web and read pages to answer questions about the world.
 description: >-
   Web access as a reference plugin: one `research` tool over a pluggable provider
   chain (SearXNG -> Tavily -> Brave -> DuckDuckGo), TTL cache, Trafilatura

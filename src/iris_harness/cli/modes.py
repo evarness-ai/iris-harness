@@ -24,6 +24,7 @@ from .render import (
     spinner,
 )
 from .session import Session, SessionManager
+from .welcome import fetch_welcome
 
 
 def _post(
@@ -52,6 +53,12 @@ def run_print_mode(
     api_url: str,
     strict: bool = False,
 ) -> int:
+    # A first chat on this install opens with IRIS's welcome (ADR-0127), printed ahead of
+    # the answer. Print mode only: json and stdio are machine protocols, one reply per
+    # request, and an unasked-for welcome would break them.
+    welcome = fetch_welcome(api_url, channel="console")
+    if welcome:
+        print_response(welcome)
     try:
         with spinner("thinking…"):
             body = _post(message, session.id, api_url, strict=strict)

@@ -172,6 +172,10 @@ def iter_recent_turns(
             kind = event.get("kind")
             if kind == "user_message":
                 pending_query = str(event.get("text") or "")
+            elif kind == "turn_open":
+                # A turn the system opened has no query; a question left unanswered
+                # before it must not pair with its answer.
+                pending_query = None
             elif kind == "agent_response":
                 examined += 1
                 turn_intent = str(event.get("intent") or "")
@@ -438,6 +442,33 @@ def log_user_message(
             "agent_type": agent_type,
         },
     )
+
+
+def log_turn_open(session_id: str, *, opener: str, label: str) -> None:
+    """Open a turn nobody typed: the system started it (ADR-0127, the first-chat welcome).
+
+    It takes the place of ``user_message`` as the event that starts a turn, so the readers
+    that split a log into turns (Sessions, Call trace, chat replay, ``/replay``) see one,
+    without a user message being written for words nobody said. ``label`` is what those
+    screens show where a turn's request would be.
+    """
+    _append_event(
+        session_id,
+        {
+            "kind": "turn_open",
+            "ts": _now_iso(),
+            "session_id": session_id,
+            "turn_id": _turn_id_var.get(),
+            "opener": opener,
+            "label": _cap(label, _INPUT_CONTENT_CAP),
+        },
+    )
+
+
+# The events that start a turn in a session log: what the user said, or a turn the
+# system opened with no user message (``log_turn_open``). Every reader that splits a log
+# into turns splits on these.
+TURN_OPENING_KINDS = frozenset({"user_message", "turn_open"})
 
 
 def log_agent_response(

@@ -66,6 +66,21 @@ iris email demo --reset
   writes your OS keyring.
 - **No network.** The run refuses every outbound connection.
 
+## See it in the web console
+
+Start the IRIS API on the demo's home with the demo's vault key, then open the console
+as [The email assistant](../guides/email.md) describes:
+
+<!-- ci: skip runs the API in the foreground until stopped -->
+```bash
+export IRIS_AUTH_SECRET="$(openssl rand -hex 32)"
+IRIS_HOME=~/.iris-demo IRIS_VAULT_MASTER_KEY="$(cat ~/.iris-demo/vault-master.key)" iris serve
+```
+
+Open Chat and IRIS starts with its one-time welcome, a turn no model writes. Inbox and
+Setup show the demo mailbox, Governance shows the run's audit rows, and Sessions and
+Call trace show the welcome turn.
+
 ## Next
 
 [Connect your mailbox](connect-your-mailbox.md).

@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from iris_harness.runtime import build_runtime
-from iris_harness.runtime.turn import STAGES, TurnRequest, drain, run_turn
+from iris_harness.runtime.turn import OPENER_STAGES, STAGES, TurnRequest, drain, run_turn
 from iris_harness.runtime.turn.state import TurnState
 from iris_harness.runtime.types import ChatResult, StreamEvent
 
@@ -261,7 +261,7 @@ def test_each_stage_runs_under_its_own_agent_name() -> None:
     def _stage(name: str, *, handled: bool) -> Any:
         def run(_runtime: Any, state: TurnState) -> Iterator[StreamEvent]:
             seen[name] = _agent_type_var.get()
-            if name == "intercept" and handled:
+            if name in ("intercept", "open") and handled:
                 state.intercepted = True
                 state.result = ChatResult("r", "system", "system", (), False, None, {})
             if name == "record" and state.result is None:
@@ -277,6 +277,11 @@ def test_each_stage_runs_under_its_own_agent_name() -> None:
         request = TurnRequest(message="hi", session_id=f"agents-{handled}")
         events = list(run_turn(None, request, stages=stages))  # type: ignore[arg-type]
         assert events[-1].kind == "done"
+    # A turn the system opens (ADR-0127) runs its own stages, `open` first.
+    stages = tuple((name, _stage(name, handled=True)) for name, _ in OPENER_STAGES)
+    request = TurnRequest(message="", session_id="agents-open", opener="welcome")
+    events = list(run_turn(None, request, stages=stages))  # type: ignore[arg-type]
+    assert events[-1].kind == "done"
 
     assert seen == STAGE_AGENTS
     assert seen["curate"] == "response_curator" and seen["record"] == "turn_capture"

@@ -20,6 +20,7 @@ import {
   cancelChat,
   getSessionId,
   newSession,
+  requestWelcome,
   setSession as persistSession,
   streamChat,
 } from "@/lib/chat";
@@ -375,6 +376,35 @@ export function ChatScreen() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
+
+  // The first chat on this install opens on IRIS's welcome (ADR-0127). The harness
+  // decides whether it is due and runs it; Chat only asks when it opens and, when this
+  // was the call that ran it, shows the welcome's session, so the first question
+  // continues it.
+  useEffect(() => {
+    let current = true;
+    void requestWelcome().then((welcome) => {
+      if (!current || !welcome?.created) return;
+      persistSession(welcome.session_id);
+      hydratedRef.current = welcome.session_id;
+      setActiveSession(welcome.session_id);
+      setMessages([
+        {
+          id: nextId(),
+          role: "assistant",
+          text: welcome.response,
+          status: "done",
+          meta: welcome.trace_id ? { traceId: welcome.trace_id } : undefined,
+        },
+      ]);
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      navigate(`/chat/${welcome.session_id}`, { replace: true });
+    });
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Follow deep links / back-forward: when the URL's :sessionId changes, switch.
   useEffect(() => {

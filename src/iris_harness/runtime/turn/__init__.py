@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from .pipeline import RESUME_STAGES, STAGES, drain, run_turn
+from .pipeline import OPENER_STAGES, RESUME_STAGES, STAGES, drain, run_turn
 from .state import TurnRequest, TurnState
 
-__all__ = ["RESUME_STAGES", "STAGES", "TurnRequest", "TurnState", "drain", "run_turn"]
+__all__ = [
+    "OPENER_STAGES",
+    "RESUME_STAGES",
+    "STAGES",
+    "TurnRequest",
+    "TurnState",
+    "drain",
+    "run_turn",
+]

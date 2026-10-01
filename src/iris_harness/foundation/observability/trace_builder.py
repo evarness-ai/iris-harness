@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.observability.audit_view import public_payload, tier_locality
-from iris_harness.foundation.observability.session_log import session_log_dir
+from iris_harness.foundation.observability.session_log import TURN_OPENING_KINDS, session_log_dir
 from iris_harness.foundation.process_state import track_globals
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,19 @@ _STAGE_META: dict[str, tuple[str, str, str]] = {
     "response_curator": (
         "iris_harness.agent.response_curator",
         "ResponseCurator.curate",
+        "src/iris_harness/agent/response_curator.py",
+    ),
+    # A deterministic handler answered the turn (the intercept stage). The handler itself
+    # may be a plugin's, so the node names the dispatch that ran it and labels the handler.
+    "handler": (
+        "iris_harness.runtime.intercept_dispatch",
+        "InterceptDispatch.dispatch",
+        "src/iris_harness/runtime/intercept_dispatch.py",
+    ),
+    # The response check every deterministic answer passes (the guard stage).
+    "guard": (
+        "iris_harness.agent.response_curator",
+        "ResponseCurator.guard",
         "src/iris_harness/agent/response_curator.py",
     ),
     "llm": ("iris_harness.llm.arbiter", "OllamaArbiter.invoke", "src/iris_harness/llm/arbiter.py"),
@@ -152,11 +165,12 @@ def _ms(a: datetime, b: datetime) -> float:
 
 
 def _split_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    """Group a session's events into turns delimited by ``user_message``."""
+    """Group a session's events into turns, each started by a ``TURN_OPENING_KINDS`` event:
+    what the user said, or a turn the system opened (``turn_open``, ADR-0127)."""
     turns: list[list[dict[str, Any]]] = []
     cur: list[dict[str, Any]] = []
     for e in events:
-        if e.get("kind") == "user_message":
+        if e.get("kind") in TURN_OPENING_KINDS:
             if cur:
                 turns.append(cur)
             cur = [e]
@@ -198,21 +212,34 @@ def _tokens(raw: dict[str, Any] | None) -> dict[str, int] | None:
     }
 
 
-_MEANINGFUL_KINDS = {"llm_call", "intent_router.end", "agent.trace", "tool_run"}
+_MEANINGFUL_KINDS = {"llm_call", "intent_router.end", "agent.trace", "tool_run", "handler.end"}
 
 
 def _is_meaningful(turn: list[dict[str, Any]]) -> bool:
     """A turn worth charting — it actually exercised the request pipeline.
 
     Skips degenerate turns (e.g. ``approve`` / routine triggers) that log only a
-    ``user_message`` + ``agent_response`` and would render as a lone node.
+    ``user_message`` + ``agent_response`` and would render as a lone node. A turn a
+    deterministic handler answered counts (``handler.end``): it passed the input screen,
+    the handler and the response check, and leaving it out hid every such answer from
+    Sessions and Call trace.
     """
     return any(e.get("kind") in _MEANINGFUL_KINDS for e in turn)
 
 
 def _turn_request(turn: list[dict[str, Any]]) -> str:
+    """What the turn was asked: the user's words, or a system-opened turn's label."""
     first = turn[0] if turn else {}
-    return str(first.get("text", "")) if first.get("kind") == "user_message" else ""
+    if first.get("kind") == "user_message":
+        return str(first.get("text", ""))
+    if first.get("kind") == "turn_open":
+        return str(first.get("label") or first.get("opener") or "")
+    return ""
+
+
+def _opened_by_system(turn: list[dict[str, Any]]) -> bool:
+    """True for a turn the system opened: no one typed anything (ADR-0127)."""
+    return bool(turn) and turn[0].get("kind") == "turn_open"
 
 
 def _turn_total_tokens(turn: list[dict[str, Any]]) -> int:
@@ -289,7 +316,8 @@ _HOOK_HOST_KINDS: dict[str, tuple[list[str], ...]] = {
     "pre_tool_use": (["tool"], ["agent"]),
     "post_tool_use": (["tool"], ["agent"]),
     "post_step": (["agent"],),
-    "pre_response": (["response_curator"],),
+    # A generated answer is checked in the curator; a deterministic one in the guard.
+    "pre_response": (["response_curator"], ["guard"]),
 }
 
 
@@ -510,7 +538,10 @@ def session_messages(session_id: str) -> list[dict[str, Any]]:
         if not request:
             continue
         started = _turn_started_at(turn)
-        out.append({"role": "user", "text": request, "ts": started})
+        # A turn the system opened had no user message, so its replay has none either:
+        # only what IRIS said.
+        if not _opened_by_system(turn):
+            out.append({"role": "user", "text": request, "ts": started})
         out.append(
             {
                 "role": "assistant",
@@ -579,6 +610,15 @@ def build_steps(turn: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if kind == "user_message":
             text = str(e.get("text", ""))
             add("request", f"Request: {_first_line(text)}", e, detail=text)
+        elif kind == "turn_open":
+            label = str(e.get("label") or e.get("opener") or "")
+            add(
+                "request",
+                f"Opened by IRIS: {_first_line(label)} (no user message)",
+                e,
+                detail=f"opener: {e.get('opener')}\nNo one typed anything; IRIS started this turn.",
+                fields={"opener": e.get("opener")},
+            )
         elif kind == "intent_router.end":
             p = e.get("payload", {}) or {}
             conf = p.get("confidence")
@@ -709,6 +749,28 @@ def build_steps(turn: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "chars": p.get("response_chars"),
                 },
             )
+        elif kind == "handler.end":
+            p = e.get("payload", {}) or {}
+            add(
+                "handler",
+                f"Answered by deterministic handler {p.get('handler') or '?'} (no model)",
+                e,
+                duration_ms=p.get("duration_ms"),
+                detail=json.dumps(p, indent=2),
+                fields={"handler": p.get("handler"), "intent": p.get("intent")},
+            )
+        elif kind == "guard.end":
+            p = e.get("payload", {}) or {}
+            checks = list(p.get("checks") or [])
+            add(
+                "guard",
+                f"Response check: {p.get('verdict', '?')} ({', '.join(checks) or 'none'})",
+                e,
+                status="error" if p.get("verdict") == "halt" else "ok",
+                duration_ms=p.get("duration_ms"),
+                detail=json.dumps(p, indent=2),
+                fields={"verdict": p.get("verdict"), "checks": checks},
+            )
         elif kind == "agent_response":
             text = str(e.get("response", ""))
             empty = len(text.strip()) == 0
@@ -782,7 +844,7 @@ def _build_trace(session_id: str, idx: int, turn: list[dict[str, Any]]) -> dict[
         ts = _parse_ts(e.get("ts", ""))
         return _ms(t0, ts) if (t0 and ts) else 0.0
 
-    request_text = str(um.get("text", ""))
+    request_text = _turn_request(turn)
     final_text = str((resp or {}).get("response", ""))
     total_dur = _turn_total_duration_ms(turn)
     has_errors = bool((resp or {}).get("has_errors"))
@@ -795,11 +857,12 @@ def _build_trace(session_id: str, idx: int, turn: list[dict[str, Any]]) -> dict[
         _node(
             "runtime",
             "runtime",
-            "IrisRuntime.chat",
+            "IrisRuntime.open_turn" if _opened_by_system(turn) else "IrisRuntime.chat",
             "runtime",
             0.0,
             total_dur,
             status="error" if has_errors else "ok",
+            method="IrisRuntime.open_turn" if _opened_by_system(turn) else None,
             input=request_text,
             output=final_text,
         )
@@ -901,6 +964,26 @@ def _build_trace(session_id: str, idx: int, turn: list[dict[str, Any]]) -> dict[
         nodes.append(node)
         chain.append(node_id)
 
+    # A deterministic handler, when one answered the turn (stage `intercept`).
+    handler_end = next((e for e in turn if e.get("kind") == "handler.end"), None)
+    if handler_end is not None:
+        hp = handler_end.get("payload", {}) or {}
+        h_dur = float(hp.get("duration_ms") or 0.0)
+        nodes.append(
+            _node(
+                "handler",
+                "handler",
+                str(hp.get("handler") or "handler"),
+                "handler",
+                off(handler_end) - h_dur,
+                h_dur,
+                input=request_text,
+                output=final_text,
+                handler=hp.get("handler"),
+            )
+        )
+        chain.append("handler")
+
     # response_curator
     rc_start = next((e for e in turn if e.get("kind") == "response_curator.start"), None)
     rc_end = next((e for e in turn if e.get("kind") == "response_curator.end"), None)
@@ -922,6 +1005,26 @@ def _build_trace(session_id: str, idx: int, turn: list[dict[str, Any]]) -> dict[
             )
         )
         chain.append("curator")
+
+    # The response check a deterministic answer passed (stage `guard`).
+    guard_end = next((e for e in turn if e.get("kind") == "guard.end"), None)
+    if guard_end is not None:
+        gp = guard_end.get("payload", {}) or {}
+        g_dur = float(gp.get("duration_ms") or 0.0)
+        nodes.append(
+            _node(
+                "guard",
+                "guard",
+                "response check",
+                "guard",
+                off(guard_end) - g_dur,
+                g_dur,
+                status="error" if gp.get("verdict") == "halt" else "ok",
+                input=final_text,
+                output=f"{gp.get('verdict', '?')} ({', '.join(gp.get('checks') or [])})",
+            )
+        )
+        chain.append("guard")
 
     # Main chain edges.
     for a, b in zip(chain, chain[1:], strict=False):
@@ -1108,6 +1211,7 @@ def _build_trace(session_id: str, idx: int, turn: list[dict[str, Any]]) -> dict[
         "session_id": session_id,
         "trace_id": f"{session_id}{ID_SEP}{idx}",
         "request": request_text,
+        "opened_by_system": _opened_by_system(turn),
         "started_at": str(um.get("ts", "")),
         "total_duration_ms": round(total_dur, 3),
         "total_tokens": _turn_total_tokens(turn),

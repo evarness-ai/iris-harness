@@ -430,10 +430,12 @@ def _load_session_events(session_id: str) -> tuple[Path, list[dict[str, Any]]]:
 
 
 def _session_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    from iris_harness.foundation.observability.session_log import TURN_OPENING_KINDS
+
     turns: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
     for event in events:
-        if event.get("kind") == "user_message" and current:
+        if event.get("kind") in TURN_OPENING_KINDS and current:
             turns.append(current)
             current = []
         current.append(event)
@@ -458,6 +460,9 @@ def _replay_event_summary(event: dict[str, Any], *, full: bool = False) -> tuple
 
     if kind == "user_message":
         return ts, "user", _replay_text(event.get("text", ""), width=240, full=full)
+    if kind == "turn_open":
+        label = _replay_text(event.get("label") or event.get("opener"), width=240, full=full)
+        return ts, "open", f"{label} (opened by IRIS, no user message)"
     if kind == "turn.start":
         raw_payload = event.get("payload")
         payload = raw_payload if isinstance(raw_payload, dict) else {}

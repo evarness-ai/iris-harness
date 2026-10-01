@@ -70,6 +70,7 @@ manifest_fields:
   - name
   - version
   - description
+  - summary
   - entrypoint
   - cli
   - flavor

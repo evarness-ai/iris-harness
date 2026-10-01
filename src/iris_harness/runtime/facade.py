@@ -88,6 +88,7 @@ from iris_harness.runtime.intercept_dispatch import InterceptDispatch
 from iris_harness.runtime.intercepts import (
     InterceptSpec,
     load_intercept_chain,
+    load_openers,
 )
 from iris_harness.runtime.learning_controls import LearningControls
 from iris_harness.runtime.mission_proposals import MissionProposals
@@ -107,6 +108,7 @@ from iris_harness.runtime.turn_capture import (
     TurnCapture,
 )
 from iris_harness.runtime.types import ChatResult, StreamEvent, WarmupResult
+from iris_harness.runtime.welcome import FirstChatWelcome
 from iris_harness.services.channels import (
     ChannelGateway,
 )
@@ -254,6 +256,9 @@ class IrisRuntime:
     # (Phase 2). chat() and chat_stream() both dispatch through this single ordered
     # list via InterceptDispatch.dispatch, so the two paths can never drift apart.
     intercept_chain: tuple[InterceptSpec, ...] = field(default_factory=load_intercept_chain)
+    # The openers, by name (ADR-0127): deterministic handlers for a turn the system opens
+    # with no user message (``open_turn``), declared under ``openers:`` in the same file.
+    openers: dict[str, InterceptSpec] = field(default_factory=load_openers)
     # OSS plan M1: what the profile's plugins registered (intercepts, tools,
     # confirmation executors are read from here at dispatch time) + their health.
     plugin_registry: PluginRegistry = field(default_factory=PluginRegistry)
@@ -325,6 +330,9 @@ class IrisRuntime:
     # turn through the pipeline's intercept stage. Stateless; set by build_runtime right
     # after construction (OSS plan M5.7 track C).
     intercepts: InterceptDispatch = field(init=False, repr=False)
+    # The first-chat welcome (ADR-0127): whether it is due, once per IRIS_HOME, and the
+    # opener that answers it. Set by build_runtime right after construction.
+    welcome: FirstChatWelcome = field(init=False, repr=False)
     # Session memory: the per-session conversation window, its reload, compaction and
     # context health, with the state only it writes. Set by build_runtime right after
     # construction (OSS plan M5.7 track C).
@@ -629,6 +637,48 @@ class IrisRuntime:
                 )
             )
         return ResumedRun(answer=result.response, session_id=session_id)
+
+    def open_turn(
+        self,
+        opener: str,
+        *,
+        session_id: str,
+        channel: str = "console",
+        audience: Audience = "owner",
+    ) -> ChatResult:
+        """Run a turn the system opens, with no user message (ADR-0127).
+
+        The named opener (``config/intercepts.yaml`` ``openers:``) answers it, and the
+        pipeline runs ``OPENER_STAGES``: ``open`` logs the turn's start as ``turn_open``
+        and runs the opener, ``guard`` gives the answer the same response check and audit
+        row a deterministic handler's answer gets, and ``record`` files it in the session
+        log. There is no input, so there is no input screen and no message is logged in
+        the owner's name. The first-chat welcome (``runtime.welcome``) is the caller.
+        """
+        from iris_harness.runtime.turn import OPENER_STAGES
+
+        request = TurnRequest(
+            message="",
+            session_id=session_id,
+            channel=channel,
+            audience=audience,
+            opener=opener,
+        )
+        with (
+            maybe_current_span(self.tracer, "iris.chat.open") as span,
+            session_scope(session_id),
+            turn_scope(),
+        ):
+            return drain(
+                run_turn(
+                    self,
+                    request,
+                    span=span,
+                    stage_spans=True,
+                    on_error="raise",
+                    stages=OPENER_STAGES,
+                )
+            )
 
     def chat_stream(
         self,

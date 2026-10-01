@@ -8,7 +8,23 @@
  * install, not anything it has recorded. */
 import { fixtureFor } from "./fixtures";
 
+/** What POST /chat/welcome answers the first time Chat opens on a fresh install: the
+ * harness ran its welcome turn (ADR-0127), so this call is the one that created it. */
+export const WELCOME = {
+  session_id: "5e1c0a2b9d47",
+  created: true,
+  response:
+    "Hi, I'm IRIS. This is the first chat on this install. Here is what I can do:\n\n" +
+    "- Tell you the time and date, and check whether anything in IRIS is broken.\n\n" +
+    "Ask me something to get started.\n\n" +
+    "No model wrote this reply: a deterministic handler did. Open Call trace to see " +
+    "this turn's path and the check it passed, and Governance for its audit rows.",
+  trace_id: "5e1c0a2b9d47~0",
+  at: "2026-09-24T10:00:00+00:00",
+};
+
 export const FRESH: Record<string, unknown> = {
+  "/chat/welcome": WELCOME,
   "/governance/state": {
     enabled: true,
     audit_db: "/home/owner/.iris/governance/audit.db",

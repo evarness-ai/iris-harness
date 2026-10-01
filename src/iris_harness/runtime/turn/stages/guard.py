@@ -13,14 +13,17 @@ same warning banner a generated answer gets.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
 from dataclasses import replace
+from typing import Any
 
 from iris_harness.agent.response_curator import (
     GOVERNANCE_BLOCKED_TEXT,
     JudgeSignal,
     governance_warning_banner,
 )
+from iris_harness.foundation.observability.session_log import log_timeline_event
 from iris_harness.foundation.observability.tracer import set_span_attributes
 from iris_harness.runtime.turn.host import TurnHost
 from iris_harness.runtime.turn.state import TurnState
@@ -31,6 +34,7 @@ def run(runtime: TurnHost, state: TurnState) -> Iterator[StreamEvent]:
     result = state.result
     assert result is not None, "guard runs on an answered turn"
     curator = runtime.response_curator
+    started = time.perf_counter()
     signal = curator.guard(result.response, session_id=state.session_id, handler=state.handler)
     signals: list[JudgeSignal] = [signal]
     if signal.verdict != "halt" and state.guard_output:
@@ -44,16 +48,23 @@ def run(runtime: TurnHost, state: TurnState) -> Iterator[StreamEvent]:
         state.span,
         {"iris.deterministic": True, "iris.deterministic_handler": state.handler or ""},
     )
-    yield StreamEvent(
-        kind="trace",
-        text="guard.end",
+    outcome: dict[str, Any] = {
+        "verdict": halted.verdict if halted else signal.verdict,
+        "handler": state.handler,
+        "checks": [s.name for s in signals],
+    }
+    # On the turn's record too, so Call trace draws the check a deterministic answer
+    # passed next to the audit rows the check wrote.
+    log_timeline_event(
+        "guard.end",
+        phase="guard.end",
         payload={
-            "name": "guard.end",
-            "verdict": halted.verdict if halted else signal.verdict,
-            "handler": state.handler,
-            "checks": [s.name for s in signals],
+            **outcome,
+            "duration_ms": round((time.perf_counter() - started) * 1000.0, 3),
         },
+        session_id=state.session_id,
     )
+    yield StreamEvent(kind="trace", text="guard.end", payload={"name": "guard.end", **outcome})
     if halted is not None:
         state.result = replace(
             result,

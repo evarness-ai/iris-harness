@@ -9,7 +9,7 @@ observability cannot drift between the two paths.
 
 Carved out of ``IrisRuntime`` at OSS plan M5.7 track C slice 15 as
 ``InterceptDispatch(host)``, held as ``runtime.intercepts``. Stateless.
-:class:`InterceptDispatchHost` declares the four runtime members read; the host is read
+:class:`InterceptDispatchHost` declares the runtime members read; the host is read
 **at call time**, not captured. The host object itself is also what a core ``handler:``
 row resolves against (``confirmations.handle_confirmation_turn`` walks the runtime), so a
 row names where the handler lives on the runtime, never on this collaborator.
@@ -33,10 +33,12 @@ logger = logging.getLogger(__name__)
 
 
 class InterceptDispatchHost(Protocol):
-    """The four runtime members intercept dispatch reaches."""
+    """The five runtime members intercept dispatch reaches."""
 
     continuations: ContinuationRegistry
     intercept_chain: tuple[InterceptSpec, ...]
+    # The ``openers:`` rows of config/intercepts.yaml, by name (ADR-0127).
+    openers: dict[str, InterceptSpec]
     plugin_registry: PluginRegistry
     # iris_harness.runtime.plugin_host.EffectiveProfile once build_runtime mounts plugins, else None;
     # only ``intercept_order`` is read, through getattr, as it always was.
@@ -94,6 +96,32 @@ class InterceptDispatch:
                 )
                 return InterceptHit(spec=spec, result=result)
         return None
+
+    def opener(self, name: str) -> InterceptSpec | None:
+        """The declared opener ``name`` (ADR-0127), or None when none is declared."""
+        return self._host.openers.get(name)
+
+    def open(self, name: str, *, session_id: str, channel: str, span: Any) -> InterceptHit | None:
+        """Run opener ``name`` for a turn the system opened; None when it gives no answer.
+
+        An opener takes no message — there is none — so it is called with the session and
+        the span (and the channel, when its row says ``passes_channel``). Core rows only:
+        a ``plugin:`` opener has no registration seam yet, so it resolves to nothing.
+        """
+        spec = self.opener(name)
+        if spec is None or spec.handler.startswith("plugin:"):
+            return None
+        handler = resolve_runtime_handler(self._host, spec.handler)
+        if handler is None:
+            logger.warning("opener %r → unknown handler %r", name, spec.handler)
+            return None
+        kwargs: dict[str, Any] = {"session_id": session_id, "span": span}
+        if spec.passes_channel:
+            kwargs["channel"] = channel
+        result = handler(**kwargs)
+        if result is None:
+            return None
+        return InterceptHit(spec=spec, result=result)
 
     def effective_chain(self) -> tuple[tuple[InterceptSpec, Callable[..., Any]], ...]:
         """The ordered (spec, handler) chain: declared YAML rows + plugin intercepts.

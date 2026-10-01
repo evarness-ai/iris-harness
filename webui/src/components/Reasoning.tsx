@@ -14,6 +14,8 @@ const STEP_META: Record<StepType, { color: string; glyph: string }> = {
   llm: { color: "rgb(var(--node-llm))", glyph: "✦" },
   tool: { color: "rgb(var(--node-action))", glyph: "⚒" },
   curator: { color: "rgb(var(--node-perception))", glyph: "✓" },
+  handler: { color: "rgb(var(--node-action))", glyph: "◇" },
+  guard: { color: "rgb(var(--node-governance))", glyph: "⊡" },
   stop: { color: "rgb(var(--node-governance))", glyph: "■" },
   response: { color: "rgb(var(--node-perception))", glyph: "➜" },
   error: { color: "rgb(var(--danger))", glyph: "!" },

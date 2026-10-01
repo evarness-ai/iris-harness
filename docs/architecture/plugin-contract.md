@@ -18,6 +18,7 @@ my-plugin/
 name: my-plugin            # [a-z][a-z0-9_-]*
 version: 0.1.0
 description: One line.
+summary: What it lets IRIS do, for the owner (optional; the first-chat welcome lists it)
 entrypoint: plugin:setup   # module:function (default)
 trust: in-process          # in-process (default) | mcp (out-of-process, M2+)
 provides: [intercept, tool]   # advisory; feeds --dump-config and the drift panel

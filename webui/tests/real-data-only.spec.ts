@@ -11,7 +11,7 @@
  * Neither path may show any of the strings the old canned traces carried. */
 import { test, expect, type Page } from "@playwright/test";
 import { fixtureFor } from "./fixtures";
-import { freshFor } from "./fresh-install";
+import { WELCOME, freshFor } from "./fresh-install";
 import { navRoutes } from "./routes";
 
 /** Distinctive strings from the canned traces the console used to ship. */
@@ -106,12 +106,89 @@ test("fresh install: Sessions says to start a chat", async ({ page }) => {
   expect(box?.height ?? 0, "Open Chat is a phone tap target").toBeGreaterThanOrEqual(44);
 });
 
-test("fresh install: Chat's history is empty, not canned", async ({ page }) => {
+/** A fresh install that records what Chat's opening does: POST /chat/welcome runs the
+ * welcome turn (ADR-0127) once, and from then on the API lists that one session, as
+ * the real harness does. Before it, the lists are empty. */
+async function serveFreshThenWelcomed(page: Page): Promise<{ welcomeCalls: number }> {
+  const state = { welcomeCalls: 0 };
+  const session = {
+    session_id: WELCOME.session_id,
+    title: "First-chat welcome",
+    turn_count: 1,
+    started_at: WELCOME.at,
+    last_at: WELCOME.at,
+    total_tokens: 0,
+    total_duration_ms: 3.2,
+    turns: [
+      {
+        session_id: WELCOME.session_id,
+        trace_id: WELCOME.trace_id,
+        request: "First-chat welcome",
+        started_at: WELCOME.at,
+        total_duration_ms: 3.2,
+        total_tokens: 0,
+      },
+    ],
+  };
+  await page.route("**/*", async (route) => {
+    const type = route.request().resourceType();
+    if (type !== "fetch" && type !== "xhr") return route.continue();
+    const pathname = new URL(route.request().url()).pathname;
+    let body: unknown = freshFor(pathname);
+    if (pathname === "/chat/welcome") {
+      state.welcomeCalls += 1;
+      body = { ...WELCOME, created: state.welcomeCalls === 1 };
+    } else if (state.welcomeCalls > 0 && pathname === "/api/sessions") {
+      body = [session];
+    } else if (state.welcomeCalls > 0 && pathname === `/api/sessions/${WELCOME.session_id}/messages`) {
+      body = [{ role: "assistant", text: WELCOME.response, ts: WELCOME.at, trace_id: WELCOME.trace_id }];
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  return state;
+}
+
+test("fresh install: Chat opens on IRIS's welcome, not canned data", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); // the history rail is md+
-  await serveFresh(page);
+  const state = await serveFreshThenWelcomed(page);
   await page.goto("/chat", { waitUntil: "networkidle" });
-  await expect(page.getByText("No conversations yet.")).toBeVisible();
+
+  await expect(page.locator("main").getByText("Here is what I can do:")).toBeVisible();
+  await expect(page.locator("main").getByText("Open Call trace to see")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/chat/${WELCOME.session_id}$`));
+  // The history lists the welcome's session: the conversation exists now.
+  await expect(page.getByText("No conversations yet.")).toHaveCount(0);
+  await expect(page.getByText("First-chat welcome").first()).toBeVisible();
+  expect(state.welcomeCalls).toBe(1);
   await expectNoCanned(page);
+});
+
+test("a welcome that ran before is not shown again, and Chat asks once per page", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  let calls = 0;
+  await page.route("**/*", async (route) => {
+    const type = route.request().resourceType();
+    if (type !== "fetch" && type !== "xhr") return route.continue();
+    const pathname = new URL(route.request().url()).pathname;
+    let body: unknown = freshFor(pathname);
+    if (pathname === "/chat/welcome") {
+      calls += 1;
+      body = { ...WELCOME, created: false }; // it ran on another surface already
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/chat", { waitUntil: "networkidle" });
+  await expect(page.getByText("Here is what I can do:")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/chat$/);
+  // Leave Chat and come back inside the app: Chat mounts again, the request does not.
+  await page.getByRole("link", { name: "Sessions" }).first().click();
+  await expect(page).toHaveURL(/\/sessions$/);
+  await page.getByRole("link", { name: "Chat" }).first().click();
+  await expect(page).toHaveURL(/\/chat/);
+  await page.waitForLoadState("networkidle");
+  expect(calls).toBe(1);
 });
 
 for (const path of ["/sessions", "/calltrace"]) {

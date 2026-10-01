@@ -14,7 +14,9 @@ export type NodeKind =
   | 'llm'
   | 'tool'
   | 'governance'
-  | 'response_curator';
+  | 'response_curator'
+  | 'handler'
+  | 'guard';
 
 export type NodeStatus = 'ok' | 'error' | 'skipped';
 
@@ -96,6 +98,8 @@ export type StepType =
   | 'llm'
   | 'tool'
   | 'curator'
+  | 'handler'
+  | 'guard'
   | 'stop'
   | 'response'
   | 'error';

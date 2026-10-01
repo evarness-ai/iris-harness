@@ -488,6 +488,11 @@ class PluginManifest(BaseModel):
     name: str = Field(..., min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     version: str = Field(default="0.0.0", min_length=1)
     description: str = Field(default="")
+    # What the plugin lets IRIS do, in one line addressed to the owner ("Sort your inbox
+    # and draft replies"). ``description`` is for the plugin's developers; this is what the
+    # first-chat welcome lists for each mounted plugin (ADR-0127). Leave it empty for a
+    # plugin with nothing to say to the owner: a delivery surface, an import tool.
+    summary: str = Field(default="", max_length=160)
     # ``module:function`` relative to the plugin directory / package.
     entrypoint: str = Field(default="plugin:setup", pattern=r"^[A-Za-z_][\w.]*:[A-Za-z_]\w*$")
     # Optional ``module:function`` that adds this plugin's ``iris`` subcommands.

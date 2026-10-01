@@ -115,6 +115,7 @@ from iris_harness.runtime.turn_capture import (
 )
 from iris_harness.runtime.turn_context import current_query, current_session_id
 from iris_harness.runtime.types import ChatResult
+from iris_harness.runtime.welcome import FirstChatWelcome
 from iris_harness.services.channels.connectors.telegram import TelegramConnector
 from iris_harness.services.channels.connectors.telegram_poller import (
     TelegramPoller,
@@ -813,6 +814,7 @@ def build_runtime(
     runtime.replies = DeterministicReplies(runtime)
     runtime.confirmations = Confirmations(runtime)
     runtime.intercepts = InterceptDispatch(runtime)
+    runtime.welcome = FirstChatWelcome(runtime)
     runtime.sessions = SessionMemory(runtime)
     # The closing roll runs through SessionMemory, which exists only now.
     retention._sessions = runtime.sessions
@@ -900,6 +902,7 @@ def build_runtime(
                 ).response,
                 confirmation_options=runtime.confirmations.pending_options,
                 command_handler=_telegram_approval_commands(runtime),
+                opener=runtime.welcome.new_text_for("telegram"),
                 allowed_chat_ids=frozenset([telegram_chat_id]),
                 allowed_user_ids=allowed_user_ids_from_env(),
             )

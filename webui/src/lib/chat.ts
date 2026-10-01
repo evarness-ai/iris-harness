@@ -83,6 +83,49 @@ export function setSession(id: string): string {
   return id;
 }
 
+/** The first-chat welcome (ADR-0127), as POST /chat/welcome answers it. */
+export interface Welcome {
+  session_id: string;
+  /** True only for the call that ran it; later calls get the same welcome back. */
+  created: boolean;
+  response: string;
+  trace_id: string;
+}
+
+let welcomeRequest: Promise<Welcome | null> | null = null;
+
+/**
+ * Ask the harness for the first-chat welcome. The harness decides whether it is due
+ * (once per install) and runs it; this only asks and hands back the answer. One request
+ * per page load, shared by every caller, so a remounted Chat never asks twice. Best
+ * effort: null when the API cannot answer, and the chat works as before.
+ */
+export function requestWelcome(): Promise<Welcome | null> {
+  welcomeRequest ??= (async () => {
+    try {
+      const res = await apiFetch("/chat/welcome", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ channel: "web" }),
+      });
+      if (!res.ok) return null;
+      const body = (await res.json()) as Partial<Welcome> | null;
+      if (!body || typeof body.session_id !== "string" || typeof body.response !== "string") {
+        return null;
+      }
+      return {
+        session_id: body.session_id,
+        created: body.created === true,
+        response: body.response,
+        trace_id: typeof body.trace_id === "string" ? body.trace_id : "",
+      };
+    } catch {
+      return null;
+    }
+  })();
+  return welcomeRequest;
+}
+
 /** One user reaction to an answer (ADR-0072). Best-effort: never throws. */
 export interface FeedbackInput {
   sentiment: "up" | "down";

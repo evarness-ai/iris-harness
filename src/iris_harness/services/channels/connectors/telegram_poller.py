@@ -52,6 +52,9 @@ ALLOWED_USER_IDS_ENV = "TELEGRAM_ALLOWED_USER_IDS"
 #: ``(text, session_id, audience) -> reply``: what the poller hands a message to.
 ChatHandler = Callable[[str, str, Audience], str]
 
+#: ``(audience) -> text | None``: the first-chat welcome (ADR-0127) when this call ran it.
+Opener = Callable[[Audience], str | None]
+
 
 def audience_of_chat(chat: object) -> Audience:
     """Who reads a reply in ``chat``: the owner only in a private chat (ADR-0125).
@@ -97,6 +100,7 @@ class TelegramPoller:
         confirmation_options: Callable[[str], list[str] | None] | None = None,
         command_handler: CommandHandler | None = None,
         reply_handler: ReplyHandler | None = None,
+        opener: Opener | None = None,
         allowed_chat_ids: frozenset[str] = frozenset(),
         allowed_user_ids: frozenset[str] = frozenset(),
         poll_timeout: int = 30,
@@ -122,6 +126,11 @@ class TelegramPoller:
         self._reply_handler: ReplyHandler | None = reply_handler or getattr(
             command_handler, "on_reply", None
         )
+        # The first-chat welcome (ADR-0127): ``(audience) -> text`` when this call ran it,
+        # None when it ran before. The harness decides; asked until it has answered once.
+        self._opener = opener
+        self._welcome_settled = opener is None
+        self._welcome_lock = threading.Lock()
         self._allowed = allowed_chat_ids
         self._allowed_users = allowed_user_ids
         self._poll_timeout = poll_timeout
@@ -273,6 +282,11 @@ class TelegramPoller:
 
         logger.info("telegram poller: message from chat %s: %r", chat_id, text[:80])
 
+        # The first chat on this install opens with IRIS's welcome, sent ahead of the
+        # answer. `/start` is Telegram's "open the chat" and asks nothing more.
+        if self._send_welcome_if_new(chat_id, audience_of_chat(chat)) and _is_start(text):
+            return
+
         if self._try_command(text.strip(), chat_id, _user_id(message)):
             return
         replied = _replied_message_id(message)
@@ -353,6 +367,29 @@ class TelegramPoller:
             self._connector.answer_callback(cbq_id)
         if reply:
             self._send_reply(chat_id, reply)
+
+    def _send_welcome_if_new(self, chat_id: str, audience: Audience) -> bool:
+        """Send the first-chat welcome when the harness says this is it; True if sent.
+
+        Once the harness has answered (it ran now, or it ran before on another surface)
+        it is not asked again for the life of this poller. An answer that never came (the
+        API out of reach) leaves it to the next message; the chat goes on regardless.
+        """
+        if self._welcome_settled or self._opener is None:
+            return False
+        with self._welcome_lock:
+            if self._welcome_settled:
+                return False
+            try:
+                welcome = self._opener(audience)
+            except Exception:
+                logger.warning("telegram poller: first-chat welcome unavailable", exc_info=True)
+                return False
+            self._welcome_settled = True
+        if not welcome:
+            return False
+        self._send_reply(chat_id, welcome)
+        return True
 
     def _user_allowed(self, update_part: dict[str, Any]) -> bool:
         """Whether the sender passes the optional per-user allowlist.
@@ -497,6 +534,12 @@ class TelegramPoller:
             self._connector.send(ChannelMessage(recipient=chat_id, body="⏳ Thinking…"))
         except Exception:  # noqa: BLE001
             logger.debug("telegram poller: failed to send thinking indicator to %s", chat_id)
+
+
+def _is_start(text: str) -> bool:
+    """Telegram's ``/start`` (``/start``, ``/start@SomeBot``, ``/start payload``)."""
+    first = text.strip().split(maxsplit=1)[0].lower() if text.strip() else ""
+    return first == "/start" or first.startswith("/start@")
 
 
 def _replied_message_id(message: dict[str, Any]) -> str:

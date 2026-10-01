@@ -173,3 +173,16 @@ intercepts:
     handler: _handle_standing_instruction_turn
     trace_text: "standing instruction captured"
     trace_fields: [behavior_name]
+
+# Openers (ADR-0127): deterministic handlers for a turn the SYSTEM opens, with no user
+# message. They are not part of the chain above: nothing is typed, so there is nothing
+# to dispatch in order. The caller names the opener it wants (IrisRuntime.open_turn),
+# and the turn runs open -> guard -> record (turn/pipeline.py OPENER_STAGES): a
+# `turn_open` event instead of a user message, the same response check and audit row
+# as any handler's answer, and the session log. An opener's handler takes
+# (session_id, span[, channel]) and is a core row; `trace_text` is the label Sessions
+# and Call trace show where a turn's request would be.
+openers:
+  - name: welcome
+    handler: welcome.compose   # runtime/welcome.py; wording in config/welcome.yaml
+    trace_text: "First-chat welcome"

@@ -234,6 +234,9 @@ _UNGATED_WRITE_PATHS = frozenset(
         "/chat",
         "/chat/stream",
         "/chat/cancel",
+        # The first-chat welcome (ADR-0127) is a chat turn the harness opens itself, once
+        # per home, through the same governed pipeline.
+        "/chat/welcome",
         # Model preload — no user-visible state mutation.
         "/warmup",
         # Document upload + search were always allowed for read-only consoles.

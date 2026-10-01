@@ -109,7 +109,7 @@ uvicorn = ">=0.27,<1"  # runs every server (Dockerfile, compose, `iris serve`)
 pyyaml = "^6.0"
 python-dotenv = "^1.2.1"
 numpy = ">=1.26"
-psutil = "^6.0.0"
+psutil = ">=6,<8"
 prompt_toolkit = ">=3.0"
 
 # Auth & Security

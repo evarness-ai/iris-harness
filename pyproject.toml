@@ -124,7 +124,7 @@ chromadb = ">=0.5.0"
 python-multipart = ">=0.0.31"
 
 # File watching
-watchdog = "^4.0.0"
+watchdog = ">=4,<7"
 
 # Background jobs
 apscheduler = "^3.10.0"

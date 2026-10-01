@@ -4,8 +4,9 @@ import type { Trace } from './types';
 
 // Data source for the trace screen. Hits the live IRIS API
 // (GET /api/traces, /api/traces/:id — served by src/iris_harness/server/iris_api from session
-// logs, via the Vite /api proxy). If the API is unreachable or has no logs yet,
-// it falls back to the canned mock traces so the prototype always renders.
+// logs, via the Vite /api proxy). If the API is unreachable, it falls back to the
+// canned mock traces so the prototype always renders. (Sessions still also falls
+// back when the API has no logs yet; traces do not, see listTraces.)
 //
 // A 401 is neither: the API is up and this browser is not paired (or was revoked).
 // Mock traces under a "mock data" badge would hide that — and CallTrace would
@@ -90,13 +91,16 @@ const mockSummaries = (): TraceSummary[] =>
     total_tokens: t.total_tokens,
   }));
 
+// A live API with no logs yet (a fresh install) is live and empty, not "no API": mock
+// traces there would show a builder someone else's turns under a small "mock data"
+// badge, and Call Trace says what to do instead. Only an unreachable API falls back.
 export async function listTraces(): Promise<{ source: Source; traces: TraceSummary[] }> {
   try {
     const r = await apiFetch('/api/traces');
     refuseUnauthorized(r);
     if (r.ok) {
       const data = (await r.json()) as TraceSummary[];
-      if (Array.isArray(data) && data.length > 0) return { source: 'live', traces: data };
+      if (Array.isArray(data)) return { source: 'live', traces: data };
     }
   } catch (e) {
     if (e instanceof UnauthorizedError) throw e;

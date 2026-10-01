@@ -22,7 +22,7 @@ test file is the example; read it top to bottom.
 pytest examples/06-testing-your-plugin -q
 ```
 
-Expected output: `11 passed` in about fifteen seconds.
+Expected output: `11 passed` in about 30 s (14 s with `--no-cov`).
 
 ## The pieces
 
@@ -48,3 +48,27 @@ Expected output: `11 passed` in about fifteen seconds.
   example 02).
 - **`check_stable_imports([...])`** lists every import outside the stable API
   (`docs/reference/stable-api.md`); hold your plugin to it in CI.
+
+## Try changing
+
+Add a unit and test it in the fastest layer first. In `unit_converter.py`, add yards to
+the length table:
+
+```python
+_TO_METRES = {"m": 1.0, "km": 1000.0, "mi": 1609.344, "ft": 0.3048, "yd": 0.9144}
+```
+
+and a case to `test_convert`'s parameters in `test_unit_converter.py`:
+
+```python
+        (1, "yd", "ft", 3.0),
+```
+
+`12 passed`: the new unit is covered in milliseconds, with no IRIS built. Only what
+needs the harness (a turn, its tool call, its audit rows) belongs in layer 2.
+
+## Next
+
+[`07-verify-with-evarness`](../07-verify-with-evarness/): prove governance properties
+from the audit ledger, offline. Background:
+[Test your plugin](../../docs/guides/test-your-plugin.md).

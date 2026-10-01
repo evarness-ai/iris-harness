@@ -21,7 +21,7 @@ versioned JSON document a CI job verifies offline
 pytest examples/07-verify-with-evarness -q
 ```
 
-Expected output: `3 passed` in under a minute:
+Expected output: `3 passed` in about 31 s (11 s with `--no-cov`):
 
 - **the onboarding run** -- `iris email demo` in a temporary home (fetch 200 synthetic
   emails, judge them, preview the labels, approve mailbox writes for the demo's own
@@ -52,3 +52,26 @@ onboarding verified offline in CI. **Evarness is not a dependency of IRIS** (R14
 optional, dev/CI only, never runtime). The bundle format is IRIS's own, documented and
 versioned, so wiring Evarness in means reading `bundle.json` (or calling
 `verify_bundle`) from its side; nothing here imports it.
+
+## Try changing
+
+Tamper with a bundle a fourth way: delete the answer's audit row. In
+`test_a_tampered_bundle_fails_verification`, before the last block, add
+
+```python
+    unanswered = copy.deepcopy(turn_bundle)
+    unanswered["ledger"] = [
+        row for row in unanswered["ledger"] if row["hook_point"] != "pre_response"
+    ]
+    assert [v.invariant for v in verify_bundle(_resealed(unanswered))] == [
+        "every-call-and-answer-audited"
+    ]
+```
+
+It passes: the digest was recomputed, so integrity holds, but the session log recorded
+an answer that no `pre_response` row covers, and invariant 3 catches it.
+
+## Next
+
+[`08-mcp`](../08-mcp/): serve IRIS's tools to MCP clients, and allowlist and sign the
+servers IRIS consumes. Background: [Proof bundle](../../docs/reference/proof-bundle.md).

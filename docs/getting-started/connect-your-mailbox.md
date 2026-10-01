@@ -33,6 +33,69 @@ pass `--host imap.example.com` (and `--port` or `--security starttls` if your se
 needs them). `--folder` picks the folder IRIS syncs (default `INBOX`), and
 `--password-stdin` reads the password from standard input, for scripts.
 
+IRIS logs in with a password over TLS (`--security ssl`, port 993, by default) and
+checks the server's certificate against the system's trusted certificates. It does not
+do OAuth over IMAP, so a provider that accepts only OAuth for IMAP cannot be connected
+this way.
+
+#### Provider notes
+
+Settings as each provider's own help pages give them, checked on 2026-10-01. Providers
+change these; if a login fails, check the linked page first.
+
+| Provider | Server | Port, security | App password |
+|---|---|---|---|
+| iCloud Mail | `imap.mail.me.com` (preset for `icloud.com`, `me.com`, `mac.com`) | 993, SSL | Required; needs two-factor authentication on the Apple Account |
+| Fastmail | `imap.fastmail.com` (preset for `fastmail.com`) | 993, SSL (not STARTTLS) | Required; your normal password does not work |
+| Yahoo Mail | `imap.mail.yahoo.com` (preset for `yahoo.com`) | 993, SSL | Required |
+| Gmail | `imap.gmail.com` (preset) | 993, SSL | Needs 2-Step Verification; not offered for work or school accounts, Advanced Protection, or security-key-only 2SV |
+| Outlook.com, Microsoft 365 | `outlook.office365.com` | 993, SSL | **Not supported**: both require OAuth for IMAP (below) |
+| Proton Mail | Proton Mail Bridge on `127.0.0.1` | 1143, STARTTLS (Bridge default) | The password Bridge generates (below) |
+
+- **iCloud Mail.** Create the password at account.apple.com: Sign-In and Security, then
+  App-Specific Passwords
+  ([Apple](https://support.apple.com/en-us/102654)). Apple gives the IMAP user name as
+  the part of your address before the `@`
+  ([Apple](https://support.apple.com/en-us/102525)); if the full address is refused,
+  pass that name:
+
+  <!-- ci: skip needs an iCloud mailbox and its app-specific password -->
+  ```bash
+  iris auth imap login --user you@icloud.com --username you
+  ```
+
+- **Fastmail.** Settings, then Privacy & Security, then "Manage app passwords and
+  access", then New app password; the default access, Mail, Contacts & Calendars,
+  includes IMAP ([Fastmail: app passwords](https://www.fastmail.help/hc/en-us/articles/360058752854),
+  [server names and ports](https://www.fastmail.help/hc/en-us/articles/1500000278342-Server-names-and-ports)).
+  An address on your own domain needs `--host imap.fastmail.com`.
+- **Yahoo Mail.** Account Security, then under External connections, Create app
+  password ([Yahoo: app passwords](https://help.yahoo.com/kb/SLN15241.html),
+  [IMAP settings](https://help.yahoo.com/kb/SLN4075.html)). An app password stays valid
+  when you change your account password, until you delete it.
+- **Gmail.** App passwords exist only with 2-Step Verification on, and not for the
+  account types in the table ([Google](https://support.google.com/accounts/answer/185833)).
+  Without one, use Gmail with OAuth below.
+- **Outlook.com and Microsoft 365.** Outlook.com requires OAuth 2 ("Modern Auth") for
+  IMAP ([Microsoft](https://support.microsoft.com/en-us/office/pop-imap-and-smtp-settings-for-outlook-com-d088b986-291d-42b8-9564-9c414e2aa040)),
+  and Exchange Online has turned off Basic authentication, password logins over IMAP
+  included, in every Microsoft 365 tenant; no admin can turn it back on, and app
+  passwords stop working with it
+  ([Microsoft Learn](https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/deprecation-of-basic-authentication-exchange-online)).
+  IRIS has no OAuth login for IMAP yet, so neither can be connected today.
+- **Proton Mail.** Proton Mail has no IMAP server of its own; Proton Mail Bridge, a
+  desktop app on a paid plan, serves your mailbox on `127.0.0.1`, IMAP on port 1143 by
+  default ([Proton: IMAP setup](https://proton.me/support/imap-smtp-and-pop3-setup),
+  [ports](https://proton.me/support/port-already-occupied-error)). Log in with the
+  password Bridge shows under Mailbox details, not your Proton password
+  ([Proton](https://proton.me/support/invalid-password-error-setting-email-client)).
+  Bridge encrypts that local connection (STARTTLS or SSL, its "Connection mode"
+  setting) with a self-signed certificate it generates
+  ([Proton](https://proton.me/support/comprehensive-guide-to-bridge-settings)), which
+  IRIS's certificate check does not trust out of the box. `--security plain` is
+  accepted for a loopback host only, for a bridge that allows it. Connecting IRIS to
+  Bridge has not been tested yet.
+
 ### Gmail with OAuth
 
 Gmail through its API is the full-fidelity option. It needs a one-time Google Cloud

@@ -3,8 +3,10 @@
 Runnable examples of building on IRIS, in
 [`examples/`](https://github.com/evarness-ai/iris-harness/tree/main/examples). Each is a
 small directory (the code, its manifest, a README and a test) that imports only the
-[stable API](../reference/stable-api.md), runs offline on a scripted model in well under
-five minutes, and is tested in CI on every change.
+[stable API](../reference/stable-api.md), runs offline on a scripted model in about half a
+minute or less (20 to 32 seconds each on an Apple M4 Max with the repository's coverage
+report on, 5 to 16 without it; the per-example times are in the examples' README), and is
+tested in CI on every change.
 
 | Example | What it shows |
 |---|---|

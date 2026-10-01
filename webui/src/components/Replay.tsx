@@ -19,8 +19,9 @@ export function Replay({
   onSpeed: (s: number) => void;
 }) {
   const atEnd = step >= total;
+  // 44px tall on a phone (the tap minimum), compact from `sm` up.
   const ctrl =
-    "rounded-lg border border-border bg-surface-raised px-2.5 py-1 text-xs text-fg-muted hover:bg-border";
+    "min-h-[44px] rounded-lg border border-border bg-surface-raised px-2.5 py-1 text-xs text-fg-muted hover:bg-border sm:min-h-0";
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button type="button" onClick={onReset} className={ctrl} title="reset">
@@ -32,7 +33,7 @@ export function Replay({
       <button
         type="button"
         onClick={onPlayPause}
-        className="rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-fg hover:opacity-90"
+        className="min-h-[44px] rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-fg hover:opacity-90 sm:min-h-0"
       >
         {playing ? "❚❚ Pause" : atEnd ? "↻ Replay" : "▶ Play"}
       </button>

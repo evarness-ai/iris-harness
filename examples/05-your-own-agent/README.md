@@ -28,7 +28,7 @@ What it shows:
 pytest examples/05-your-own-agent -q
 ```
 
-Expected output: `3 passed` in about ten seconds:
+Expected output: `3 passed` in about 28 s (11 s with `--no-cov`):
 
 - "What is on my to-do list?" -- routed to `planner`, answered by the loop after
   calling `list_todos` (`result.agent == "planner"`);
@@ -61,3 +61,23 @@ plugins:
 
 Then `iris -p "What is on my to-do list?"`. (Do not mount it beside the `planner`
 plugin of the personal-assistant profile: both would claim the same lane.)
+
+## Try changing
+
+See what `read_first_intents` protects you from. Delete these two lines from
+`manifest.yaml`:
+
+```yaml
+read_first_intents:
+  - planner
+```
+
+Run the tests: `test_an_answer_that_never_read_the_list_falls_back_to_the_deterministic_floor`
+fails, because the guessing model's "You have nothing to do." is now the answer: nothing
+required the loop to look at the list first. Put the lines back and the fallback answers
+again.
+
+## Next
+
+[`06-testing-your-plugin`](../06-testing-your-plugin/): the testing kit these examples
+use, layer by layer. Background: [Plugins and profiles](../../docs/concepts/plugins.md).

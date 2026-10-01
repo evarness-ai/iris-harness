@@ -25,7 +25,7 @@ A tool the plugin registers without declaring it is refused.
 pytest examples/02-governed-tool -q
 ```
 
-Expected output: `4 passed` in about ten seconds. The tests show:
+Expected output: `4 passed` in about 29 s (12 s with `--no-cov`). The tests show:
 
 - **read** -- "What is on the noticeboard?" calls `list_notes`; the ledger has
   `pre_tool_use` and `post_tool_use` rows naming the tool, every check `allow`;
@@ -56,3 +56,25 @@ plugins:
 
 Then ask `iris -p "Remove the dentist note"` and approve it with `iris approvals`, on
 the web Governance screen or on Telegram.
+
+## Try changing
+
+Governance comes from the declaration, not the code. In `manifest.yaml`, declare
+`remove_note` as an ordinary write that never asks:
+
+```yaml
+  remove_note:
+    effect: write
+    confirm: never
+```
+
+Run the tests again. `test_a_destructive_call_waits_for_the_owner_then_runs` and
+`test_a_rejected_call_never_runs` fail: "Remove the dentist note, please." now answers
+"The dentist note is gone." in the same turn, and no approval is pending. Not one line
+of `noticeboard.py` changed. Put `effect: destructive` back.
+
+## Next
+
+[`03-custom-categories`](../03-custom-categories/): change what the email assistant does
+with configuration alone. Background: [Governance](../../docs/concepts/governance.md)
+(effects, approvals and the audit ledger).

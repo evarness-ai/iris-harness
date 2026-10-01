@@ -431,3 +431,67 @@ test("a connected account with no setup can be started", async ({ page }) => {
   ]);
   expect(onboardingPath("imap:new@example.com")).toContain("imap%3Anew%40example.com");
 });
+
+// -- dark mode (public issue #19) ----------------------------------------------------------
+// Dark is the console's default (lib/theme.ts); it is set here explicitly so the test does
+// not lean on that default. The light theme is not held to this yet: there the "done" and
+// "now" tags read at 2.6:1 and 3.6:1, under AA -- a shared Tag/token issue, not Setup's.
+
+/** WCAG contrast of each matched element's text against what is painted behind it,
+ * compositing translucent backgrounds (`bg-primary/5`) over their ancestors. */
+async function lowContrast(page: Page, selector: string): Promise<string[]> {
+  return page.evaluate((sel) => {
+    const parse = (c: string): number[] => {
+      const m = c.match(/[\d.]+/g);
+      if (!m) return [0, 0, 0, 0];
+      const [r, g, b, a] = m.map(Number);
+      return [r, g, b, a === undefined ? 1 : a];
+    };
+    const behind = (el: Element): number[] => {
+      const layers: number[][] = [];
+      for (let e: Element | null = el; e; e = e.parentElement) {
+        const bg = parse(getComputedStyle(e).backgroundColor);
+        if (bg[3] > 0) layers.push(bg);
+        if (bg[3] >= 1) break;
+      }
+      let out = [255, 255, 255];
+      for (const [r, g, b, a] of layers.reverse()) {
+        out = [r * a + out[0] * (1 - a), g * a + out[1] * (1 - a), b * a + out[2] * (1 - a)];
+      }
+      return out;
+    };
+    const lum = ([r, g, b]: number[]): number => {
+      const ch = (v: number) => {
+        const s = v / 255;
+        return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+    };
+    const bad: string[] = [];
+    for (const el of Array.from(document.querySelectorAll(sel))) {
+      const fg = lum(parse(getComputedStyle(el).color));
+      const bg = lum(behind(el));
+      const ratio = (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+      if (ratio < 4.5) bad.push(`${ratio.toFixed(2)} "${(el.textContent ?? "").trim().slice(0, 30)}"`);
+    }
+    return bad;
+  }, selector);
+}
+
+test("Setup reads at phone width in dark mode", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("iris-theme", "dark"));
+  await serve(page, fakeSetupApi([setupAt(ACCOUNT, "classify")]));
+  await page.goto("/setup", { waitUntil: "networkidle" });
+
+  expect(await page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(true);
+  await expect(page.getByTestId("current-step")).toContainText("Next: Classify");
+  // The step titles and tags, their results and the current step's prompt: AA (4.5:1).
+  const selector =
+    "ol[aria-label='Setup steps'] li span, ol[aria-label='Setup steps'] li pre, [data-testid='current-step'] p";
+  expect(await page.locator(selector).count()).toBeGreaterThan(5);
+  expect(await lowContrast(page, selector)).toEqual([]);
+  const sideways = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(sideways).toBeLessThanOrEqual(1);
+});

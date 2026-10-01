@@ -7,7 +7,7 @@
 #
 #   job quality      ruff -> black -> mypy -> lint-imports -> pytest (full) -> playground smoke
 #   job identity-scan  gitleaks + PII patterns over tracked files
-#   job webui        Playwright viewport smoke — NOT a CI job; see its section below
+#   job webui        Playwright specs — not in ci-linux.yml; the public CI's webui job; see below
 #
 # Usage:
 #   scripts/ci_local.sh              # both jobs, exactly what CI ran
@@ -194,8 +194,9 @@ fi
 # nav route (webui/tests/routes.ts) at 390x844 in WebKit, against canned fixtures, asserting the
 # screen did not crash, does not scroll sideways, and logs no console errors.
 #
-# HONESTLY NOT CI: the hosted workflow has no Node step and is disabled anyway.
-# This is a local gate only, and it runs by default ONLY when webui/ changed —
+# Not in ci-linux.yml (no Node step, and disabled anyway). The public CI's `webui` job
+# (.github/public/workflows/ci.yml) runs the same `npx playwright test` on every PR.
+# Here it runs by default ONLY when webui/ changed —
 # building the bundle and driving a browser costs ~40s, which is not worth paying
 # on a Python-only change.
 #

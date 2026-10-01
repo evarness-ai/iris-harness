@@ -27,7 +27,7 @@ What it shows:
 pytest examples/04-routine-to-telegram -q
 ```
 
-Expected output: `2 passed` in a few seconds. The test mounts the plugin beside a
+Expected output: `2 passed` in about 20 s (5 s with `--no-cov`). The test mounts the plugin beside a
 Telegram channel whose HTTP transport is `httpx.MockTransport` -- the real
 `TelegramConnector` builds the Bot API request, nothing leaves the machine -- then
 fires the job with `api.services.heartbeats.trigger_by_name("morning_note")`:
@@ -64,3 +64,29 @@ A routine is created through chat (or the web Routines screen) and approved by t
 owner; there is no stable API to create one from code, or to fire a job with a
 routine's `params`. The test therefore fires the job the way the scheduler does, and the
 routine path is described here rather than exercised.
+
+## Try changing
+
+The note's content is data. Add a line to `note.yaml`:
+
+```yaml
+lines:
+  - Stand-up at 9:30.
+  - Water the plants.
+  - Bins go out tonight.
+```
+
+and assert it arrived, in `test_the_note_is_scheduled_and_delivered_to_telegram`:
+
+```python
+        assert message["text"].endswith("- Bins go out tonight.")
+```
+
+Both tests pass: the faked Bot API received the new line, and the job still made no
+model call.
+
+## Next
+
+[`05-your-own-agent`](../05-your-own-agent/): a domain agent on the governed loop, with
+its own tools. Background: [Write a plugin](../../docs/guides/write-a-plugin.md) (the
+registration kinds, heartbeats among them).

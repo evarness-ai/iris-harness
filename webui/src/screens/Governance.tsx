@@ -130,6 +130,12 @@ function ProofBundleCard() {
               The ledger window ({data.ledger_rows} rows) and the session logs, exported in memory
               and verified offline. Ids, decisions, labels, tiers and digests only.
             </p>
+            {data.ledger_rows === 0 && (
+              <Notice>
+                Nothing recorded in this window yet, so each invariant holds over nothing. Ask
+                IRIS something in Chat and the check runs over what that turn wrote.
+              </Notice>
+            )}
             {(data.integrity ?? []).map((d) => (
               <Notice key={d} tone="danger">
                 {d}
@@ -217,7 +223,7 @@ function AuditTable() {
               key={d}
               type="button"
               onClick={() => setDecision(d)}
-              className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`min-h-[44px] px-2.5 py-1 text-xs font-medium transition-colors sm:min-h-0 ${
                 d === decision
                   ? "bg-primary/15 text-primary"
                   : "bg-bg text-fg-muted hover:bg-surface hover:text-fg"
@@ -254,7 +260,11 @@ function AuditTable() {
         loading={isLoading}
         error={isError}
         empty={entries.length === 0}
-        emptyText="No governance decisions recorded (the kernel is mostly shadow/off by default)."
+        emptyText={
+          data && data.total > 0
+            ? "No decisions match this filter."
+            : "No governance decisions yet. Every chat turn writes its decisions here: ask IRIS something in Chat, then come back."
+        }
       >
         <div className="space-y-2">
           {entries.map((e) => (

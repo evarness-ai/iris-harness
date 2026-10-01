@@ -70,7 +70,12 @@ What a plugin may import, and the deprecation rule that protects it, is the
 - **Every call is audited.** Each model call, tool call and answer writes a ledger row.
   A [proof bundle](docs/reference/proof-bundle.md) lets a CI job verify the email
   assistant's invariants offline: no personal data to a cloud model, no mailbox write
-  without an approval, every call and answer audited.
+  without an approval, every call and answer audited. Check them yourself:
+
+  ```bash
+  iris governance proof-bundle export --out bundle.json
+  iris governance proof-bundle verify bundle.json   # exit 0 verified, 1 a violation
+  ```
 - **The model-free guards hold.** In an adversarial battery of 14 probes against the
   full guard stack, 11 were fully defended; the misses were in model-based judges, and
   the deterministic guards held. Since then every answer, generated or not, passes the

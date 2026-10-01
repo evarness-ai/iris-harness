@@ -59,15 +59,40 @@ IRIS: I can sort your email, keep your to-dos and answer from your own documents
 Every model call and every answer audited: yes
 ```
 
-Next: write a plugin (`01`-`05`), test it (`06`).
-
 ## Run the checks
 
 ```bash
 pytest examples/00-quickstart -q
 ```
 
-Expected output: `3 passed` in under a minute. The test runs `iris doctor --json` and
+Expected output: `3 passed` in about 26 s (9 s with `--no-cov`). The test runs `iris doctor --json` and
 `iris email demo` as child processes, the way you type them, in a temporary home (the
 doctor's model-server probe goes to a closed local port, so its verdict is not
 "ready"), then the first turn.
+
+## Try changing
+
+Put a personal detail in the question and watch where the model calls were allowed to
+go. In `first_turn.py`, set
+
+```python
+QUESTION = "My email is sam@example.com. What can you help me with?"
+```
+
+and print each row's classification and tier as well:
+
+```python
+print(f"  {row.hook_point:<14} {row.plugin:<22} {row.decision:<6} {row.classification} {row.tier}")
+```
+
+Run `python examples/00-quickstart/first_turn.py` again: the `pre_llm_call` rows now say
+`personal` and name a local tier (`tier_1` for the router, `tier_2` for the answer),
+where the original question said `public`. The address was classified before any model
+saw it, and the egress gate allowed it only to local models.
+
+## Next
+
+[`01-deterministic-handler`](../01-deterministic-handler/): answer a question with no
+model at all, governed like a generated answer. Background:
+[Try the demo](../../docs/getting-started/demo.md) and
+[Architecture](../../docs/concepts/architecture.md).

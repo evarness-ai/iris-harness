@@ -627,6 +627,41 @@ def test_cli_yes_without_approve_writes_stops_at_step_6(
     assert "Scheduled sweep: on (email setup (onboard-" in status.output
 
 
+def test_a_setup_started_in_the_cli_resumes_in_the_web(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Public issue #19: start `iris email setup` in a terminal, finish it on the Setup
+    screen. The web console's API reads the run the CLI left, at the step it stopped,
+    and the owner's answer there resumes that same run -- nothing restarts."""
+    monkeypatch.setattr(
+        "iris_personal.plugins.email_workflows.onboarding_api.Onboarding",
+        lambda deps: Onboarding(deps, world.config),
+    )
+    invoke = _cli(world, monkeypatch)
+    started = invoke("--provider", "demo", "--yes")
+    assert started.exit_code == cli_setup.EXIT_WAITING, started.output
+    cli_state = world.machine().state(DEMO_ACCOUNT)
+    assert cli_state is not None
+
+    client = _client(world)
+    base = f"/api/v1/email/onboarding/{DEMO_ACCOUNT}"
+    seen = client.get(base).json()
+    assert seen["run_id"] == cli_state.run_id
+    assert seen["step"] == "label_approval" and seen["waiting_kind"] == DECISION
+    assert [s["step"] for s in seen["steps"] if s["done"]] == list(
+        STEPS[: STEPS.index("label_approval")]
+    )
+    overview = client.get("/api/v1/email/onboarding").json()
+    assert [s["account_id"] for s in overview["setups"]] == [DEMO_ACCOUNT]
+
+    with no_network():
+        done = client.post(base + "/approve-writes", json={"approve": True, "actor": "web:me"})
+    assert done.status_code == 200, done.text
+    assert done.json()["run_id"] == cli_state.run_id
+    assert done.json()["step"] == "first_digest"
+    assert world.writes.get(DEMO_ACCOUNT) is not None
+
+
 def test_cli_interactive_step_6_defaults_to_no(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -302,3 +302,118 @@ test("a call trace lists every hook decision of the turn, in order", async ({ pa
   });
   expect(overflow).toBeLessThanOrEqual(1);
 });
+
+/* A fresh install (OSS plan R17, public issue #20): no turn has run, so the ledger, the
+ * proof window and the trace list are empty. The bodies below are what the IRIS API
+ * answers on an empty IRIS_HOME. Each screen must say what to do next, never sit on a
+ * spinner, and never show the canned mock traces as if they were the owner's. */
+const FRESH: Record<string, unknown> = {
+  "/governance/state": {
+    enabled: true,
+    audit_db: "/home/owner/.iris/governance/audit.db",
+    audit_count: 0,
+    flags: [{ key: "IRIS_GOVERNANCE_ENABLED", label: "Kernel enabled", on: true }],
+  },
+  "/governance/audit": {
+    count: 0,
+    total: 0,
+    audit_db: "/home/owner/.iris/governance/audit.db",
+    callers: [],
+    entries: [],
+  },
+  "/governance/pii-shadow": {
+    mode: "off",
+    since: "2026-09-24T10:00:00+00:00",
+    rows: 0,
+    checked: {},
+    unobserved: {},
+    cells: [],
+  },
+  "/governance/proof-bundle/check": {
+    since: "2026-09-24T10:00:00+00:00",
+    until: null,
+    ledger_rows: 0,
+    ok: true,
+    integrity: [],
+    invariants: [
+      { id: "no-private-to-cloud", statement: "No private call to a cloud tier.", ok: true, violation_count: 0, violations: [], evidence: { model_call_rows: 0 } },
+      { id: "mailbox-write-approved", statement: "No mailbox write without an approval.", ok: true, violation_count: 0, violations: [], evidence: { approval_rows: 0, writes_observed: 0 } },
+      { id: "every-call-and-answer-audited", statement: "Every call and answer audited.", ok: true, violation_count: 0, violations: [], evidence: { model_calls_observed: 0, answers_observed: 0 } },
+    ],
+  },
+  "/api/traces": [],
+};
+
+async function serveFresh(page: Page): Promise<string[]> {
+  const errors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push(m.text());
+  });
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.route("**/*", async (route) => {
+    const type = route.request().resourceType();
+    if (type !== "fetch" && type !== "xhr") return route.continue();
+    const pathname = new URL(route.request().url()).pathname;
+    const fresh = Object.keys(FRESH).find((p) => pathname.endsWith(p));
+    const body = fresh ? FRESH[fresh] : fixtureFor(pathname);
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  return errors;
+}
+
+test("on a fresh install, Governance says what to do next", async ({ page }) => {
+  const errors = await serveFresh(page);
+  await page.goto("/governance", { waitUntil: "networkidle" });
+
+  await expect(page.getByText("Unexpected Application Error")).toHaveCount(0);
+  await expect(page.getByText("No governance decisions yet")).toContainText(
+    "ask IRIS something in Chat",
+  );
+  // The three invariants hold over nothing, and the card says so instead of a bare pass.
+  const invariants = page.getByTestId("proof-invariant");
+  await expect(invariants).toHaveCount(3);
+  for (let i = 0; i < 3; i++) await expect(invariants.nth(i)).toContainText("holds (nothing observed)");
+  await expect(page.getByTestId("proof-bundle")).toContainText("Nothing recorded in this window yet");
+  await expect(page.getByTestId("pii-shadow")).toContainText("IRIS_GOVERNANCE_OWNER_PII is off here");
+  expect(errors).toEqual([]);
+});
+
+test("a decision filter that matches nothing is not mistaken for a fresh install", async ({ page }) => {
+  await page.route("**/*", async (route) => {
+    const type = route.request().resourceType();
+    if (type !== "fetch" && type !== "xhr") return route.continue();
+    const url = new URL(route.request().url());
+    let body: unknown = fixtureFor(url.pathname);
+    if (url.pathname.endsWith("/governance/audit")) {
+      // Three rows in the ledger, none of them a transform.
+      body = url.searchParams.get("decision") === "transform"
+        ? { ...AUDIT_ALL, count: 0, entries: [] }
+        : AUDIT_ALL;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/governance", { waitUntil: "networkidle" });
+  await expect(page.getByTestId("audit-entry")).toHaveCount(3);
+
+  await page.getByRole("button", { name: "transform", exact: true }).click();
+  await expect(page.getByText("No decisions match this filter.")).toBeVisible();
+  await expect(page.getByText("No governance decisions yet")).toHaveCount(0);
+});
+
+test("on a fresh install, Call trace says what to do next, not mock traces", async ({ page }) => {
+  const errors = await serveFresh(page);
+  await page.goto("/calltrace", { waitUntil: "networkidle" });
+
+  const empty = page.getByTestId("calltrace-empty");
+  await expect(empty).toContainText("No turns traced yet");
+  await expect(empty).toContainText("Ask IRIS something in Chat");
+  await expect(page.getByText("mock data")).toHaveCount(0);
+  await expect(page.getByText("Loading trace")).toHaveCount(0);
+  await expect(page).toHaveURL(/\/calltrace$/);
+
+  const open = empty.getByRole("link", { name: "Open Chat" });
+  expect(await open.getAttribute("href")).toBe("/chat");
+  const box = await open.boundingBox();
+  expect(box?.height ?? 0, "Open Chat is a phone tap target").toBeGreaterThanOrEqual(44);
+  expect(errors).toEqual([]);
+});

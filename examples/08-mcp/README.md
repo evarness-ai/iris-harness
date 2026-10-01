@@ -17,7 +17,7 @@ other side, the client of external MCP servers -- behind an allowlist and signat
 pytest examples/08-mcp -q
 ```
 
-Expected output: `8 passed` in about fifteen seconds.
+Expected output: `8 passed` in about 32 s (16 s with `--no-cov`).
 
 ### Serve: IRIS's tools to an MCP client
 
@@ -102,3 +102,30 @@ checks `weather_server.py` answers a real MCP client.
   before IRIS may consume a server.
 - The server config lives under `config/coding-agent/mcp-servers.yaml`
   (`IRIS_MCP_SERVERS_CONFIG_PATH` overrides it), for the same reason.
+
+## Try changing
+
+Show that the signature covers the arguments, not only the program. In
+`test_a_signed_server_verifies_and_a_changed_one_does_not`, instead of pointing the
+entry at `other.py`, add an argument to it. `iris mcp sign` rewrites the file, so match
+the list item as it writes it:
+
+```python
+    servers.write_text(
+        servers.read_text(encoding="utf-8").replace(
+            "- weather_server.py", "- weather_server.py\n  - --debug"
+        ),
+        encoding="utf-8",
+    )
+```
+
+The test still passes: `iris mcp verify` rejects the entry ("signature does not match
+server spec (config or binary changed)"). The same holds for a changed `env`. The
+signature covers what runs; which persona may call which tool is the allowlist's job,
+checked by `mcp_allowlist` on every call.
+
+## Next
+
+This is the last example. Back to the [index](../README.md), or start your own plugin
+from the scaffold: [Write a plugin](../../docs/guides/write-a-plugin.md). What a plugin
+may import is the [stable API](../../docs/reference/stable-api.md).

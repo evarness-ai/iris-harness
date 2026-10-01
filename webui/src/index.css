@@ -32,6 +32,15 @@
 .react-flow__controls button:hover {
   background: var(--surface-raised);
 }
+/* React Flow draws its zoom and fit buttons at 26px. Below Tailwind's `sm` (the phone),
+   they get the 44px tap minimum every other control has; a desktop keeps the compact
+   size, as the `min-h-[44px] sm:min-h-0` controls do. */
+@media (max-width: 639.98px) {
+  .react-flow__controls button {
+    width: 44px;
+    height: 44px;
+  }
+}
 
 /* Pulse on the active node during replay. */
 @keyframes iris-pulse {

@@ -27,7 +27,7 @@ is `src/iris_personal/plugins/email_workflows/judge.yaml`.
 pytest examples/03-custom-categories -q
 ```
 
-Expected output: `2 passed` in a few seconds. The test copies IRIS's config directory,
+Expected output: `2 passed` in about 23 s (7 s with `--no-cov`). The test copies IRIS's config directory,
 adds this `judge.yaml` as `email/judge.yaml`, and runs the `email` profile on it with a
 scripted model:
 
@@ -56,3 +56,21 @@ on; `iris email judgments` lists the verdicts by your names.
   sweep; connecting one is not in the stable API yet (`provider_api` has no account
   call), so this example shows your categories taking effect in the running assistant,
   not a mailbox sorted into them.
+
+## Try changing
+
+Teach chat one more word of yours. In `judge.yaml`, add `receipt` to the `bill` words:
+
+```yaml
+  bill: [receipt, money, bill, statement, invoice, payment]
+```
+
+and in `test_custom_categories.py` set `CORRECTION = "the carpool email is a receipt"`.
+Both tests still pass: with your file the sentence is a correction, answered by
+`email_rebucket` with no model call; with the shipped file it is not.
+
+## Next
+
+[`04-routine-to-telegram`](../04-routine-to-telegram/): a job that runs on a schedule
+and reaches the owner through a channel. Background:
+[The email assistant](../../docs/guides/email.md) ("Your own categories").

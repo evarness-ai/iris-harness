@@ -183,13 +183,13 @@ jobs:
           "$RUNNER_TEMP/docs/bin/mkdocs" build --strict --site-dir "$RUNNER_TEMP/site"
 
   # The web console (webui/): what release.yml builds into the wheel must lint, type-check
-  # and build on every change, not first at tag time. It runs on every PR, webui/ changed
-  # or not: a workflow skipped by a `paths:` filter leaves a required check pending
-  # forever, and the job is about a minute.
+  # and build on every change, not first at tag time, and its Playwright specs must pass.
+  # It runs on every PR, webui/ changed or not: a workflow skipped by a `paths:` filter
+  # leaves a required check pending forever, and the job is a few minutes.
   webui:
     name: webui
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: webui
@@ -208,3 +208,13 @@ jobs:
         run: npx --no-install tsc --noEmit
       - name: Build
         run: npm run build
+      # The Playwright specs under webui/tests, as scripts/ci_local.sh runs them: the phone
+      # viewport smoke, nav gating, Setup, Governance and Call trace, against canned
+      # fixtures (no API). playwright.config.ts's webServer builds and serves `vite preview`
+      # itself (with CI set it never reuses a running server).
+      # Two engines: WebKit (iPhone 13, the target) and Chromium for the one
+      # service-worker spec, which Playwright runs only there.
+      - name: Install the Playwright browsers
+        run: npx --no-install playwright install --with-deps webkit chromium
+      - name: Playwright specs
+        run: npx --no-install playwright test

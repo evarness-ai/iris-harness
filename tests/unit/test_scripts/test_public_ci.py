@@ -10,7 +10,8 @@ read-only unless a job asks for more; checkout never persists credentials; no ``
 script interpolates event data (a PR title is attacker-controlled); the test matrix is
 the supported Python range; PyPI publishing is trusted publishing, never a token; the
 docs deploy writes Pages from ``main`` only, and only from its deploy job; the web console
-lints, type-checks and builds on every PR with release.yml's Node; Dependabot holds the
+lints, type-checks, builds and passes its Playwright specs on every PR with release.yml's
+Node, installing exactly the browsers those specs use; Dependabot holds the
 web console to minor and patch updates and moves React with its types.
 """
 
@@ -215,7 +216,21 @@ def test_the_webui_job_lints_typechecks_and_builds_on_every_pr() -> None:
         "npm run lint",
         "npx --no-install tsc --noEmit",
         "npm run build",
+        # The Playwright specs (viewport, nav gating, Setup, Governance, Call trace), after
+        # the build, with exactly the engines playwright.config.ts's projects use.
+        "npx --no-install playwright install --with-deps webkit chromium",
+        "npx --no-install playwright test",
     ]
+
+
+def test_the_webui_job_installs_exactly_the_browsers_the_specs_use() -> None:
+    config = (ROOT / "webui" / "playwright.config.ts").read_text(encoding="utf-8")
+    # Each project's device fixes its engine: iPhone 13 is WebKit, Pixel 7 Chromium.
+    devices = set(re.findall(r'devices\["([^"]+)"\]', config))
+    assert devices == {"iPhone 13", "Pixel 7"}, "a new project may need another browser"
+    job = _load(WORKFLOWS / "ci.yml")["jobs"]["webui"]
+    (install,) = [s["run"] for s in job["steps"] if "playwright install" in s.get("run", "")]
+    assert install.split()[-2:] == ["webkit", "chromium"]
 
 
 def test_the_docs_deploy_writes_pages_from_main_only() -> None:

@@ -12,7 +12,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card, Kpi } from '../components/Card';
 import { Tag } from '../components/Tag';
 import { IRISNode } from '../components/IRISNode';
@@ -44,7 +44,7 @@ function Toggle({
           key={o.value}
           type="button"
           onClick={() => onChange(o.value)}
-          className={`px-2.5 py-1 text-xs font-medium transition-colors ${
+          className={`min-h-[44px] px-2.5 py-1 text-xs font-medium transition-colors sm:min-h-0 ${
             o.value === value
               ? 'bg-primary/15 text-primary'
               : 'bg-bg text-fg-muted hover:bg-surface hover:text-fg'
@@ -64,6 +64,7 @@ export function CallTraceScreen() {
   const tid = traceId ?? '';
   const [summaries, setSummaries] = useState<TraceSummary[]>([]);
   const [source, setSource] = useState<Source>('mock');
+  const [listed, setListed] = useState(false);
   const [trace, setTrace] = useState<Trace | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
@@ -87,6 +88,7 @@ export function CallTraceScreen() {
     listTraces().then(({ source: src, traces }) => {
       setSource(src);
       setSummaries(traces);
+      setListed(true);
       // No trace in the URL → redirect to the newest (deep-linkable default).
       if (!traceId && traces[0]) navigate(`/calltrace/${traces[0].trace_id}`, { replace: true });
     }).catch(() => {
@@ -225,6 +227,27 @@ export function CallTraceScreen() {
     setStep(0);
   };
 
+  // A fresh install: the API is up and has traced no turn yet. Without this the screen
+  // would wait on "Loading trace…" for a trace that does not exist.
+  if (listed && source === 'live' && summaries.length === 0 && !tid) {
+    return (
+      <div data-testid="calltrace-empty">
+        <Card title="No turns traced yet">
+          <p className="text-sm text-fg-muted">
+            Every chat turn is traced here: each model call, tool call and governance
+            decision, in order, with where it ran. Ask IRIS something in Chat, then come back.
+          </p>
+          <Link
+            to="/chat"
+            className="mt-4 inline-flex min-h-[44px] items-center rounded-lg border border-border px-3 text-sm text-fg hover:bg-surface-raised"
+          >
+            Open Chat
+          </Link>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       {/* Trace selector + view controls */}
@@ -255,7 +278,7 @@ export function CallTraceScreen() {
           <button
             type="button"
             onClick={() => setVerbose((v) => !v)}
-            className={`rounded-lg border px-2.5 py-1 text-xs font-medium ${
+            className={`min-h-[44px] rounded-lg border px-2.5 py-1 text-xs font-medium sm:min-h-0 ${
               verbose ? 'border-warning/50 bg-warning/15 text-warning' : 'border-border bg-bg text-fg-muted hover:bg-surface'
             }`}
           >

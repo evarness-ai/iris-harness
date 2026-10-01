@@ -10,8 +10,8 @@
  *
  * This is a layout gate, not a functional one: the fixtures make every screen
  * render its empty state, which is the widest a fixed layout gets and the
- * cheapest thing to keep deterministic. It runs only when webui/ changed
- * (scripts/ci_local.sh --webui). */
+ * cheapest thing to keep deterministic. It runs in the public CI's `webui` job on every
+ * PR, and locally when webui/ changed (scripts/ci_local.sh --webui). */
 import { test, expect, type ConsoleMessage, type Page } from "@playwright/test";
 import { navRoutes } from "./routes";
 import { SHEET_REMINDER_ID, fixtureFor } from "./fixtures";
@@ -34,9 +34,7 @@ const ROUTES = [
  * screen that improves fails here until its number comes down, so the list can
  * never quietly drift out of date and hide a later regression. */
 const TAP_TARGETS: Record<string, number> = {
-  "/calltrace": 12,
   "/documents": 5,
-  "/governance": 5,
   "/devices": 2,
   "/sessions": 2,
   "/twin": 1,

@@ -1,0 +1,228 @@
+# The email judge (loop-proof PR 5, plan D10-D12, D15): every non-promo email lands in
+# exactly one bucket, one row in `email_judgments`, one IRIS/* Gmail label. Every word the
+# judge and its surfaces use is here; the code is mechanism only. Override from
+# <config_dir>/email/judge.yaml (a top-level key there replaces the shipped one).
+
+# The buckets, in the order surfaces list them. `label` is the Gmail label the burst
+# writes (nested under IRIS/); `name` is how the digest, the card and chat say it.
+buckets:
+  bill:
+    name: Bill
+    label: IRIS/Bill
+    definition: >-
+      Money the owner must pay or has just paid on a bill: a statement is ready, an
+      amount or minimum is due, an invoice, an autopay or payment confirmation for a card,
+      loan or utility bill. NOT bill (use fyi): transaction or withdrawal alerts, balance,
+      limit or loan-offer updates, cost or usage warnings, offers from a bank.
+  event:
+    name: Event
+    label: IRIS/Event
+    definition: >-
+      The owner or their family is booked, confirmed or personally invited to be somewhere
+      at a specific date and time: an appointment, a meeting, a class, a school day or
+      school event, a reservation, a flight. NOT event (use fyi): orders, shipping and
+      delivery updates, sales, offers, memberships, webinars or conferences being
+      marketed, registrations that just opened, newsletters.
+  needs_reply:
+    name: Needs reply
+    label: IRIS/Needs-Reply
+    definition: >-
+      A real person wrote to the owner personally and is waiting for the owner's answer:
+      a question, an invitation, a request or a decision. NOT needs_reply (use fyi):
+      anything sent by a company system or a no-reply address - account notices,
+      password resets, "action required" or "verify" emails, surveys and feedback
+      requests, job alerts, subscription or renewal notices.
+  fyi:
+    name: FYI
+    label: IRIS/FYI
+    definition: >-
+      Everything else that needs nothing from the owner: newsletters, news, notices,
+      receipts, shipping updates, account and security notices, offers, job alerts.
+      When in doubt between fyi and another bucket, choose fyi.
+  unsure:
+    name: Unsure
+    label: IRIS/Unsure
+    definition: You truly cannot tell what the email is (too little text to judge).
+
+# Mail in these Gmail tabs is not judged: the promo track (#594-#603) owns it.
+# UPDATES stays in (bank notices land there).
+skip_labels:
+  - CATEGORY_PROMOTIONS
+  - CATEGORY_SOCIAL
+  - CATEGORY_FORUMS
+  # The owner's own mail and junk are not judged either.
+  - SENT
+  - DRAFT
+  - SPAM
+  - TRASH
+
+# Only a real person's email can need a reply. A verdict in one of these buckets from an
+# automated sender (a word below in the address before the @) becomes `else`. Measured on
+# 100 real emails: without this the model still called ~1 in 3 system notices ("verify
+# your account", "we value your feedback") needs_reply.
+person_only:
+  buckets: [needs_reply]
+  else: fyi
+  automated_sender_words:
+    - noreply
+    - no-reply
+    - no_reply
+    - donotreply
+    - do-not-reply
+    - alert
+    - notification
+    - notify
+    - newsletter
+    - mailer
+    - update
+    - info
+    - news
+    - marketing
+    - support
+    - help
+    - service
+    - team
+    - hello
+    - account
+    - billing
+    - statement
+    - jobs
+    - careers
+    - digest
+    - offers
+    - feedback
+    - survey
+    - marketplace
+
+# Below this confidence a judgment is recorded as `unsure` (the owner's decision 2026-09-26;
+# the Settings value IRIS_EMAIL_JUDGE_UNSURE_BELOW overrides it).
+unsure_below: 0.7
+
+# How much of the body the judge reads (fetched live, never stored).
+body_chars: 4000
+
+# Only mail received in the last this-many hours is queued for the judge (and hidden
+# until judged); older mail the sweep stores is released at once, unjudged. A first
+# connection or a stale Gmail cursor re-fetches up to 30 days of mail — much of it
+# already shown — and that must not vanish for days behind the per-run cap. 72 hours
+# covers the longest gap between judge runs with room for a Mac asleep a weekend.
+queue_hours: 72
+
+# What the owner can call a bucket in chat or on the card ("that's not a bill",
+# "it needs a reply"). Longest match wins.
+bucket_words:
+  bill: [bill, statement, invoice, payment]
+  event: [event, appointment, meeting, booking, reservation]
+  needs_reply: [needs a reply, needs reply, reply, answer, respond]
+  fyi: [fyi, just info, info, informational, nothing to do]
+  promo: [promo, promotion, ad, marketing, spam]
+
+# The judge prompt. {today}, {week} (the next 7 dates with weekdays), {tz},
+# {bucket_definitions}, {hints} and {triage_hint} are
+# filled in at call time; the email follows as the user message.
+prompt: |-
+  Today is {today} ({tz}). The next days are: {week}.
+  You sort ONE email into exactly one bucket.
+
+  Buckets:
+  {bucket_definitions}
+
+  Rules:
+  - Copy a figure or date only if it is literally in the email; otherwise null.
+  - A balance marked "CR" (or "credit") is a credit_balance, never money owed.
+  - min_due is the minimum payment; statement_balance is the full/new balance. Keep them apart.
+  - Dates are ISO (YYYY-MM-DD, or YYYY-MM-DDTHH:MM for a time), resolved against today.
+  - confidence is 0..1: how sure you are of the bucket.
+  {triage_hint}{hints}
+
+
+# The lines the judge fills in around the prompt. {hints} is one hint_line per past
+# correction the owner made to mail from this sender (the learning effect); {triage_hint}
+# is triage_hint_line when the classifier learned a category for the email. The email
+# itself is the user message, as email_message ({body} is the live body, or the stored
+# snippet when the body could not be read).
+hint_line: '- The owner filed mail from this sender "{subject}" as {bucket}.'
+triage_hint_line: '- An earlier classifier filed this email under "{category}" (a hint only).'
+email_message: |-
+  From: {sender}
+  Subject: {subject}
+
+  {body}
+
+# The owner's corrections: the Action Center card (Unsure emails only), chat and the web
+# list (Inbox -> Judged). Every surface calls apply_correction; these are its words.
+rebucket:
+  # How the owner's "promo" answer reads (it is not one of the judge's buckets).
+  promo_name: Promo
+  card:
+    tag: unsure email
+    title: What is this email?
+    promo_choice: Promo — hide it
+    guess: "{bucket} (confidence {confidence})"
+    note: >-
+      Your answer moves its Gmail label, and mail like it from this sender is judged the
+      same way next time.
+    answered: "✓ {bucket} — label moved to {label}."
+    answered_no_labels: "✓ {bucket}."
+    answered_promo: "✓ Promo — its IRIS label comes off, and mail from this sender is not judged again."
+  chat:
+    # The emails a correction may name: judged in the last this-many days.
+    window_days: 14
+    # A turn names "the X email" with one of these (a bare "X is promo" needs none).
+    email_words: [email, emails, mail, message, newsletter]
+    # Words that say which email, never who it is from.
+    filler_words: [the, that, this, those, these, a, an, my, one, from, about, their, its]
+    # "the X email isn't FYI" — a bucket after one of these is what it is NOT. A turn
+    # that names no bucket but denies one ("the X email isn't FYI") is asked which.
+    negations: [not, "isn't", isnt, "aren't", "wasn't", "shouldn't", "doesn't", never, no longer]
+    # What joins the email to its bucket ("is", "needs", "should be").
+    links: [is, are, was, should be, needs, need, belongs in, goes in, "isn't", isnt, is not, "wasn't"]
+    # A turn that starts like a question is asked, not told.
+    question_starts: [is, are, was, what, which, why, how, when, does, did, do, can, could, should, would, will]
+    # "what did you judge today?" — the counts line.
+    judged_today: [what did you judge today, what have you judged today, what did you judge, judged today]
+    replies:
+      changed: >-
+        ✓ "{subject}" from {sender} is now **{bucket}** (was {previous}). I moved its Gmail
+        label to {label}, and I'll judge mail like it from them the same way next time.
+      changed_no_labels: >-
+        ✓ "{subject}" from {sender} is now **{bucket}** (was {previous}), and I'll judge
+        mail like it from them the same way next time.
+      changed_promo: >-
+        ✓ "{subject}" from {sender} is now **Promo** (was {previous}). I took its IRIS label
+        off, and I won't judge mail from them again.
+      already: '"{subject}" is already **{bucket}**, so nothing to change.'
+      ambiguous: "Which email did you mean? {choices}. Tell me the sender or a word from the subject."
+      which_bucket: 'What should "{subject}" from {sender} be: {buckets}?'
+      not_found: >-
+        I couldn't find a judged email like "{words}" in the last {days} days. Inbox →
+        Judged lists them all.
+      counts: "Judged today: {counts}. Inbox → Judged lists them."
+      counts_none: "I haven't judged any email today."
+
+# The judge in the morning digest (Inbox group).
+digest:
+  # "## Needs reply (N)": effective needs_reply emails the owner has not answered, newest
+  # first. Each leaves when the owner replies in the thread, re-buckets it, or it ages
+  # out (config/digest.yaml `expiry.needs_reply_days`).
+  needs_reply_title: "Needs reply ({count})"
+  needs_reply_empty_title: Needs reply
+  needs_reply_empty: Nothing waiting on you.
+  needs_reply_item: "{sender}: {subject}"
+  needs_reply_max: 10
+  # The provider labels on the owner's own sent mail: one in the thread, dated after
+  # the email, means the owner replied.
+  sent_labels: [SENT]
+  # One line: what the judge did yesterday. The unsure / waiting parts only when non-zero.
+  judged_line: "Judged yesterday: {total}"
+  judged_part: "{count} {name}"
+  unsure_part: "{count} unsure — please teach me (Action Center)"
+  waiting_part: "{count} waiting for the judge (hidden until judged at the next run)"
+  # The footer's "learned yesterday" phrase for one correction, by where it came from.
+  learned: "{sender} → {bucket} ({how})"
+  learned_how:
+    gmail: you relabelled it in Gmail
+    card: your answer on the card
+    chat: you said so in chat
+    web: you changed it on the web
+    cli: you changed it from the command line

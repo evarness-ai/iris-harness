@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/evarness-ai/iris-harness/discussions
+    about: Ask how to do something, or float an idea before it is actionable work.
+  - name: Security vulnerability
+    url: https://github.com/evarness-ai/iris-harness/security/advisories/new
+    about: Report it privately. Never in a public issue.

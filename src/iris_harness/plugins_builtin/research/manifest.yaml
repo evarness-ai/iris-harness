@@ -1,0 +1,97 @@
+name: research
+version: 0.1.0
+description: >-
+  Web access as a reference plugin: one `research` tool over a pluggable provider
+  chain (SearXNG -> Tavily -> Brave -> DuckDuckGo), TTL cache, Trafilatura
+  extraction and blended rerank, plus the opt-in `research` persona on the
+  harness's own governed loop. Carries its egress guards with it -- it refuses to
+  web-search the user's own finances (ADR-0102) and strips their name and email
+  before any query leaves the machine (issue 0031).
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+provides:
+  - tool
+  - intent_handler
+tools:
+  research:
+    effect: read
+    # Web pages and search snippets: text third parties wrote, scanned for injected
+    # instructions before the model sees it.
+    content: external
+    # Its arguments go to a web search provider: the owner-PII guards' web-search column
+    # applies to its calls (ADR-0125).
+    sends_to: search_engine
+    pinned: true   # the prompt sends anything current here; keep it on the menu
+
+# The search providers setup() adds to the research chain (api.register_search_provider);
+# a name not listed here is refused. Their order is config/search_providers.yaml.
+search_providers:
+  - searxng
+  - tavily
+  - exa
+  - brave
+  - ddg
+
+# ADR-0120: every IRIS_* setting this plugin reads, for the settings catalog.
+settings:
+  IRIS_REDIS_URL:
+    kind: url
+    default: redis://localhost:6379/0
+    applies: restart
+    label: Research Redis URL
+    description: Redis URL for the research result cache when the Redis backend is selected.
+    tab: none
+    editable: false
+    not_editable_reason: URL
+  IRIS_RESEARCH_CACHE:
+    kind: enum
+    default: sqlite
+    applies: restart
+    label: Research cache backend
+    description: 'Selects the research cache: sqlite (default), redis (falls back to sqlite), or
+      off/none to disable.'
+    tab: agents
+  IRIS_RESEARCH_CRAWLER:
+    kind: enum
+    default: trafilatura
+    applies: now
+    label: Research page extractor
+    description: 'Selects the research page extraction backend: crawl4ai, otherwise trafilatura
+      fetch-and-extract.'
+    tab: advanced
+  IRIS_RESEARCH_NEWS_SOURCES:
+    kind: path
+    default: plugins_builtin/research/news_sources.yaml
+    applies: now
+    label: News sources trust file
+    description: Path of the YAML file giving per-domain trust scores for news search ranking.
+    tab: none
+    editable: false
+    not_editable_reason: file path
+  IRIS_RESEARCH_RERANKER:
+    kind: enum
+    default: null
+    applies: restart
+    label: Research reranker
+    description: Set to bge or cross-encoder to rerank research results with a cross-encoder; any
+      other value leaves order unchanged.
+    tab: agents
+  IRIS_RESEARCH_RERANKER_MODEL:
+    kind: str
+    default: BAAI/bge-reranker-base
+    applies: restart
+    label: Research reranker model
+    description: sentence-transformers CrossEncoder model used to rerank research results when IRIS_RESEARCH_RERANKER
+      is 'bge' or 'cross-encoder'.
+    tab: models
+  IRIS_SEARXNG_URL:
+    kind: url
+    default: null
+    applies: now
+    label: SearXNG URL
+    description: Base URL of a self-hosted SearXNG instance; when set it becomes the first research
+      search provider.
+    tab: none
+    editable: false
+    not_editable_reason: URL

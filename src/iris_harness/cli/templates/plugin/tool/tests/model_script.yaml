@@ -1,0 +1,13 @@
+# The scripted model the test runs on: ordered rules, the first that matches answers
+# (see iris_harness.testing.use_fake_model). No model server, no network.
+rules:
+  - name: answer from the tool
+    match:
+      user: '(?s)Observation:.*"words": 4'
+    reply:
+      content: "Thought: I have the count.\nFinal Answer: That text has 4 words."
+  - name: call the tool
+    match:
+      user: "User: How many words are in"
+    reply:
+      content: "Thought: Count them with the tool.\nAction: __tmpl_tool\nAction Input: {\"text\": \"the quick brown fox\"}"

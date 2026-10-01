@@ -1,0 +1,13 @@
+# The plugin's contract with IRIS (docs/architecture/plugin-contract.md).
+name: __tmpl_name
+version: 0.1.0
+description: __tmpl_title -- __tmpl_summary.
+entrypoint: plugin:setup
+# A mail provider registers with the email slice (register_mail_provider), not through
+# one of the six PluginAPI kinds.
+provides: []
+# The owner's addresses this provider signs in to: the only kind its identity source may
+# return (anything else is dropped and charged to the plugin).
+identity:
+  provides:
+    - email

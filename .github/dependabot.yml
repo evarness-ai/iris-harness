@@ -1,0 +1,39 @@
+# Dependabot (OSS plan R11): weekly, grouped, for the Python dependencies (poetry.lock),
+# the workflows' pinned actions and the web console's npm packages. The commit prefix
+# makes each PR title pass the pr-title check (`build(deps): ...`).
+version: 2
+updates:
+  - package-ecosystem: pip # reads pyproject.toml + poetry.lock
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      python-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /webui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build
+      include: scope
+    groups:
+      webui-minor-patch:
+        update-types: [minor, patch]

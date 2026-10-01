@@ -1,0 +1,48 @@
+# `iris doctor` -- the install preflight (OSS plan R5, milestone L1).
+#
+# Thresholds and the starter model set live here, not in code. The supported Python
+# range is not repeated: doctor reads it from the installed package's metadata
+# (pyproject's `python = ">=3.12,<3.14"`).
+
+# Host memory, total (not free). Below `demo_gb` IRIS cannot run; between the two it
+# runs the synthetic demo on the scripted model but not local models for real use.
+ram:
+  floor_gb: 16
+  demo_gb: 8
+
+# Where IRIS runs (platform.system() / platform.machine(), lowercased). Anything else
+# is a warning; native Windows is refused with a pointer to WSL2.
+platforms:
+  darwin: [arm64]
+  linux: [x86_64, amd64, aarch64, arm64]
+
+# Free space on the volume under IRIS_HOME: the missing starter models' size (below)
+# plus this much for data (mail stores, indexes, the audit ledger). Below that is a
+# failure; below `warn_free_gb` a warning.
+disk:
+  data_headroom_gb: 2
+  warn_free_gb: 20
+
+# The starter model set: what `iris doctor --fix` pulls when it is missing. R5 plans a
+# single-model `starter` set gated on the models-by-capability ADR's proof (draft, not
+# merged); until that lands the fallback starter is `qwen2.5:7b-instruct` alone.
+# `size_gb` is the download size shown before a pull (Ollama's API cannot say it before
+# the pull starts).
+starter_models:
+  - name: qwen2.5:7b-instruct
+    size_gb: 4.7
+
+# Optional extras: reported as information, never a failure. `module` is what is
+# importable when the extra is installed.
+optional_extras:
+  # Without it the Gmail plugin does not load, so an unnamed run stays on the `default`
+  # profile and there is no `iris email` (config/profiles/default.yaml).
+  - name: email
+    module: googleapiclient
+    purpose: the email assistant (`iris email`, Gmail)
+  - name: phoenix
+    module: phoenix
+    purpose: local Phoenix trace UI
+  - name: ml
+    module: sentence_transformers
+    purpose: semantic email discovery and BGE rerank

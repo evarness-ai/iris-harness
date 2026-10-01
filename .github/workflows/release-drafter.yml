@@ -1,0 +1,29 @@
+name: release-drafter
+
+# Updates the draft release for the next version after every merge to main
+# (.github/release-drafter.yml says how). Runs on `push` only: nothing from a fork's pull
+# request runs with the write token this job holds.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-drafter
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    name: release-drafter
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # create and edit the draft release
+      pull-requests: read # read the merged PRs' titles and labels
+    steps:
+      # The `token` input defaults to the job's GITHUB_TOKEN (scoped above).
+      - uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0

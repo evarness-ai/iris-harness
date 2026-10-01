@@ -1,0 +1,47 @@
+# IRIS eval image — runs the crystallized replay-eval pre-flight in isolation
+# (ADR-0070, IRIS_EVAL_SANDBOX=docker). Unlike the general code-exec image, this
+# one has the full IRIS package + deps installed so `iris_harness.services.learning.eval_replay_cli`
+# can build a real (isolated) runtime inside the container.
+#
+# Build from the repo root:
+#   docker build -f src/iris_harness/sandbox/Dockerfile.eval -t iris-eval:latest .
+#
+# Run (the host driver in iris_harness.services.learning.eval_docker does this for you):
+#   docker run --rm --runtime=runsc --add-host=host.docker.internal:host-gateway \
+#     -e OLLAMA_BASE_URL=http://host.docker.internal:11434 \
+#     -v /tmp/workload.json:/eval/workload.json:ro \
+#     iris-eval:latest python -m iris_harness.services.learning.eval_replay_cli \
+#     --intent calendar --workload /eval/workload.json
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    POETRY_VIRTUALENVS_CREATE=false
+
+# build-essential + portaudio headers: some main deps (webrtcvad, pyaudio) are
+# C extensions with no aarch64 wheels and must compile from source. (The eval
+# itself doesn't use audio, but they're in the main dependency set.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates build-essential portaudio19-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Match the host Poetry major (2.x) so the lock file is read without a downgrade warning.
+RUN pip install --no-cache-dir "poetry>=2.0,<3.0"
+
+WORKDIR /app
+
+# Dependencies first (layer-cached); then the project source.
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --no-root --no-interaction || poetry install --no-root --no-interaction --no-ansi
+COPY . .
+RUN poetry install --no-interaction || poetry install --no-interaction --no-ansi
+
+# Eval defaults: no model warmup, no external side effects. IRIS_AUTH_SECRET is
+# passed at runtime (-e) by the host driver, not baked into the image.
+ENV IRIS_DISABLE_WARMUP=1 \
+    IRIS_DISABLE_EXTERNAL_WRITES=1 \
+    IRIS_EVAL_SANDBOX=off
+
+CMD ["python", "-m", "iris_harness.services.learning.eval_replay_cli", "--help"]

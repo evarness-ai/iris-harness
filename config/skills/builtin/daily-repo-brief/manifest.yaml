@@ -1,0 +1,36 @@
+name: daily-repo-brief
+version: 0.1.0
+description: Daily brief listing top GitHub Trending repositories.
+author: iris
+license: Apache-2.0
+kind: brief
+brief:
+  subject: "IRIS Daily Repo Brief"
+  recipient: "user"
+  uses:
+    - web-fetch
+  layout: |
+    Daily top repos for {{date}}.
+
+    {{top_repos}}
+  slots:
+    date:
+      kind: literal
+      value: "{today:%A, %B %d, %Y}"
+    top_repos:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: git
+        category: git-repositories
+        limit: 10
+      format: bullets
+      item_template: "{title} — {description}"
+      empty: "GitHub trending unavailable."
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

@@ -1,0 +1,17 @@
+name: imap
+version: 0.1.0
+description: >-
+  The IMAP provider: any mailbox reachable over IMAP with an app password (OSS plan
+  R3). Incremental sync (UIDVALIDITY + UID high-water mark) into the core email
+  store, message bodies and attachments on demand, IRIS labels as $-keywords, and
+  moves to the server's Trash and back. Connection details and the app password
+  live in the vault; `iris auth imap` adds, checks and removes an account. Every
+  mailbox write is refused until the account has a recorded write approval (R4).
+  It registers as the mail provider for `imap:` accounts through the core's
+  `email.providers` registry and reports one credential row per account to System
+  Health; it registers nothing of the six PluginAPI kinds, so `provides` is empty.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+cli: cli:register
+provides: []

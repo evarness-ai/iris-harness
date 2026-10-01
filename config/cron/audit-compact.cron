@@ -1,0 +1,8 @@
+# IRIS audit compaction (Phase 5)
+# Runs every day at 02:30 local time.
+#
+# Install example:
+#   crontab -e
+#   30 2 * * * /path/to/.venv/bin/iris audit compact >> /var/log/iris-audit-compact.log 2>&1
+
+30 2 * * * iris audit compact

@@ -1,0 +1,74 @@
+# How the Memory Map draws what memory holds (memory/graph.py; ADR-0115).
+#
+# The map is a view computed from memris statements and a few other records. It knows
+# no vocabulary: an edge's label is its property's label in ontology.yaml, and which
+# records become which edges is mappings.yaml. This file holds only what is about
+# DRAWING: how names fold together, and which colour group a class belongs to.
+
+# Names that mean the same thing when read out of text (a summary's "Referenced" line).
+# The same institution can appear as "Northwind" in one place and "Northwind Bank" in another.
+# Normalisation handles case, spacing and a few trailing company words; a genuine merge
+# is an owner decision and lives here. Left = what appears, right = what it counts as.
+aliases: {}
+  # Northwind: Northwind Bank
+  # Wingtip: Wingtip Bank
+
+# Trailing words dropped when comparing names ("Acme Bank Ltd" == "Acme Bank").
+suffixes:
+  - ltd
+  - ltd.
+  - limited
+  - inc
+  - inc.
+  - llc
+  - plc
+  - pvt
+  - private
+
+# Items a summary section lists that are not names at all.
+empty_items: [none, "n/a", "-"]
+
+# Which summary mentions earn a node (Map cleanup plan decision 8, ADR-0119).
+# A name that is a memris entity is always drawn. Any other name is drawn only when at
+# least `min_sessions` different conversations list it: a one-off mention stays in the
+# summary text, where recall still finds it. `never_draw` holds SHAPES that are never a
+# name (regular expressions, searched anywhere in the item) — not names themselves.
+drawn_mentions:
+  min_sessions: 2
+  never_draw:
+    # an ID: a run of 6+ hex characters with a digit in it (UUIDs, run and event IDs)
+    - '(?i)\b(?=[0-9a-f]*\d)[0-9a-f]{6,}\b'
+    # "label: value" — "approval ID: …", "Reminder: …", a time like 10:00
+    - '^[^:]{1,40}:'
+    # an email address
+    - '[^@\s]+@[^@\s]+\.\w{2,}'
+    # a path, or a file name with an extension ("design.md", ".ics")
+    - '/'
+    - '^\S*\.[A-Za-z0-9]{1,5}$'
+    # a bare number, date or time ("2026", "2026-05-08 16:10")
+    - '^[\d\s:./-]+$'
+    # a code identifier ("morning_brief")
+    - '^[a-z0-9]+(_[a-z0-9]+)+$'
+    # no capital letter at all: a common noun ("user", "bank", "insurance dues"), not a
+    # name. A memris entity written in lower case is still drawn from its fact.
+    - '^[^A-Z]*$'
+    # nine words or more: a headline or a sentence, not a name
+    - '^(?:\S+\s+){8,}\S'
+
+# The Map's colour groups. A node's group is the first class up its subclass chain that
+# is listed here (Organization → Entity → entity). The web UI colours and filters by
+# these names, so a new group needs a colour there too.
+groups:
+  Entity: entity
+  Conversation: session
+  Lesson: lesson
+  Pattern: pattern
+
+# A statement with a literal value (email, role …) is drawn as its own node, in this group.
+attribute_group: fact
+
+# The owner — the centre of the map.
+owner:
+  id: you
+  group: you
+  label: You

@@ -1,0 +1,46 @@
+name: Feature or plugin idea
+description: A concrete change to the harness, the SDK, or a plugin you want built.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Still exploring? Start a Discussion instead; an issue is work someone can pick up.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: The proposal
+    validations:
+      required: true
+  - type: dropdown
+    id: shape
+    attributes:
+      label: Where does it live?
+      description: The core carries mechanisms; features belong in plugins (`iris plugin new`).
+      options:
+        - A new plugin (tool, channel, mail provider, research provider, skill)
+        - A change to an existing plugin
+        - A change to the stable tier (SDK, PluginAPI kinds, manifest schema)
+        - A change to the core or the governance kernel
+    validations:
+      required: true
+  - type: textarea
+    id: why-core
+    attributes:
+      label: If it is not a plugin, why not?
+  - type: textarea
+    id: governance
+    attributes:
+      label: Governance impact
+      description: Does it add a tool, a model call, a mailbox or network write, or data leaving the machine? How is it gated and audited?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

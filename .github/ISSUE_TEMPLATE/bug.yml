@@ -1,0 +1,66 @@
+name: Bug report
+description: Something in IRIS does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issue? Do not file it here: use the Security tab, "Report a vulnerability".
+        Remove secrets, tokens and personal data (email contents, addresses) from everything below.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands. A reproduction on `iris email demo` or the scripted fake model is best.
+      placeholder: |
+        1. iris doctor
+        2. iris email demo
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: IRIS version or commit
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you run it
+      options:
+        - uv tool / pipx
+        - Docker Compose
+        - Clone + Poetry
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Python version
+      placeholder: macOS 15 (Apple Silicon), Python 3.12
+    validations:
+      required: true
+  - type: input
+    id: models
+    attributes:
+      label: Model backend and models
+      placeholder: Ollama, qwen2.5:7b-instruct
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, traces or `iris doctor` output
+      render: text

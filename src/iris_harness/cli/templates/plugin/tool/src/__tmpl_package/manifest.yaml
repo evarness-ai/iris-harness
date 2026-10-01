@@ -1,0 +1,16 @@
+# The plugin's contract with IRIS (docs/architecture/plugin-contract.md).
+name: __tmpl_name
+version: 0.1.0
+description: __tmpl_title -- __tmpl_summary.
+entrypoint: plugin:setup
+provides:
+  - tool
+tools:
+  __tmpl_tool:
+    # read: leaves the owner's world as it was. A tool that changes something is
+    # `effect: write` (the loop asks once before the first write of a run); one that
+    # removes the owner's data is `effect: destructive` (approved per call).
+    effect: read
+    # internal: the owner's or IRIS's own data. Text a third party wrote is `external`,
+    # and every result is then scanned for injected instructions before the model reads it.
+    content: internal

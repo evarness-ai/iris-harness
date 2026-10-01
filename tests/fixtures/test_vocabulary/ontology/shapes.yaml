@@ -1,0 +1,8 @@
+# What is valid for the test vocabulary: one bank, broker, insurer and currency; any
+# number of cards (a person holds several, and closing one is an explicit end).
+Person:
+  properties:
+    tv:currency:    { max_count: 1 }
+    tv:banks_with:  { max_count: 1 }
+    tv:invests_with: { max_count: 1 }
+    tv:insured_by:  { max_count: 1 }

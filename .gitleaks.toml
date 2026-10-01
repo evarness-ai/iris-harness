@@ -1,0 +1,57 @@
+# gitleaks config for the IRIS harness (OSS plan release gate 6).
+# Default ruleset plus allowlists for known-synthetic test material.
+title = "iris-harness"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic fixtures and documented placeholders"
+paths = [
+  '''poetry\.lock''',
+  '''webui/package-lock\.json''',
+  '''\.gitleaks\.toml''',
+  '''scripts/oss_pii_patterns\.txt''',
+  # vendored / generated trees (the scan copies tracked files only; kept for a direct
+  # `gitleaks dir .` run)
+  '''^\.venv/''',
+  '''^\.git/''',
+  '''node_modules/''',
+  '''^htmlcov/''',
+  '''^data/''',
+  '''^graphify-out/''',
+  '''\.mypy_cache/''',
+  '''\.ruff_cache/''',
+  '''\.pytest_cache/''',
+  '''__pycache__/''',
+  '''^\.coverage$''',
+  # the local, gitignored env file (never committed; the scan runs on the working tree)
+  '''^\.env$''',
+  # Tests that exercise secret DETECTION with deliberately fake tokens.
+  # These are anchored paths, so a package move silently un-allowlists the file and
+  # gitleaks starts reporting its fixtures as leaks. All three were stale -- M6.1b moved
+  # the first, M6.2 layers 2 and 5 moved the others -- and nothing said so, because
+  # gitleaks is not installed on the machine the suite usually runs on.
+  # `tests/unit/test_scripts/test_gitleaks_allowlist.py` now fails when one goes stale.
+  '''^tests/unit/iris_harness/kernel/test_governance/test_classifier\.py$''',
+  '''^tests/unit/iris_harness/services/test_learning/test_lesson_capture\.py$''',
+]
+regexes = [
+  # documented placeholder values in .env.example / docs
+  '''test-secret-for-testing''',
+  '''ci-only-secret''',
+  '''your[-_]?(api[-_]?key|token|secret)''',
+  '''sk-(test|example|xxx)''',
+  # the canonical fake AWS key the safety-curator demo + tests use to prove leak blocking
+  '''AKIA1234567890ABCDEF''',
+  # RFC 8291 section 5's published worked example. The harness implements Web
+  # Push encryption itself (track 2b PR 9) and proves it against the RFC's own
+  # vector, so these exact strings -- including an EC private key -- are in the
+  # test suite by design. Allowlisted as VALUES rather than by file, so a real
+  # secret added to those same tests is still a finding.
+  '''yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw''',
+  '''BTBZMqHH6r4Tts7J_aSIgg''',
+  '''DGv6ra1nlYgDCS1FRnbzlw''',
+  '''BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4''',
+  '''BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8''',
+]

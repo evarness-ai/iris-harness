@@ -1,0 +1,49 @@
+name: sample-brief
+version: 0.1.0
+description: Reference brief skill demonstrating literal and tool slots end-to-end.
+author: iris
+license: Apache-2.0
+kind: brief
+brief:
+  subject: "IRIS Sample Brief"
+  recipient: "user"
+  uses:
+    - calendar-reminders
+    - web-fetch
+  layout: |
+    Good morning. Briefing for {{date}}.
+
+    ## Reminders today
+    {{reminders}}
+
+    ## Top repos
+    {{top_repos}}
+  slots:
+    date:
+      kind: literal
+      value: "{today:%A, %B %d, %Y}"
+    reminders:
+      kind: tool
+      skill: calendar-reminders
+      tool: list_today_reminders
+      args: {}
+      format: bullets
+      item_template: "{line}"
+      empty: "No reminders today."
+    top_repos:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: git
+        category: git-repositories
+        limit: 10
+      format: bullets
+      item_template: "{title} — {description}"
+      empty: "GitHub trending unavailable."
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

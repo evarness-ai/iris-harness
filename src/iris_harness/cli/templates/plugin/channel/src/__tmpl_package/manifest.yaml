@@ -1,0 +1,7 @@
+# The plugin's contract with IRIS (docs/architecture/plugin-contract.md).
+name: __tmpl_name
+version: 0.1.0
+description: __tmpl_title -- __tmpl_summary.
+entrypoint: plugin:setup
+provides:
+  - channel

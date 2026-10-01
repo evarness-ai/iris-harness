@@ -1,0 +1,14 @@
+# The plugin's contract with IRIS (docs/architecture/plugin-contract.md).
+#
+# A search provider is not a tool: it joins the built-in `research` tool's provider chain
+# (api.register_search_provider), so it needs no `tools:` entry -- the research tool's own
+# declaration (`content: external`, `sends_to: search_engine`) governs every call that
+# reaches it. It serves only where the `research` plugin is mounted (the default profile).
+# What it does declare is the provider's name: one registered under a name not listed in
+# `search_providers:` is refused, and the plugin shows degraded.
+name: __tmpl_name
+version: 0.1.0
+description: __tmpl_title -- __tmpl_summary.
+entrypoint: plugin:setup
+search_providers:
+  - __tmpl_tool

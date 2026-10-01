@@ -1,0 +1,49 @@
+# What is VALID (ADR-0115 decision 5) — kept apart from what can exist (ontology.yaml).
+#
+# `max_count: 1` means a new value supersedes the current one; no limit means values
+# coexist. Every property a fact key maps to is single-valued here because the fact
+# store is single-valued today (one row per key, upsert replaces): the store swap in
+# PR 2 must not change behaviour. Relax a limit when there is evidence for it.
+#
+# Counts are over directly asserted values, as in SHACL without inference: `resides_in_city`
+# and `resides_in_country` are subproperties of `lives_in`, but they do not count against
+# `lives_in`'s own limit.
+#
+# Compiles to SHACL later (PR 8, behind the [rdf] extra).
+
+Person:
+  properties:
+    name:                     { max_count: 1 }
+    nickname:                 { max_count: 1 }
+    pronouns:                 { max_count: 1 }
+    birthday:                 { max_count: 1 }
+    timezone:                 { max_count: 1 }
+    languages:                { max_count: 1 }
+    profession:               { max_count: 1 }
+    role:                     { max_count: 1 }
+    industry:                 { max_count: 1 }
+    email:                    { max_count: 1 }
+    phone:                    { max_count: 1 }
+    blog:                     { max_count: 1 }
+    website:                  { max_count: 1 }
+    github:                   { max_count: 1 }
+    linkedin:                 { max_count: 1 }
+    communication_preference: { max_count: 1 }
+    preferred_language:       { max_count: 1 }
+    dietary_preference:       { max_count: 1 }
+    work_hours:               { max_count: 1 }
+    interest:                 { max_count: 1 }
+    hobby:                    { max_count: 1 }
+    works_at:                 { max_count: 1, class: Organization }
+    works_in:                 { max_count: 1 }
+    works_on:                 { max_count: 1 }
+    researches:               { max_count: 1 }
+    lives_in:                 { max_count: 1, class: Place }
+    resides_in_city:          { max_count: 1 }
+    resides_in_country:       { max_count: 1 }
+    hometown:                 { max_count: 1 }
+    # citizen_of: no limit — dual citizenship is two current values, not a conflict.
+    spouse:                   { max_count: 1, class: Person }
+    has_child:                { max_count: 1 }
+    family_member:            { max_count: 1 }
+    has_pet:                  { max_count: 1 }

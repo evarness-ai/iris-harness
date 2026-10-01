@@ -1,0 +1,94 @@
+# Memory continuity under a LIVE model — the half the deterministic acceptance
+# tests cannot cover.
+#
+# tests/integration/test_memory_continuity.py asserts on the PROMPT: that the block
+# exists, carries the right content and fits its budget. That is the gate, because it
+# is deterministic. This suite asks the other question — given a prompt that carries
+# the history, does a real local model actually USE it — which is inherently
+# stochastic and so runs by hand:
+#
+#   iris playground run memory-continuity
+#
+# On another model: the tiers come from llm_tiers.yaml and nothing overrides them from
+# the environment, so run against a copy of the config with tier 1 (and the fallback,
+# also granite4) swapped. From the repo root:
+#
+#   cp -R config /tmp/iris-qwen
+#   perl -pi -e 's/"granite4:latest"/"qwen2.5:7b-instruct"/' /tmp/iris-qwen/llm_tiers.yaml
+#   IRIS_CONFIG_DIR=/tmp/iris-qwen iris playground run memory-continuity
+#
+# `ollama ps` during the run shows which model actually answered.
+#
+# Assertions stay on what is stable (an answer that mentions the right name, a turn
+# that does not go looking on the web) rather than on exact phrasing.
+
+name: memory-continuity
+description: Does a live model use the conversation, the profile and the confirmed facts it is handed?
+
+# A throwaway memory: the session-id prefix keeps these TURNS out of the owner's history
+# (config/memory/retention.yaml), but facts said here ("i pay by UPI from Northwind") were
+# still captured into the owner's store until suites could run isolated.
+isolated: true
+
+env:
+  IRIS_WIKI_INGEST: "0"
+
+scenarios:
+  - name: recalls-a-detail-from-earlier-in-the-session
+    description: A name stated six exchanges ago must survive into the answer.
+    setup_messages:
+      - "my landlord is Petra Sutton and rent is due on the 5th"
+      - "the flat is in Springfield, Elmwood"
+      - "the deposit was 180000 and Remy handles maintenance"
+      - "i pay by UPI from Northwind"
+      - "the lease renews in March"
+      - "i still need to send the signed lease copy"
+    message: "who is my landlord?"
+    tags: [memory, continuity, live]
+    expect:
+      response_contains: ["Petra"]
+      sources_exclude: [research]
+      has_errors: false
+
+  - name: answers-from-the-window-not-the-web
+    description: Something said in this session is answered from it, not researched.
+    setup_messages:
+      - "the deposit was 180000 and Remy handles maintenance"
+    message: "how much was the deposit?"
+    tags: [memory, continuity, live]
+    expect:
+      # A number, however the model formats it — granite4 answers "180,000".
+      response_regex: "180[,.]?000"
+      sources_exclude: [research, web_search]
+      has_errors: false
+
+  - name: does-not-invent-an-unconfirmed-fact
+    description: >
+      Nothing is confirmed in a fresh playground store, so the honest answer is "I
+      don't know" — not a value mined from some earlier conversation.
+    message: "what bank do i use?"
+    tags: [memory, confirmation, live]
+    expect:
+      response_not_contains: ["Northwind Bank"]
+      has_errors: false
+
+  - name: a-correction-is-taken-in-the-same-session
+    description: The corrected value, not the first one, is what comes back.
+    setup_messages:
+      - "my flat is in Chennai"
+      - "sorry, the flat is in Springfield, not Chennai"
+    message: "which city is the flat in?"
+    tags: [memory, continuity, live]
+    expect:
+      response_contains: ["Springfield"]
+      has_errors: false
+
+  - name: knows-what-it-can-do
+    description: >
+      The capability line is generated from the live registry, so a "can you" question
+      is answerable without iris_doc — and must not name a model this box does not run.
+    message: "which plugins do you have loaded right now?"
+    tags: [memory, capabilities, live]
+    expect:
+      response_not_contains: ["llama3.2:3b"]
+      has_errors: false

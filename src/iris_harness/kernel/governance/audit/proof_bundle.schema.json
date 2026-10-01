@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iris-harness.dev/schemas/proof-bundle/v1.json",
+  "title": "IRIS proof bundle, format version 1",
+  "description": "The audit ledger's evidence for the R14 invariants, verified offline by `iris governance proof-bundle verify`. No message content: ids, timestamps, hook points, decisions, classifications, tiers and keyed digests only. See docs/reference/proof-bundle.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "schema_version",
+    "subject",
+    "created_at",
+    "producer",
+    "scope",
+    "invariants",
+    "ledger",
+    "observations",
+    "content_sha256"
+  ],
+  "properties": {
+    "format": { "const": "iris-proof-bundle" },
+    "schema_version": { "const": 1 },
+    "subject": { "type": "string", "description": "What the bundle covers, in the exporter's words (e.g. email-onboarding)." },
+    "created_at": { "type": "string", "format": "date-time" },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "iris-harness" },
+        "version": { "type": "string" }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["since", "until", "run_ids"],
+      "properties": {
+        "since": { "type": ["string", "null"], "format": "date-time" },
+        "until": { "type": ["string", "null"], "format": "date-time" },
+        "run_ids": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "statement"],
+        "properties": {
+          "id": { "enum": ["no-private-to-cloud", "mailbox-write-approved", "every-call-and-answer-audited"] },
+          "statement": { "type": "string" }
+        }
+      }
+    },
+    "ledger": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/row" }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model_calls", "answers", "mailbox_writes"],
+      "properties": {
+        "model_calls": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["session_id", "tier"],
+            "properties": {
+              "session_id": { "type": ["string", "null"] },
+              "tier": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "answers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["session_id"],
+            "properties": { "session_id": { "type": "string" } }
+          }
+        },
+        "mailbox_writes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["account_ref", "count", "at"],
+            "properties": {
+              "account_ref": { "type": "string", "pattern": "^acct-[0-9a-f]{24}$" },
+              "count": { "type": "integer" },
+              "at": { "type": ["string", "null"], "format": "date-time" }
+            }
+          }
+        }
+      }
+    },
+    "content_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  },
+  "$defs": {
+    "row": {
+      "description": "One audit_log row, cut down. Never a reason, a prompt, an argument or a result.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "ts", "run_id", "step_id", "agent_type", "hook_point", "plugin", "decision",
+        "classification", "tier", "severity", "session_id", "tool_name", "account_ref",
+        "args_digest", "result_digest", "digest_alg"
+      ],
+      "properties": {
+        "id": { "type": "integer" },
+        "ts": { "type": "string", "format": "date-time" },
+        "run_id": { "type": "string" },
+        "step_id": { "type": ["integer", "null"] },
+        "agent_type": { "type": "string" },
+        "hook_point": { "type": "string" },
+        "plugin": { "type": "string" },
+        "decision": { "type": "string" },
+        "classification": { "type": ["string", "null"] },
+        "tier": { "type": ["string", "null"] },
+        "severity": { "type": "string" },
+        "session_id": { "type": ["string", "null"] },
+        "tool_name": { "type": ["string", "null"] },
+        "account_ref": { "type": ["string", "null"], "pattern": "^acct-[0-9a-f]{24}$" },
+        "args_digest": { "type": ["string", "null"] },
+        "result_digest": { "type": ["string", "null"] },
+        "digest_alg": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

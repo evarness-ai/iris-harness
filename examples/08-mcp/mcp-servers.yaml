@@ -1,0 +1,22 @@
+# The external MCP servers IRIS may consume, and who may call which of their tools.
+# Same shape as config/coding-agent/mcp-servers.yaml. A server runs only when it is
+# enabled here, its tool is on the allowlist for the calling persona, and -- with
+# signing enforced -- its entry carries a valid signature from a key in the trust store
+# (`iris mcp keygen`, `iris mcp sign`, `iris mcp verify`).
+version: "1"
+enabled: true
+auto_export_local_tools: false
+
+servers:
+  - name: weather
+    description: A stand-in third-party server with one read-only tool.
+    enabled: true
+    transport: stdio
+    command: python
+    args:
+      - weather_server.py
+    env: {}
+    governance:
+      allowed_for_personas:
+        - persona: developer
+          tools: ["forecast"]

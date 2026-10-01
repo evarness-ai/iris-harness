@@ -1,0 +1,183 @@
+name: ci
+
+# The required pull-request checks of OSS plan R11 that run on the tree: lint, test (3.12
+# and 3.13), playground, quickstart, licenses and docs. security.yml and pr.yml carry the
+# rest. Contributors run the same steps locally with scripts/ci_local.sh.
+#
+# Security posture, for every workflow here: `pull_request` only, never
+# `pull_request_target` (a fork's code never runs with this repository's secrets or a
+# write token); every action pinned to a full commit SHA (Dependabot bumps them); the
+# token is read-only unless a job says otherwise; checkout never persists credentials.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  IRIS_AUTH_SECRET: ci-only-secret
+  IRIS_DISABLE_WARMUP: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  POETRY_VERSION: "2.3.3"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install Poetry and the project (dev + email)
+        run: |
+          pipx install "poetry==${POETRY_VERSION}"
+          poetry config virtualenvs.in-project true
+          poetry env use python3.12
+          poetry install --with dev --extras email --no-interaction --no-ansi
+      - name: Lockfile matches pyproject
+        run: poetry check --lock
+      - name: Ruff
+        run: poetry run ruff check src/ tests/ examples/
+      - name: Black
+        run: poetry run black --check src/ tests/ examples/
+      - name: Mypy (src)
+        run: poetry run mypy src/iris_harness/ src/memris/ src/iris_personal/
+      # The examples type-check against the stable tier, as a plugin author's code would.
+      - name: Mypy (examples)
+        run: poetry run mypy examples/
+      - name: Import contracts
+        run: poetry run lint-imports
+
+  test:
+    name: test (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install Poetry and the project (dev + email)
+        env:
+          PY: ${{ matrix.python-version }}
+        run: |
+          pipx install "poetry==${POETRY_VERSION}"
+          poetry config virtualenvs.in-project true
+          poetry env use "python${PY}"
+          poetry install --with dev --extras email --no-interaction --no-ansi
+      # The full suite: core, the email slice and every example. No model is pulled and
+      # no test reaches the network (tests/conftest.py guards both).
+      - name: Pytest (full suite)
+        run: poetry run pytest --no-cov -n auto -q
+
+  playground:
+    name: playground
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install Poetry and the project (dev + email)
+        run: |
+          pipx install "poetry==${POETRY_VERSION}"
+          poetry config virtualenvs.in-project true
+          poetry env use python3.12
+          poetry install --with dev --extras email --no-interaction --no-ansi
+      # End-to-end runs against a real in-process runtime: the smoke-marked tests
+      # (deselected from the plain suite) and the deterministic playground suite.
+      - name: Pytest (smoke marker)
+        run: poetry run pytest --no-cov -n auto -q -m smoke
+      - name: Playground (core-deterministic)
+        run: poetry run iris playground run core-deterministic
+
+  quickstart:
+    name: quickstart
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      # The README's hero path (R6) on the scripted fake model, offline after the
+      # install: `uv tool install "iris-harness[email]"` (timed, cold cache; R19 target
+      # < 60 s, reported in the job summary), `iris doctor`, `iris email demo`.
+      - name: Fresh install, iris doctor, iris email demo
+        run: bash scripts/ci_quickstart.sh
+
+  licenses:
+    name: licenses
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The core install (R19): what a plain `pip install iris-harness` puts in an
+      # environment, no extras, resolved fresh as a user's install is. Every
+      # distribution's license must be on scripts/license_policy.toml's allow list;
+      # arize-phoenix (Elastic-2.0) is denied outright -- it is the [phoenix] extra.
+      - name: Core install into a fresh venv
+        run: |
+          python -m venv "$RUNNER_TEMP/core"
+          "$RUNNER_TEMP/core/bin/python" -m pip install --quiet --upgrade pip
+          "$RUNNER_TEMP/core/bin/python" -m pip install --quiet .
+      - name: License allow list
+        run: '"$RUNNER_TEMP/core/bin/python" scripts/check_licenses.py --list'
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The MkDocs site (R7). Until mkdocs.yml exists this job says so and passes;
+      # once it exists the build is strict (a broken link or a missing page fails), and
+      # its pinned dependencies must be in docs/requirements.txt.
+      - name: Build the docs site (strict)
+        run: |
+          if [[ ! -f mkdocs.yml ]]; then
+            echo "::notice title=docs::no mkdocs.yml in this tree yet: nothing to build (R7 adds the site)"
+            echo "docs: SKIPPED -- no mkdocs.yml" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ ! -f docs/requirements.txt ]]; then
+            echo "::error title=docs::mkdocs.yml exists but docs/requirements.txt (the site's pinned dependencies) does not"
+            exit 1
+          fi
+          python -m venv "$RUNNER_TEMP/docs"
+          "$RUNNER_TEMP/docs/bin/python" -m pip install --quiet -r docs/requirements.txt
+          "$RUNNER_TEMP/docs/bin/mkdocs" build --strict --site-dir "$RUNNER_TEMP/site"

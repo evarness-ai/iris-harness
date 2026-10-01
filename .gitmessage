@@ -1,0 +1,13 @@
+# <type>(<scope>): <short summary>
+#
+# type: feat | fix | docs | style | refactor | test | chore | ci | perf | build
+# scope: optional (e.g. api, core, web, infra)
+#
+# Why:
+# -
+#
+# What changed:
+# -
+#
+# Validation:
+# -

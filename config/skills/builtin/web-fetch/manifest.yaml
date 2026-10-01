@@ -1,0 +1,59 @@
+name: web-fetch
+version: 0.1.0
+# NOTE: this description is the semantic-router match text (embedded with the tool
+# descriptions); the "fetch web content" match sits near threshold so the wording is
+# deliberately kept stable. The news categories actually fetch via the research engine
+# (see tools.py); git-trending and stocks remain structured-source fetchers.
+description: Generic web content fetcher — dispatches on (type, category) to
+  GitHub Trending, HackerNews, RSS feeds, and Yahoo Finance. Returns a uniform
+  list of dicts per category for use in brief skills.
+author: iris
+license: Apache-2.0
+tools:
+  - name: fetch_web_content
+    description: Fetch a ranked list of items from a configured upstream source.
+      Pass type ("git"|"news"|"stocks"), category (e.g. "git-repositories",
+      "ai-news", "usa-news", "global-news", "stocks-trending"), and limit (1-50).
+    governor_route: system/read
+    args:
+      - name: type
+        description: Source family to fetch from.
+        type: enum
+        options: ["git", "news", "stocks"]
+        examples: ["git", "news", "stocks"]
+      - name: category
+        description: Concrete source/category within the type.
+        type: enum
+        options:
+          - git-repositories
+          - ai-news
+          - usa-news
+          - global-news
+          - digest-topics
+          - stocks-trending
+          - stocks-quotes
+          - indexes
+        examples: ["git-repositories", "ai-news", "stocks-trending"]
+      - name: limit
+        description: Maximum number of items to return.
+        type: int
+        required: false
+        default: 10
+        min: 1
+        max: 50
+      - name: news_group
+        description: For category digest-topics, the digest news section whose
+          topics to fetch (e.g. news_ai, news_local); omitted means the ungrouped
+          news topics.
+        type: string
+        required: false
+        pattern: "^[a-z][a-z0-9_]{0,63}$"
+requires:
+  python: ">=3.12"
+  packages:
+    - pydantic>=2.0
+    - requests>=2.0
+    - beautifulsoup4>=4.0
+  env_vars: []
+  config_files: []
+  agents: []

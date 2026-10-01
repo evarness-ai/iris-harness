@@ -1,0 +1,145 @@
+# Per-intent anchor phrases for the semantic intent classifier (opt-in,
+# IRIS_INTENT_ROUTER_SEMANTIC=1). The router embeds the user query with the local
+# ONNX MiniLM-L6 model and picks the intent whose anchor phrases are closest by cosine
+# similarity. When no intent is confidently closest (below threshold or two intents
+# tie within the margin) the router falls back to the keyword + LLM classifier.
+#
+# Tunable without code. Calibrate via IRIS_INTENT_ROUTER_SEMANTIC_THRESHOLD (absolute
+# floor) and IRIS_INTENT_ROUTER_SEMANTIC_MARGIN (how far the winner must beat the
+# runner-up). Intent names MUST be valid intents (see _INTENT_TO_AGENT in
+# core/intent_router.py); agent_type is derived from the intent. The ambiguous
+# catch-all intents (general/system/help/clarify) are intentionally NOT anchored —
+# those are exactly the cases that should defer to the keyword + LLM fallback.
+# `defer:` (end of file) anchors them the other way round: messages that need no
+# domain, which the classifier hands to the fallback instead of routing.
+intents:
+  communication:
+    - "check my email"
+    - "any new emails today"
+    - "summarize my inbox"
+    - "send an email to John about the meeting"
+    - "reply to that email"
+    - "find the email about the invoice"
+    - "read my latest email"
+    - "show me emails from my bank"
+  # Calendar READS (queries) vs calendar CREATES (write requests) are distinct intents
+  # so the router can drive the create short-circuit (calendar_create) AND route reads
+  # to the read-only calendar agent (calendar).
+  calendar:
+    - "what's on my calendar"
+    - "do I have any meetings tomorrow"
+    - "when is my next meeting"
+    - "show me my schedule"
+    - "what meetings do I have today"
+    # Asking WHEN an existing appointment is, or moving one, is not a create: without
+    # these, "when is my dentist appointment" embedded nearest "book a dentist
+    # appointment" and routed to calendar_create.
+    - "when is my doctor's appointment"
+    - "when is my haircut booked for"
+    - "when's my next appointment"
+    - "is my call with Sam still on"
+    - "push my meeting back an hour"
+    - "reschedule my appointment to later"
+    # Reminders are calendar (the reminder tools live there). Without these, "remind
+    # me to water the plants tomorrow" embedded nearest weather's "will it rain
+    # tomorrow".
+    - "remind me to call the bank on Friday"
+    - "set a reminder for tomorrow morning"
+  calendar_create:
+    - "schedule a meeting at 3pm"
+    - "set up a call with the team"
+    - "book a dentist appointment"
+    - "add an event to my calendar"
+    - "put a sync on my calendar"
+    - "mind booking an appointment for me"
+    - "create a calendar event with the team"
+  finance:
+    - "what's my net worth"
+    - "show me my portfolio"
+    - "how much did I spend last month"
+    - "what's my bank account balance"
+    - "do I have any pending payments or dues"
+    - "any dues that are pending"
+    - "what bills are due"
+    - "summarize my latest bank statement"
+    - "what stocks do I hold"
+  planner:
+    - "plan my day"
+    - "what should I focus on today"
+    - "give me my daily plan"
+    - "what's my agenda for today"
+    - "help me prioritize my tasks today"
+    # The owner's to-dos (planner's add_task / complete_task tools, #695). Without
+    # these, "mark the expense report task as done" fell to the keyword rules and
+    # reached finance on the word "expense".
+    - "add something to my to-do list"
+    - "put buying milk on my todo list"
+    - "I finished the invoice task, tick it off"
+    - "mark that to-do complete"
+    - "which of my tasks are still open"
+  files:
+    - "find my file"
+    - "where is the document"
+    - "open my passport scan"
+    - "locate the pdf about my taxes"
+    - "search my files for the signed contract"
+    # FileManager catalog / organize / vault domain — without these, "list the
+    # files in my catalog" / "my documents" embedded nearest the email anchors
+    # and misrouted to the inbox (the live FileManager misroute).
+    - "list the files in my catalog"
+    - "show me my file catalog"
+    - "what files do you have catalogued"
+    - "how many files do you manage"
+    - "organize my downloads folder"
+    - "tidy up my files"
+    - "what's in my file vault"
+    - "do I have any file organize plans"
+    - "list my documents"
+  coding:
+    - "build a tool that does this"
+    - "implement a new feature"
+    - "fix this bug in the code"
+    - "write a python function for me"
+    - "refactor this module"
+    - "add a command to the cli"
+  code_exec:
+    - "run this script"
+    - "execute this code snippet"
+    - "create a pdf of this report"
+    - "plot a chart of the data"
+    - "convert this csv to excel"
+  search:
+    - "search the web for this"
+    - "look up the latest news about this"
+    - "find information online about this topic"
+    - "what's the latest on the stock market"
+  weather:
+    - "what's the weather today"
+    - "will it rain tomorrow"
+    - "what's the temperature outside"
+    - "weather forecast for this weekend"
+  profile_query:
+    - "what do you know about me"
+    - "what's my name"
+    - "what are my preferences"
+    - "what's my tech stack"
+    - "do you know my blog site"
+
+# Messages that need none of the owner's data. MiniLM has no "general" class, so
+# without these a shared word decides: "good morning" went to planner ("plan my day")
+# and "write a limerick about email" to communication. When one of these is the
+# closest phrase, or the winning intent doesn't beat it by the margin, the message goes
+# to the keyword + LLM router instead, which can answer `general`. Never routed to.
+defer:
+  - "hi there"
+  - "good morning"
+  - "thanks, that's great"
+  - "tell me a joke"
+  - "write a poem about the sea"
+  - "write a short story"
+  - "explain how something works"
+  - "what does this word mean"
+  - "give me some advice"
+  - "recommend a good movie"
+  - "suggest a name for it"
+  - "make a step-by-step plan to learn a new skill"

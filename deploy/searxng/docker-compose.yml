@@ -1,0 +1,32 @@
+# SearXNG — privacy-first meta-search backend for the IRIS research engine.
+#
+# One command:   docker compose -f deploy/searxng/docker-compose.yml up -d
+# Then point IRIS at it:   export IRIS_SEARXNG_URL=http://localhost:8888
+# (restart the IRIS API so the research engine picks SearXNG as the primary provider).
+#
+# Local-only by default: bound to 127.0.0.1, no inbound auth. Do not expose publicly
+# without putting it behind a reverse proxy + auth.
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: iris-searxng
+    ports:
+      - "127.0.0.1:8888:8080"
+    volumes:
+      - ./settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      # Base URL SearXNG advertises; keep in sync with the published port.
+      - SEARXNG_BASE_URL=http://localhost:8888/
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"

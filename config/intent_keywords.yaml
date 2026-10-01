@@ -1,0 +1,310 @@
+# The intent router's keyword rules (agent/intent_router.py KeywordClassifier).
+#
+# Two lists, checked in this order; the first match decides the turn:
+#
+# - pre_rules: phrase lists. `any` phrase present and no `unless` phrase -> `intent`
+#   (its agent from the router's intent -> agent map). Matched case-insensitively on
+#   word boundaries.
+# - rules: the regex rules, in order. Each `pattern` is a list of regex fragments that
+#   are joined with nothing in between (like adjacent Python string literals), matched
+#   with re.search against the lower-cased message. `agent` is stated per rule: the
+#   keyword path never remaps (search stays on `system` even with IRIS_RESEARCH_AGENT
+#   on). Order matters: earlier rules win, and several comments below say why.
+#
+# These were the Python list _KEYWORD_RULES until 2026-09-28, moved here verbatim
+# (every pattern byte-identical; 4,223 messages routed the same before and after).
+# Tunable without code (owner rule 2026-09-13: vocabulary lives in YAML, never in
+# code). An IRIS_CONFIG_DIR without this file falls back to the shipped copy; a
+# broken file (bad YAML, a bad regex, an unknown intent) is refused at load with an
+# error naming the rule, never silently skipped.
+pre_rules:
+  # The owner's to-dos: add / complete / list a task (planner's add_task and
+  # complete_task). Ahead of finance so "mark the expense report task as done" is not
+  # routed on "expense"; a turn that also names a reminder, the calendar, email or
+  # code keeps its own rule.
+  - intent: planner
+    any: [task, tasks, to-do, to-dos, todo, todos, to do list]
+    unless:
+      - remind
+      - reminder
+      - reminders
+      - schedule
+      - calendar
+      - meeting
+      - email
+      - emails
+      - e-mail
+      - e-mails
+      - mail
+      - gmail
+      - inbox
+      - script
+      - code
+      - function
+      - scheduler
+
+rules:
+  # Profile / identity questions ("who am I", "what's my name", "what do I do",
+  # "what are my preferences", "tell me about myself"). Routed to Tier 2 because
+  # Tier 1 models have strong "AI engineer = Python+Rust+Go" priors that override
+  # explicit USER.md content on small models. Match BEFORE the help/general rules
+  # since "what" can appear in both.
+  - intent: profile_query
+    agent: system
+    # "do you know (about) my <thing>", "did I tell you my <thing>" — a recall of
+    # something the user told IRIS about themselves; answer from stored facts, not
+    # a web guess (issue 0020). Calendar/temporal nouns are excluded (they route
+    # to the calendar agent).
+    # NB: the gerund lookahead keeps "who am I meeting/seeing tomorrow"
+    # out of profile_query — that's an event query (exp-005 adv-18).
+    # NB: "how do I (prefer|approach|think)" is ambiguous with the
+    # advice form ("how do I approach this CLI command") that should
+    # route to general. Dropped from this pattern; the user can still
+    # ask "what's my preferred way to ..." for a profile_query route.
+    pattern:
+      - '\b('
+      - '(?:what|tell\s+me)\s+(?:do\s+you\s+know|about)\s+(?:about\s+)?(?:me|myself)|'
+      - '(?:do\s+you\s+know|did\s+i\s+(?:tell|mention)|have\s+you\s+(?:stored|saved))'
+      - '\s+(?:about\s+)?my\s+'
+      - '(?!meetings?\b|schedule|calendar|appointments?\b|events?\b|day\b|plan\b)\w+|'
+      - 'who\s+am\s+i\b(?!\s+\w+ing\b)|what''?s\s+my\s+(?:name|role|profession|focus|stack|'
+      - 'profile|background|preference|preferences|setup|style|'
+      - 'values?|mission|ambition|ambitions|priority|priorities|personality)|'
+      - 'what\s+do\s+i\s+(?:do|prefer|use|like|work\s+on|build|focus|value|believe)|'
+      - 'what\s+\w+\s+do\s+i\s+(?:prefer|use|like|work\s+with)|'
+      - '(?:name|list|tell\s+me)\s+\w+(?:\s+\w+){0,4}\s+i\s+(?:prefer|use|work\s+with|like)|'
+      - 'what\s+(?:are|is)\s+my\s+(?:preferences?|stack|background|languages?|'
+      - 'goals?|interests?|profile|role|focus|values?|ambitions?|'
+      - 'priorit(?:y|ies)|principles?|mission|style)|'
+      - 'what\s+kind\s+of\s+\w+(?:\s+\w+){0,3}\s+(?:am|do)\s+i\b|'
+      - 'do\s+i\s+(?:use|prefer|like|work\s+with|believe|value)\s+\w+|'
+      - 'my\s+(?:profile|background|technical\s+preferences|stack|values?)\b'
+      - ')\b'
+
+  # Advice / knowledge questions must route to general BEFORE any code_exec rules fire.
+  # "What is the best way to convert pdf..." is information-seeking, not an execution task.
+  # Matches open-ended questions and recommendation requests.
+  - intent: general
+    agent: system
+    # Decision advice ("should I cancel my trip?") is general even when
+    # it mentions weather/email/etc. (exp-005 adv-10).
+    pattern:
+      - '\b(what\s+is\s+the\s+best|what''?s\s+the\s+best|'
+      - 'best\s+way\s+to|best\s+approach|best\s+practices?\s*(?:for|to)\b|'
+      - 'how\s+should\s+(?:i|we)\s+(?:approach|handle|implement|design|'
+      - 'structure|organize|integrate|do|use|build|convert|store|index)|'
+      - 'recommend(?:ed|ation)?\s+(?:approach|way|method|tool|library|solution)|'
+      - 'what\s+do\s+you\s+recommend|advise\s+on|'
+      - 'should\s+(?:i|we)\s+(?:cancel|reschedule|postpone|skip|go|stay|'
+      - 'buy|sell|take|accept|decline|quit|attend)\b|'
+      - 'which\s+(?:tool|approach|method|library|way)\s+(?:is|should|would|do))\b'
+
+  # "How do I / How can I / How would I" questions are advice, not execution.
+  - intent: general
+    agent: system
+    pattern:
+      - '^how\s+(do|can|would|should)\s+(i|we|one)\b'
+
+  # Literal-response meta requests ("reply with just the word X") are chat
+  # instructions, not email operations (exp-005 adv-01 — the Phase 1 live
+  # misroute that sent "hello" to the email agent).
+  - intent: general
+    agent: system
+    pattern:
+      - '\b(?:reply|respond|answer)\s+with\s+(?:just|only|exactly|'
+      - 'the\s+single|one\s+word|a\s+single)\b'
+
+  # Help / explain / what is X — always informational.
+  - intent: help
+    agent: system
+    pattern:
+      - '\b(help|what can you|how do|explain)\b'
+
+  # Direct sandbox invocations should always reach the execution agent.
+  - intent: code_exec
+    agent: code_exec
+    pattern:
+      - '\b(sandbox|run[_\s-]?shell|use\s+the\s+sandbox\s+tool|'
+      - 'execute\s+in\s+the\s+sandbox)\b'
+
+  # Follow-up refinements on already-generated artifacts should stay in code_exec.
+  # Handles prompts like "the pdf looks clumsy, reformat it with spacing".
+  - intent: code_exec
+    agent: code_exec
+    pattern:
+      - '\b(pdf|excel|xlsx|csv|tsv|json|yaml|html|markdown|md|'
+      - 'image|png|jpg|jpeg|svg|chart|graph|plot|'
+      - 'file|document|report|spreadsheet|workbook|notebook)\b'
+      - '.{0,120}'
+      - '\b(format|reformat|layout|spacing|style|article|polish|clean\s*up|'
+      - 'improve|fix|refine|rewrite|restyle|beautify)\b'
+      - '|'
+      - '\b(format|reformat|layout|spacing|style|article|polish|clean\s*up|'
+      - 'improve|fix|refine|rewrite|restyle|beautify)\b'
+      - '.{0,120}'
+      - '\b(pdf|excel|xlsx|csv|tsv|json|yaml|html|markdown|md|'
+      - 'image|png|jpg|jpeg|svg|chart|graph|plot|'
+      - 'file|document|report|spreadsheet|workbook|notebook)\b'
+
+  # Sandboxed execution: produce a concrete artifact / crunch numbers /
+  # render a visualization. Wins over coding because "create a PDF of X"
+  # should EXECUTE, not return source code the user has to run themselves.
+  # "game / puzzle / simulation / demo" are runnable artifacts — small
+  # general-tier models tend to inline a code block instead of emitting a
+  # `code_exec` tool call, so we route them directly to the sandbox.
+  - intent: code_exec
+    agent: code_exec
+    # Compute / visualization verbs route alone (LLMs are bad at math
+    # and can't render images), OR artifact verbs paired with an
+    # artifact noun.
+    pattern:
+      - '\b(calculate|compute|plot)\b'
+      - '|'
+      - '\b(create|make|generate|produce|build|export|render|convert|run|execute|'
+      - 'get|fetch|refresh|update|summarize)\b'
+      - '.{0,80}'
+      - '\b(pdf|excel|xlsx|csv|tsv|json|yaml|html|markdown|md|'
+      - 'image|png|jpg|jpeg|svg|chart|graph|plot|'
+      - 'file|document|report|spreadsheet|workbook|notebook|'
+      - 'script|command|'
+      - 'game|puzzle|simulation|demo|animation|playable)\b'
+
+  # Coding verbs + code/artifact nouns always win over domain keywords.
+  # "create an email agent" / "write a function to parse email" → coding, not email.
+  - intent: coding
+    agent: coding_agent
+    pattern:
+      - '\b(build|create|make|develop|design|generate|produce|write|implement|code|refactor|debug|unittest)\b'
+      - '.{0,80}'
+      - '\b(agent|tool|service|bot|system|app|application|script|pipeline|workflow|plugin|extension|function|class|module|program|test)\b'
+
+  # "fix the/a/this bug" counts as coding too, not only the bare "fix bug"
+  # (exp-005 adv-20: "find and fix the bug in my email parser").
+  - intent: coding
+    agent: coding_agent
+    pattern:
+      - '\b(code|implement|refactor|debug|unittest)\b|'
+      - 'fix\s+(?:the\s+|a\s+|this\s+)?bugs?\b'
+
+  # Calendar fires BEFORE communication: scheduling verbs govern mixed
+  # phrasings like "remind me to reply to John's email", "book a meeting
+  # room and email the team", "update my calendar and send invites"
+  # (exp-005 adv-02/08/21). "what time is my X" is an event-time query,
+  # not clock time (adv-09).
+  - intent: calendar
+    agent: calendar
+    pattern:
+      - '\b(calendar|schedule|meeting|appointment|event|remind|'
+      - 'standup|recurring|every\s+(?:day|weekday|week|morning|evening)|'
+      - 'what\s+time\s+is\s+my)\b'
+
+  # Planner fires BEFORE calendar/communication for whole-day synthesis
+  # phrasings ("plan my day", "what's on today", "what should I focus on").
+  - intent: planner
+    agent: planner
+    pattern:
+      - '\b(plan\s+my\s+day|my\s+(?:day|agenda)|daily\s+plan|'
+      - 'what(?:''s|\s+is|\s+do\s+i\s+have)?\s+(?:on\s+)?today|'
+      - 'what\s+should\s+i\s+(?:focus\s+on|do\s+(?:today|first))|priorities)\b'
+
+  # Live FX / exchange-rate questions are web lookups, NOT the user's own finances —
+  # route to search BEFORE finance so "USD to INR rate" doesn't hit the net-worth
+  # digest (issue 0019). Currency pairs + "exchange/conversion rate" phrasings.
+  - intent: search
+    agent: system
+    pattern:
+      - '\b(?:exchange|conversion|currency)\s+rates?\b'
+      - '|\brates?\s+(?:of|for|from)\b[^?]*\b(?:to|against|vs|versus|into)\b'
+      - '|\b(?:usd|inr|eur|gbp|aud|cad|jpy|dollars?|rupees?|euros?|pounds?|yen)\b'
+      - '[^?]*\b(?:to|against|vs|versus|into)\b'
+      - '[^?]*\b(?:usd|inr|eur|gbp|aud|cad|jpy|dollars?|rupees?|euros?|pounds?|yen)\b'
+
+  # "read / summarize a blog / website / article / URL" is a web-fetch task, NOT
+  # email or finance — route to search before those (issue 0019). Requires a
+  # fetch-ish verb AND a web noun/URL, so "read my email" stays communication.
+  - intent: search
+    agent: system
+    pattern:
+      - '\b(?:read|summari[sz]e|summary|open|fetch|browse|scrape|pull\s+up)\b'
+      - '[^?]*\b(?:https?://|www\.|\.com|\.org|\.io|\.net|blogs?|web\s*sites?|'
+      - 'web\s*pages?|webpages?|websites?|articles?|url|link|page)\b'
+      - '|\b(?:https?://|www\.)\S+'
+
+  # Finance fires BEFORE communication/files/search so "what's my net worth",
+  # "how's my portfolio", "my financial statements" reach the finance agent
+  # (a deterministic net-worth/portfolio digest over the local FinanceStore)
+  # instead of falling through to the web-search system handler — which has no
+  # access to the user's own statements and stalls (exp-006 GAP-09; the live
+  # "total networth" misroute). Money is per-currency, never FX-summed (ADR-0007).
+  - intent: finance
+    agent: finance
+    # "financial" OR "finance" statements/position/etc.
+    # The user's OWN accounts/holdings — statements (CAS/demat), account details,
+    # "list my (bank) accounts". A finance ask about accounts must reach finance
+    # even when it names email as the SOURCE ("from my email ... CAS statement")
+    # — finance fires before the email rule, so broadening here wins (issue 0009).
+    # "do you have my credit card statements?", "<type> statements", "my
+    # statements" — an inventory of ingested finance DOCUMENTS, so it must reach
+    # finance and not the email agent (issue 0015). The negative lookahead keeps
+    # "bank statement emails" on the email path (the existing issue-0009 guard).
+    # ANY "balance" ask is financial here (account/bank/card/credit-card/"<bank>
+    # balance"/"my balance") so it routes to finance deterministically instead of
+    # falling back to the LLM, which sometimes mislabeled it as email (issue 0014).
+    # Dues / bills / pending payments — the finance domain's OWN vocabulary.
+    # Previously absent, so "any dues pending" missed the deterministic keyword
+    # path and fell to the small-LLM fallback, which sometimes misrouted it.
+    pattern:
+      - '\b(net\s*worth|networth|net\s+position|portfolio|holdings?|'
+      - 'my\s+(?:investments?|savings?|assets|finances?|money|spending|expenses?)|'
+      - 'financ(?:ial|e)\s+(?:statements?|position|summary|overview|holdings?)|'
+      - 'how\s+much\s+(?:money|cash)\s+(?:do\s+i\s+have|have\s+i\s+got)|'
+      - 'how\s+much\s+(?:did|have)\s+i\s+(?:spend|spent|pay)|'
+      - 'how\s+much\s+am\s+i\s+worth|'
+      - '\b(?:spending|expenses?|expenditures?)\b|'
+      - 'consolidated\s+account\s+statement|\bcas\b|demat|'
+      - '(?:credit[-\s]?card|card|bank|account|demat|loan|investment|brokerage)'
+      - '\s+statements?\b(?!\s+e-?mails?)|'
+      - 'my\s+statements?\b(?!\s+e-?mails?)|'
+      - '(?:what|which|how\s+many)\s+statements?\b(?!\s+e-?mails?)|'
+      - 'statements?\s+do\s+you\s+have|'
+      - '(?:bank\s+)?accounts?\s+(?:details?|numbers?|info|list)|'
+      - '(?:list|show)\s+(?:me\s+)?(?:my\s+)?(?:bank\s+)?accounts?|'
+      - '\bbalances?\b|'
+      - '\b(?:dues?|bills?|overdue|amounts?\s+due|amount\s+due|'
+      - 'pending\s+payments?|outstanding\s+(?:payments?|dues?|amounts?)|'
+      - 'payments?\s+(?:due|pending)|what\s+do\s+i\s+owe)\b)\b'
+
+  - intent: communication
+    agent: email
+    pattern:
+      - '\b(gmail|e-?mails?|inbox|mailbox|mail|messages?|send|reply|forward)\b'
+
+  # Personal file/document domain → FileManager: the catalog, folders,
+  # downloads, uploads, storage, the file vault. Plural nouns + "catalog" are
+  # explicit here because \bfile\b alone missed "list the files in my catalog"
+  # / "my documents", which then fell to the LLM and mislabelled as email (the
+  # live FileManager misroute). "find my X" is a personal-item lookup, not web
+  # search (exp-005 adv-07). Email/finance/planner classify earlier, so they
+  # keep their own vocabulary.
+  - intent: files
+    agent: filemanager
+    pattern:
+      - '\b(files?|folders?|documents?|downloads?|upload|download|storage|'
+      - 'catalog(?:ue)?|file\s*manager|file\s+vault|find\s+my)\b'
+
+  - intent: weather
+    agent: system
+    pattern:
+      - '\b(weather|temperature|forecast|rain|sunny)\b'
+
+  - intent: system
+    agent: system
+    pattern:
+      - '\b(time|date|clock|timezone|what time)\b'
+
+  # Web/factual lookups go to the system handler (it has research); the old
+  # "rag" agent is bring-your-own-docs only and isn't a registered chat handler.
+  - intent: search
+    agent: system
+    pattern:
+      - '\b(search|find|look up|research|query)\b'

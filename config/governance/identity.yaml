@@ -1,0 +1,49 @@
+# Owner identity policy (ADR-0125; docs/architecture/owner-pii-masking.md).
+#
+# ontology_kinds: which attributes of the owner's CONFIRMED memory facts are the owner's
+# identity, and as which kind (name, email, phone, address, handle, link). Only statements
+# whose subject is the owner count, so a contact's name never becomes owner PII. The keys
+# are attributes of config/memory/ontology.yaml; this mapping lives here, never in the
+# ontology (memris refuses unknown keys and knows no IRIS vocabulary).
+#
+# blog and website are `link`: egress refuses to send a link, so a confirmed blog or
+# website joins what it refuses (ADR-0125 amendment 6).
+ontology_kinds:
+  name: name
+  nickname: name
+  email: email
+  phone: phone
+  github: handle
+  linkedin: handle
+  blog: link
+  website: link
+
+# guards: what each guard does with an occurrence of each kind (owner, 2026-09-30).
+#
+#   egress        network tool arguments          deny | log | pass
+#   answer_owner  an answer to the owner          halt | mask | pass
+#   answer_other  an answer anyone else reads     halt | mask | pass
+#   capability    a capability result             mask | pseudonym | pass
+#   tier3         a prompt to a tier-3 model      placeholder | pass
+#   web_search    web-search arguments            deny | mask | pass
+#
+# pseudonym: the consumer sees [owner:<kind>#<n>] unless its manifest grants the kind
+# (capabilities: uses: - <capability>: {unmask: [<kind>, ...]}). secret is masked and never
+# unmasked. Only the capability column acts in PR 3; PR 4 audits the rest in shadow.
+guards:
+  kinds:
+    secret:  {egress: deny, answer_owner: halt, answer_other: halt, capability: mask,      tier3: placeholder, web_search: deny}
+    link:    {egress: deny, answer_owner: pass, answer_other: pass, capability: pass,      tier3: pass,        web_search: deny}
+    name:    {egress: log,  answer_owner: pass, answer_other: mask, capability: pseudonym, tier3: pass,        web_search: mask}
+    email:   {egress: deny, answer_owner: pass, answer_other: mask, capability: pseudonym, tier3: placeholder, web_search: deny}
+    phone:   {egress: deny, answer_owner: pass, answer_other: mask, capability: pseudonym, tier3: placeholder, web_search: deny}
+    address: {egress: deny, answer_owner: pass, answer_other: mask, capability: pseudonym, tier3: placeholder, web_search: deny}
+    handle:  {egress: log,  answer_owner: pass, answer_other: mask, capability: pseudonym, tier3: pass,        web_search: mask}
+  # A name literal of one word (a first name, a nickname): masked only in web-search
+  # arguments, and it never denies or halts anywhere (ADR-0125 decision 4).
+  first_name_alone: {egress: log, answer_owner: pass, answer_other: pass, capability: pass, tier3: pass, web_search: mask}
+  # Network tools (fnmatch) where an egress deny of these kinds is only logged, until a
+  # per-destination allowlist exists. Never secret or link: egress refuses both today.
+  log_only_destinations:
+    tools: ["github_*", "mcp_*"]
+    kinds: [email, phone, address]

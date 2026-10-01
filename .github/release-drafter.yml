@@ -1,0 +1,40 @@
+# release-drafter (OSS plan R11): keeps a draft GitHub release for the next version up to
+# date as pull requests merge. The maintainer reviews the draft, then pushes the tag it
+# names; .github/workflows/release.yml builds, publishes to PyPI and publishes this draft.
+#
+# Categories come from labels. The autolabeler is not used: it needs a write token on
+# pull requests from forks, which only `pull_request_target` gives, and this repository
+# never uses it (R11). The squash titles carry the type (`feat(...)`, `fix(...)`), so an
+# unlabelled entry still reads as what it is.
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+change-title-escapes: '\<*_&'
+categories:
+  - title: "Breaking changes"
+    labels: ["breaking"]
+  - title: "Features"
+    labels: ["feat", "enhancement"]
+  - title: "Fixes"
+    labels: ["fix", "bug"]
+  - title: "Security"
+    labels: ["security"]
+  - title: "Documentation"
+    labels: ["docs", "documentation"]
+  - title: "Maintenance"
+    labels: ["chore", "ci", "build", "refactor", "perf", "test", "style", "dependencies"]
+exclude-labels: ["skip-changelog"]
+version-resolver:
+  major:
+    labels: ["breaking"]
+  minor:
+    labels: ["feat", "enhancement"]
+  default: patch
+template: |
+  ## What changed
+
+  $CHANGES
+
+  Install or upgrade: `uv tool install --upgrade "iris-harness[email]"` (or pipx).
+
+  **Full changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION

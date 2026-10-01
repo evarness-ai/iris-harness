@@ -1,0 +1,54 @@
+# How a session's rolling summary is written.
+#
+# The old summary was the first 3 turns cut to 80 characters each, because no LLM was
+# ever wired to the compactor in production. One real example from the store:
+#   "assistant: 1. **Business News | Today's International Headlines | Reuters**
+#    (https://www.re; user: what's happening in India today?; ..."
+# Each compaction also replaced the previous summary without reading it, so anything
+# older than the last compaction was simply gone.
+#
+# Now the summary is rolled forward: the model gets the previous summary plus the
+# exchanges leaving the verbatim window, and returns the next one. Fixed sections,
+# because small local models follow a named structure far better than "summarize in
+# 2-3 sentences".
+
+# Routing intent used to pick the tier (see config/llm_tiers.yaml use_for lists).
+tier_intent: memory_compaction
+
+# Hard ceiling for the summary itself. It rides in every prompt, so it is small.
+max_tokens: 320
+
+sections:
+  - key: goal
+    label: "Goal"
+    hint: "what the user is trying to get done in this session"
+  - key: decisions
+    label: "Decisions & outcomes"
+    hint: "what was agreed, found, or completed — with the specifics (names, numbers, dates)"
+  - key: open
+    label: "Open items"
+    hint: "questions not yet answered and actions not yet done"
+  - key: referenced
+    label: "Referenced"
+    # Names only: the Memory Map draws this line (memory-map-cleanup-plan decision 10).
+    hint: "people, organisations and places that matter to the user — comma separated, each once, no prose; not IDs, file names, email addresses, dates or senders of promotional mail"
+
+prompt: |
+  You are maintaining a running summary of one conversation between IRIS and its user.
+
+  Rewrite the summary so it covers the earlier summary AND the new exchanges. Keep
+  specifics (names, numbers, dates, file and account names); drop pleasantries and
+  anything already resolved and closed. Never invent anything that is not in the text.
+
+  Write exactly these sections, each on its own line, and nothing else:
+  {sections}
+
+  Write "none" after a label that has nothing. Stay under {max_words} words in total.
+
+  --- EARLIER SUMMARY ---
+  {previous}
+
+  --- NEW EXCHANGES ---
+  {exchanges}
+
+  --- UPDATED SUMMARY ---

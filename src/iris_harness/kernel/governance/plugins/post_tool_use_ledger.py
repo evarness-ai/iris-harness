@@ -1,0 +1,185 @@
+"""PostToolUseLedgerHook — records side effects at PostToolUse for safe resume.
+
+Story 12.gov-4.10 / design §10.3.
+
+Every tool call whose declared effect is not ``read`` gets a row in the side-effect
+ledger, so ``iris run resume`` can ask whether the effect already landed before the run
+goes on. Opt-in is the tool's own declaration, never a list of names: the runner stamps it
+on the ``POST_TOOL_USE`` context (``kernel/governance/hooks/tool_payload.py``).
+
+Read from the context:
+
+    payload  tool_name     : str  -- the tool (``tool_payload.tool_name_of``)
+             result        : Any  -- its output; a mapped tool's id is read from it
+    metadata tool_effect   : str  -- ``read`` calls are never recorded
+             tool_verify   : str | None -- the declared probe, if any
+             tool_call_id  : str | None -- makes the row's key unique within the step
+    ctx      run_id, step_id
+
+The row's key is ``<run_id>:<step_id>:<tool_call_id>`` -- one row per call, and recording
+the same call twice (a capability stream's items) is a no-op.
+
+Which probe verifies it, in order:
+
+1. ``TOOL_PROBE_MAP`` -- the coding agent's tool names (git commit/push, PR creation,
+   file writes), each with its probe and the result field that names the effect (the
+   commit SHA, the PR URL). The probe is handed that id as its subject; when the result
+   does not carry it, the row falls back to no probe.
+2. The tool's declared ``verify:`` probe, handed the row's key as its subject.
+3. No probe: ``run_probe`` answers ``ambiguous``, so resume asks the owner to approve
+   before the call is retried.
+
+The hook always returns ``allow`` — it is an observer, not a gatekeeper.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from typing import TYPE_CHECKING, Any
+
+from iris_harness.kernel.governance.hooks.tool_payload import (
+    TOOL_CALL_ID,
+    TOOL_EFFECT,
+    TOOL_VERIFY,
+    result_of,
+    tool_name_of,
+)
+from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
+from iris_harness.kernel.governance.side_effects.probes import NO_PROBE
+
+if TYPE_CHECKING:
+    from iris_harness.kernel.governance.side_effects import SideEffectLedger
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Static tool → (probe_name, id_field, metadata_extractor) mapping, for the coding agent's
+# tool names. metadata_extractor receives the full ctx.payload dict and returns the dict
+# stored in probe_metadata (passed back to the probe at resume time).
+# ---------------------------------------------------------------------------
+
+_MetaExtractor = Any  # Callable[[dict[str, Any]], dict[str, Any]]
+
+
+def _git_commit_meta(payload: dict[str, Any]) -> dict[str, Any]:
+    return {"repo_path": str(payload.get("cwd", "."))}
+
+
+def _git_push_meta(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "repo_path": str(payload.get("cwd", ".")),
+        "commit_sha": str(payload.get("commit_sha", "")),
+    }
+
+
+def _github_pr_meta(payload: dict[str, Any]) -> dict[str, Any]:
+    return {}
+
+
+def _write_file_meta(payload: dict[str, Any]) -> dict[str, Any]:
+    return {}
+
+
+# Maps tool name → (probe_name, side_effect_id_field, meta_extractor)
+# side_effect_id_field: key in ctx.payload["result"] that carries the unique identifier
+# for the side effect (e.g. commit SHA, PR URL) -- the probe's subject.
+TOOL_PROBE_MAP: dict[str, tuple[str, str, _MetaExtractor]] = {
+    # git tool names as used by the coding agent's shell runner
+    "git_commit": ("git_commit", "commit_sha", _git_commit_meta),
+    "git_push": ("git_push", "branch_remote", _git_push_meta),
+    "github_create_pr": ("github_create_pr", "pr_url", _github_pr_meta),
+    "write_file": ("write_file", "file_path_sha", _write_file_meta),
+    # aliases used by some tool callers
+    "create_pull_request": ("github_create_pr", "pr_url", _github_pr_meta),
+}
+
+
+def side_effect_key(run_id: str, step_id: int, tool_call_id: str | None) -> str:
+    """The ledger key of one call: unique per run, step and call."""
+    return f"{run_id}:{step_id}:{tool_call_id or '-'}"
+
+
+def _mapped_subject(id_field: str, result: Any) -> str | None:
+    """The side effect's id in a mapped tool's result, or None when it is not there.
+
+    The result is a dict, or -- through the governed runner, which hands on text -- a JSON
+    object as text.
+    """
+    if isinstance(result, str) and result.lstrip().startswith("{"):
+        try:
+            result = json.loads(result)
+        except ValueError:
+            return None
+    if isinstance(result, dict):
+        value = result.get(id_field)
+        if value:
+            return str(value)
+    return None
+
+
+class PostToolUseLedgerHook:
+    """``PostToolUse`` hook that records every non-read call's side effect for safe resume."""
+
+    name: str = "post_tool_use_ledger"
+    hook_point: HookPoint = HookPoint.POST_TOOL_USE
+    priority: int = 40
+
+    def __init__(self, ledger: SideEffectLedger) -> None:
+        self._ledger = ledger
+
+    async def __call__(self, ctx: HookContext) -> HookDecision:
+        tool = tool_name_of(ctx.payload)
+        effect = ctx.metadata.get(TOOL_EFFECT)
+        if not tool or not isinstance(effect, str) or effect == "read":
+            # Undeclared (no effect stamped) is not a write anyone declared: a producer
+            # that runs non-read tools stamps the declaration (``tool_post_metadata``).
+            return HookDecision(outcome="allow", reason="post_tool_use_ledger: not a side effect")
+
+        step_id: int = ctx.step_id or 0
+        tool_call_id = ctx.metadata.get(TOOL_CALL_ID)
+        key = side_effect_key(ctx.run_id, step_id, str(tool_call_id) if tool_call_id else None)
+        probe_name, subject, meta = self._probe_for(tool, ctx)
+        try:
+            self._ledger.record(
+                side_effect_id=key,
+                run_id=ctx.run_id,
+                step_id=step_id,
+                tool=tool,
+                verification_probe=probe_name,
+                probe_metadata={**meta, "subject": subject or key, "effect": effect},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "post_tool_use_ledger: failed to record side effect for run=%s tool=%s: %s",
+                ctx.run_id,
+                tool,
+                exc,
+            )
+            return HookDecision(
+                outcome="allow",
+                reason=f"post_tool_use_ledger: could not record {tool}",
+                severity="warn",
+            )
+
+        return HookDecision(
+            outcome="allow",
+            reason=f"post_tool_use_ledger: recorded {tool} side effect",
+            audit_metadata={"side_effect_id": key, "probe": probe_name or "none"},
+        )
+
+    @staticmethod
+    def _probe_for(tool: str, ctx: HookContext) -> tuple[str, str | None, dict[str, Any]]:
+        """``(probe, subject, probe_metadata)`` for this call (module docstring, 1-3)."""
+        mapped = TOOL_PROBE_MAP.get(tool)
+        if mapped is not None:
+            probe_name, id_field, meta_extractor = mapped
+            subject = _mapped_subject(id_field, result_of(ctx.payload))
+            if subject is not None:
+                return probe_name, subject, meta_extractor(ctx.payload)
+            # The probe needs the effect's own id; without it, it could only guess.
+            return NO_PROBE, None, {}
+        declared = ctx.metadata.get(TOOL_VERIFY)
+        if isinstance(declared, str) and declared:
+            return declared, None, {}
+        return NO_PROBE, None, {}

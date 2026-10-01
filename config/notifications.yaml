@@ -1,0 +1,62 @@
+# Channel-notification lead times.
+#
+# How many minutes BEFORE the target time a notification fires on the user's
+# channels (Telegram / Console / ...). Two independent defaults:
+#
+#   meeting   - calendar meetings/events (source != "reminder"). Notify ahead of
+#               the start so the user has warning. Default 15.
+#   reminder  - plain "remind me at <time>" reminders, where the stated time IS
+#               the intended moment. Default 0 (fire at the stated time).
+#
+# Precedence (highest first):
+#   1. per-event CalendarEvent.alarm_minutes_before (when > 0)
+#   2. env override:  IRIS_MEETING_LEAD_MINUTES / IRIS_REMINDER_LEAD_MINUTES
+#   3. this file
+#   4. built-in defaults (meeting=15, reminder=0)
+#
+# Note on a sleeping laptop: the heartbeat tick can only fire after the machine
+# wakes, so an exact-time notification may still arrive late. A lead time gives
+# slack -- schedule 15 min early and a late tick still lands near the event.
+lead_minutes:
+  meeting: 15
+  reminder: 0
+
+# Where a reminder is delivered (loop-proof D14). Every listed channel that is
+# registered gets it; the reminder counts as delivered when at least one accepts.
+# web_push with no subscribed browser is skipped, not a failure. When no channel
+# accepts, it is retried 3 times 5 minutes apart, then marked failed (the health
+# watch pages, and the next digest lists it as missed).
+reminder_channels: [telegram, web_push]
+
+# Done and Snooze in the owner's words (loop-proof D14, PR 3b). The buttons send
+# fixed choices (10m, 1h, tomorrow_9am); these words are what a typed reply to a
+# reminder ("snooze 1h", "an hour", "tomorrow at 6pm", "done") may say. The grammar
+# (numbers, clock times, the order of the pieces) lives in
+# iris_harness/services/notifications/snooze.py; every word lives here.
+snooze:
+  # "tomorrow" with no time means this local time.
+  tomorrow_default: "09:00"
+  words:
+    # Leading words dropped before the time is read: "snooze for 1h" -> "1h".
+    lead: [snooze, "snooze for", "snooze until", "snooze till", "snooze it", "snooze it for",
+           "remind me", "remind me in", "remind me at", "remind me again", "again in",
+           in, for, until, till, "later", "later in"]
+    one: [a, an, one]
+    minutes: [m, min, mins, minute, minutes]
+    hours: [h, hr, hrs, hour, hours]
+    days: [d, day, days]
+    tomorrow: [tomorrow, tmrw, tmr, tomorow]
+    at: [at, "@", by]
+    am: [am, "a.m."]
+    pm: [pm, "p.m."]
+  # A reply that closes the reminder.
+  done: [done, "done!", "mark done", "mark it done", "did it", "i did it", finished,
+         complete, completed, "✅", "✔️", "👍"]
+  # A reply that closes a bill's reminder as paid (loop-proof PR 4): a Done, and the
+  # answer reads "Marked paid".
+  paid: [paid, "paid!", "i paid", "i paid it", "paid it", "already paid", "it's paid",
+         "its paid", "all paid", "payment done", "💳"]
+  # A reply to a bill's "Did you pay?" that means not yet: acknowledged, and asked
+  # again the next morning (at most 3 asks). Only a bill's question takes it.
+  not_yet: ["not yet", "not paid", "not paid yet", "haven't paid", "havent paid",
+            "didn't pay", "didnt pay", "no", "nope", "not yet!"]

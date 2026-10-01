@@ -1,0 +1,103 @@
+# The memory graph under a LIVE model (ADR-0115 decision 13; memris plan "How we will
+# know it works"). tests/integration/test_memory_graph.py is the gate: deterministic,
+# on the prompt and the store. This suite asks what only a real model can answer — does
+# the extractor produce the facts, and does the model USE what linking and the
+# memory_graph tool hand it — so it runs by hand:
+#
+#   iris playground run memory-graph
+#
+# On another model: the tiers come from llm_tiers.yaml and nothing overrides them from
+# the environment, so run against a copy of the config with tier 1 (and the fallback,
+# also granite4) swapped. From the repo root:
+#
+#   cp -R config /tmp/iris-qwen
+#   perl -pi -e 's/"granite4:latest"/"qwen2.5:7b-instruct"/' /tmp/iris-qwen/llm_tiers.yaml
+#   IRIS_CONFIG_DIR=/tmp/iris-qwen iris playground run memory-graph
+#
+# `ollama ps` during the run shows which model actually answered.
+#
+# `isolated: true` runs it on a throwaway memory, so "my bank is Barclays" is never
+# remembered as the owner's. Scenarios share that memory IN ORDER: a "tells" scenario
+# says something, and the "asks" scenario after it asks in a NEW conversation — so the
+# answer can only come from memory, not from the conversation window.
+#
+# Assertions stay on what is stable: the right name in the answer, no web search.
+
+name: memory-graph
+description: Does a live model capture facts into the graph and use them in a later conversation?
+isolated: true
+
+env:
+  IRIS_WIKI_INGEST: "0"
+
+scenarios:
+  # --- 1. supersede: the current value is the one that comes back ---------------------
+  - name: tells-a-bank-then-a-new-one
+    description: A plain statement is remembered at once; a new one supersedes it.
+    setup_messages:
+      - "my bank is Barclays"
+    message: "remember that my bank is Litware now"
+    tags: [memory, graph, live]
+    expect:
+      has_errors: false
+
+  - name: asks-the-bank-in-a-new-conversation
+    description: Asked later, the current bank — not the superseded one — is the answer.
+    message: "which bank do i use?"
+    tags: [memory, graph, live]
+    expect:
+      response_contains: ["Litware"]
+      sources_exclude: [research, web_search]
+      has_errors: false
+
+  # --- 2. one hop: a fact about someone the user names as their own -------------------
+  - name: tells-where-the-wife-works
+    description: >
+      "My wife Petra works at Infosys" is the spouse fact plus a fact about Petra; the
+      second is asked about (never confirmed on the spot), and "yes" confirms it.
+    setup_messages:
+      - "my wife is Petra"
+      - "my wife Petra works at Infosys"
+    message: "yes"
+    tags: [memory, graph, one-hop, live]
+    expect:
+      response_contains: ["Petra"]
+      has_errors: false
+
+  - name: asks-where-the-wife-works-in-a-new-conversation
+    description: Naming Petra links her statements into the prompt (automatic linking).
+    message: "where does Petra work?"
+    tags: [memory, graph, one-hop, linking, live]
+    expect:
+      response_contains: ["Infosys"]
+      sources_exclude: [research, web_search]
+      has_errors: false
+
+  # --- 3. closed vocabulary: an unknown kind of fact is counted, not stored -------------
+  - name: tells-something-memory-has-no-word-for
+    description: '"mentors" is not a key memory keeps; said once, it is only counted.'
+    message: "I mentor two juniors at work"
+    tags: [memory, graph, learned-vocabulary, live]
+    expect:
+      has_errors: false
+
+  - name: does-not-claim-what-was-only-counted
+    description: Asked later, memory has no "mentors" fact to report.
+    message: "how many juniors do i mentor?"
+    tags: [memory, graph, learned-vocabulary, live]
+    expect:
+      response_not_contains: ["two juniors"]
+      has_errors: false
+
+  # --- 4. resolution: a look-alike name is asked about, once ----------------------------
+  - name: a-look-alike-name-is-asked-about
+    description: >
+      "Fabrikam Meridien" after "Fabrikam Meridian" is kept apart as a candidate, and the
+      conversation's one question asks whether they are the same.
+    setup_messages:
+      - "my bank is Fabrikam Meridian"
+    message: "remember that my bank is Fabrikam Meridien"
+    tags: [memory, graph, resolution, live]
+    expect:
+      response_contains: ["same as"]
+      has_errors: false

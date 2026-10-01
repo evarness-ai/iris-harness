@@ -1,0 +1,72 @@
+# The health watch (ADR-0116): after every health_tick refresh, IRIS walks each red
+# health check through an incident — confirm it, try to fix it, and when fixing runs
+# out, tell the owner on the channels below with the exact command to run.
+#
+# Incidents are kept in <data_dir>/health.db; read them with `iris health incidents`
+# or GET /health/incidents. Kill-switch: IRIS_HEALTH_WATCH_ENABLED=0.
+
+enabled: true
+
+# A check must be red this many ticks in a row (health_tick runs every 60s) before
+# it is an incident — a service mid-restart is not one.
+confirm_ticks: 2
+
+notify:
+  # `all` = every registered channel (telegram, web, console …), or a list of names.
+  channels: all
+  # While an incident stays unfixed, repeat the notice at most this often.
+  renotify_hours: 12
+  # Say "working again" once a problem the owner was told about clears.
+  recovered: true
+  # Also announce problems that fixed themselves (they are always recorded).
+  self_healed: false
+
+repair:
+  # Fix attempts per incident, one per tick; the next tick checks whether it worked.
+  max_attempts: 2
+  # Re-run a heartbeat whose last run failed (e.g. email_sweep).
+  heartbeat_retry: true
+  skip_heartbeats: [health_tick]
+  # Restart command per service target. Runs detached from the repo root.
+  restart:
+    governor: [scripts/start_iris.sh, --restart=governor]
+    evaluator: [scripts/start_iris.sh, --restart=evaluator]
+    channel_gateway: [scripts/start_iris.sh, --restart=channel_gateway]
+    ollama: [open, -a, Ollama]
+  # The API process runs the watch; it cannot restart itself.
+  never_restart: [iris_api]
+
+# When an incident opens, probe the stored tokens live once, so a failing sweep caused
+# by a revoked token becomes its own row with the exact re-auth command.
+diagnose_credentials: true
+
+# "This is the 3rd time in 7 days" — the window for counting repeats.
+recurring_days: 7
+
+# Check targets (or target:subject keys) the watch never acts on.
+ignore: []
+
+# Coming back from a gap. The watch runs inside health_tick, so when its passes stop for
+# resume_gap_minutes (a laptop asleep, a stalled process), the first pass back sees every
+# heartbeat as overdue and the network may not be up yet. New incidents are then held for
+# resume_grace_minutes; anything still red after that is reported as usual.
+resume_gap_minutes: 5
+resume_grace_minutes: 10
+
+# Starting up. A restart or deploy brings every service up at once, so the first passes of
+# a new process can see a sibling (the channel gateway) still starting. New incidents are
+# held for this many minutes after the process starts; a restart's passing red never
+# becomes an incident, a notice, or a count toward "the Nth time in 7 days".
+startup_grace_minutes: 5
+
+# Jobs that must not stop silently (loop-proof D13). For each, the `job_completed` check
+# asks whether its most recent scheduled slot (cron read in IRIS_TZ) had a successful
+# run, from the runs kept in <data_dir>/heartbeat_runs.db, so a restart does not forget:
+# red "Missed 12:15 — last success 06:15" once the slot is grace_minutes old with no
+# success, red on a failed run, yellow when it ran but skipped. Red pages the owner on
+# every channel. An entry may be a name or {name, grace_minutes}.
+jobs:
+  grace_minutes: 30
+  watch:
+    - email_sweep
+    - email_judge

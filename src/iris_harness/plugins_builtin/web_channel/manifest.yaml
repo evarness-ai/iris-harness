@@ -1,0 +1,27 @@
+name: web_channel
+version: 0.1.0
+description: >-
+  The web UI as a delivery surface. Registers a `web` connector that lands a
+  proactive notice in the chat session it names, using the same in-chat notice
+  path an Activity completion already takes -- so a brief, a routine delivery or
+  a reminder addressed to `web` shows up in the web chat history instead of
+  failing with "channel not registered". Makes the web UI a peer of Telegram.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+provides:
+  - channel
+
+# ADR-0120: the app may not turn this plugin off (IRIS_PLUGINS_DISABLE).
+locked: "the app itself runs through it; turning it off from the app would lock you out"
+
+# ADR-0120: every IRIS_* setting this plugin reads, for the settings catalog.
+settings:
+  IRIS_WEB_SESSION:
+    kind: str
+    default: default
+    applies: restart
+    label: Web channel session
+    description: Web chat session id that channel messages without a recipient (e.g. heartbeat notices)
+      are delivered into.
+    tab: advanced

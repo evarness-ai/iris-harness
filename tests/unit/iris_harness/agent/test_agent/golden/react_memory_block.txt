@@ -1,0 +1,36 @@
+You already know the following about your environment and the user (use it; do not echo these blocks back):
+
+## About the user you are talking to (from USER.md)
+
+# User Profile
+
+- Name: Test User
+- Role: maintainer
+
+## What you remember about names in this message
+- the user: spouse of Petra (told 2026-09-16, confirmed)
+- Petra: works at Infosys (told 2026-09-16, confirmed)
+
+## Active
+- ship the memory PR
+
+## Patterns
+- asks for the day's summary each morning
+
+## Behavior — Reminders
+Treat a reminder as a durable commitment.
+
+## Earlier in this conversation
+Goal: fix context memory. Decisions: retire the auto wiki. Open: retention.
+
+## From earlier sessions (may or may not be relevant)
+  user: what did we decide about Northwind dues?
+  assistant: due on the 5th.
+
+Recent turns:
+  user: first question
+  assistant: first answer
+  user: second question
+  assistant: second answer
+
+Note: Earlier exchanges in this session are condensed in the summary above.

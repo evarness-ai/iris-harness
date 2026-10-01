@@ -1,0 +1,54 @@
+name: email-followup
+version: 0.1.0
+description: |
+  Detect emails that need a personal reply from the user and track them
+  as followup Tasks (Task with `wait_for` set, per ADR-0005). Detection
+  uses Tier 3 local — user-invoked per ADR-0022's "Tier 3 only on demand"
+  stance. Auto-resolution of existing followups runs continuously on
+  email.new_arrived (no LLM call).
+author: iris-personal-assistant
+license: Apache-2.0
+default_enabled: true
+trust_level: first-party
+homepage: https://github.com/evarness-ai/iris-harness
+tools:
+  - name: detect_followups
+    description: |
+      Scan recent classified emails for one account, ask Tier 3 local
+      whether each needs a reply, and upsert a followup Task for each
+      positive verdict. Idempotent — re-running over the same thread
+      is a no-op via the followup_key dedup contract.
+    governor_route: task/write
+    args:
+      - name: account_id
+        type: string
+        required: true
+        description: The email_accounts.id slug, e.g. 'gmail:user@gmail.com'.
+        examples:
+          - "gmail:user@gmail.com"
+      - name: limit
+        type: int
+        required: false
+        default: 50
+        description: Cap on recent emails scanned.
+        min: 1
+        max: 500
+  - name: list_open_followups
+    description: |
+      Return open followup Tasks (Task with wait_for set, status open
+      or doing, wait not yet resolved). Used by the morning brief.
+    governor_route: task/read
+    args:
+      - name: limit
+        type: int
+        required: false
+        default: 50
+        description: Cap on rows returned.
+        min: 1
+        max: 200
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

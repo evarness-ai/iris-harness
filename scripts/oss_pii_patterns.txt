@@ -1,0 +1,5 @@
+# Identity patterns for scripts/oss_pii_scan.sh: one `TIER<TAB>regex[<TAB>allowed paths]`
+# per line (case-insensitive). BLOCK: never allowed in a commit. WARN: reported; fails
+# only with --strict. The optional third column is a comma-separated list of path globs
+# where a match is permitted (authorship and credit: CODEOWNERS, README credits).
+# Add the identities your fork must never publish (your email, home path, handles).

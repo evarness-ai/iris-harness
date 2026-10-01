@@ -1,0 +1,50 @@
+# Deterministic harness behaviors — no LLM, no external data, no side effects.
+# These run in CI as a regression net: every scenario short-circuits before the
+# agent loop, so the outcome is fully determined by the harness itself. This is
+# the safety belt for the bootstrap decomposition (Phase 2) — if the intercept
+# dispatch changes behavior, these fail.
+#
+# Run:  iris playground run core-deterministic
+# Snapshot before a refactor:  iris playground run core-deterministic -b before.json
+# Diff after:                  iris playground diff core-deterministic -b before.json
+
+name: core-deterministic
+description: Deterministic intercepts that answer without the LLM.
+
+scenarios:
+  - name: time-query
+    description: "\"what time is it?\" answers from the system clock, never the LLM."
+    message: "what time is it?"
+    tags: [intercept, time_date, deterministic]
+    expect:
+      handler: time_date
+      metadata:
+        deterministic_time_date: true
+      response_contains: ["Current local time"]
+      sources_exclude: [research]
+      no_pii_leak: true
+
+  - name: time-query-with-qualifier
+    description: A trailing qualifier must still hit the deterministic path.
+    message: "what time is it right now?"
+    tags: [intercept, time_date, deterministic]
+    expect:
+      handler: time_date
+      response_contains: ["Current local time"]
+
+  - name: date-query
+    description: "\"what's today's date?\" answers from the clock."
+    message: "what's today's date?"
+    tags: [intercept, time_date, deterministic]
+    expect:
+      handler: time_date
+      response_contains: ["Today's date"]
+      no_pii_leak: true
+
+  - name: day-query
+    description: "\"what day is it today?\" answers from the clock."
+    message: "what day is it today?"
+    tags: [intercept, time_date, deterministic]
+    expect:
+      handler: time_date
+      response_contains: ["Today is"]

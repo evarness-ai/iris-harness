@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- `maximum-scale` + `user-scalable=no` make this behave like an app
+         rather than a page: no pinch zoom, no accidental scale after a
+         double tap. Safari ignores both for accessibility when the site is
+         browsed normally, and honours them in a Home Screen web app — which
+         is how this is meant to be used, so the browser tab keeps its zoom
+         and the installed app does not drift. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0c0f14" />
+
+    <!-- Add to Home Screen (Track 2b PR 8). iOS only delivers Web Push to a
+         home-screen web app, so this is a prerequisite for PR 9, not polish. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS reads apple-touch-icon in preference to the manifest's icons. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- Superseded by the manifest's `display` on modern iOS, kept because
+         older versions still read it. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="IRIS" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <title>IRIS Console</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

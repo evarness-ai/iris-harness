@@ -1,0 +1,26 @@
+# Where each data class may be sent: the egress gate's policy (EgressGate, PreLLMCall;
+# docs/architecture/unified-governance-layer.md §6.3). Read once, when the kernel is built.
+#
+# The tiers mean where a model runs, never what it is called (llm/locality.py): tier_1 and
+# tier_2 are models on the owner's machines (a provider declared `runs: local` in
+# llm_tiers.yaml), tier_3 leaves them (`runs: cloud`, or undeclared). "Local" includes a
+# host the owner controls reached over the owner's own tailnet -- the cloud VM uses the
+# Mac's Ollama that way -- never a third party's service.
+#
+#   max_tier       the furthest tier a prompt of this class may reach
+#   on_violation   what a call beyond it gets: deny | require_approval (default deny)
+#
+# secret is local only (owner, 2026-09-30): any local model, never tier_3, and a violation
+# is always a hard deny. The loader refuses a table that loosens that, so no edit here can
+# send a secret off the owner's machines.
+classes:
+  secret:
+    max_tier: tier_2
+    on_violation: deny
+  personal:
+    max_tier: tier_2
+    on_violation: require_approval
+  internal:
+    max_tier: tier_3
+  public:
+    max_tier: tier_3

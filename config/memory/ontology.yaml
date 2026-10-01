@@ -1,0 +1,95 @@
+# The memory ontology: what CAN exist (ADR-0115, docs/architecture/memris-plan.md).
+#
+# This is grammar, not memory. No fact about the owner is ever written here; learned
+# vocabulary lives in the database (decision 7), and the deployed config is read-only.
+# memris reads this file and knows none of the names in it (decision 2).
+#
+# Read at runtime: user facts are statements under these properties (PR 2b), the Map
+# draws with their labels (PR 5), and the fact extractor may only offer what the
+# mappings name (PR 3). The compile check runs in CI.
+#
+# Name rules: a bare name belongs to the default prefix; a prefixed name (`ns:Name`)
+# to that namespace. A plugin adds its own vocabulary as a fragment under its own prefix
+# (the finance plugin's `fin:` terms live in its package: memris PR 10); memory loads
+# every installed plugin's fragment with this file. A relation links two things; an attribute holds a literal.
+
+ontology:
+  # The base IRI is an open item in the plan; this placeholder is stable until it is
+  # chosen, and changing it later is a one-line edit because every term is relative.
+  id: urn:iris:ontology:memory
+  version: 0.1.0
+  default_prefix: mem
+  owner_class: Person
+
+prefixes:
+  mem: "urn:iris:ontology:memory#"
+  schema: "https://schema.org/"
+  prov: "http://www.w3.org/ns/prov#"
+  xsd: "http://www.w3.org/2001/XMLSchema#"
+
+classes:
+  Thing:         { abstract: true }
+  # Not abstract: a name a summary references is an Entity until something types it.
+  Entity:        { subclass_of: Thing }
+  Person:        { subclass_of: Entity, maps_to: schema:Person }
+  Organization:  { subclass_of: Entity, maps_to: schema:Organization }
+  Team:          { subclass_of: Organization }
+  Place:         { subclass_of: Entity, maps_to: schema:Place }
+  City:          { subclass_of: Place, maps_to: schema:City }
+  Country:       { subclass_of: Place, maps_to: schema:Country }
+  Animal:        { subclass_of: Entity }
+  Project:       { subclass_of: Entity, maps_to: schema:Project }
+  Topic:         { subclass_of: Entity, label: "Topic", maps_to: schema:DefinedTerm }
+  SoftwareAgent: { subclass_of: Entity, maps_to: prov:SoftwareAgent }
+  # Episodes are the evidence statements are derived from (decision 5 of the plan).
+  Episode:       { subclass_of: Thing, abstract: true, system: true }
+  Conversation:  { subclass_of: Episode, system: true }
+  # What IRIS keeps about its own behaviour, drawn on the Map today.
+  Lesson:        { subclass_of: Thing, system: true, label: "Lesson" }
+  Pattern:       { subclass_of: Thing, system: true, label: "Pattern" }
+
+relations:
+  works_at:      { label: "works at", domain: Person, range: Organization, inverse: employs, inverse_label: "employs" }
+  works_in:      { label: "works in", domain: Person, range: Team }
+  works_on:      { label: "works on", domain: Person, range: Project }
+  researches:    { label: "researches", domain: Person, range: Topic }
+  # Where someone LIVES and where they are FROM are different facts: "from India, living
+  # in the UK" must not overwrite either way. Residence is one current value per level
+  # (moving supersedes, and valid time keeps the history); a query on lives_in returns
+  # the city and the country together.
+  lives_in:           { label: "lives in", domain: Person, range: Place }
+  resides_in_city:    { label: "lives in", domain: Person, range: City, subproperty_of: lives_in }
+  resides_in_country: { label: "lives in", domain: Person, range: Country, subproperty_of: lives_in }
+  hometown:           { label: "is from", domain: Person, range: City }
+  citizen_of:         { label: "citizen of", domain: Person, range: Country }
+  spouse:        { label: "spouse of", domain: Person, range: Person, symmetric: true }
+  has_child:     { label: "parent of", domain: Person, range: Person, inverse: child_of, inverse_label: "child of" }
+  family_member: { label: "family", domain: Person, range: Person, symmetric: true }
+  has_pet:       { label: "pet", domain: Person, range: Animal }
+  mentions:      { label: "mentioned", domain: Episode, range: Entity, inverse: mentioned_in, inverse_label: "mentioned in" }
+  participated_in: { label: "talked about", domain: Person, range: Episode }
+  learned:       { label: "learned", domain: Person, range: Lesson }
+  tends_to:      { label: "tends to", domain: Person, range: Pattern }
+
+attributes:
+  name:                     { domain: Entity, datatype: string }
+  nickname:                 { domain: Person, datatype: string }
+  pronouns:                 { domain: Person, datatype: string }
+  birthday:                 { domain: Person, datatype: string }   # stored as said; a date type waits on parsing
+  timezone:                 { domain: Person, datatype: string }
+  languages:                { domain: Person, datatype: string }
+  profession:               { domain: Person, datatype: string }
+  role:                     { domain: Person, datatype: string }
+  industry:                 { domain: Person, datatype: string }
+  email:                    { domain: Person, datatype: string }
+  phone:                    { domain: Person, datatype: string }
+  blog:                     { domain: Person, datatype: anyURI }
+  website:                  { domain: Person, datatype: anyURI }
+  github:                   { domain: Person, datatype: string }
+  linkedin:                 { domain: Person, datatype: string }
+  communication_preference: { domain: Person, datatype: string }
+  preferred_language:       { domain: Person, datatype: string }
+  dietary_preference:       { domain: Person, datatype: string }
+  work_hours:               { domain: Person, datatype: string }
+  interest:                 { domain: Person, datatype: string }
+  hobby:                    { domain: Person, datatype: string }

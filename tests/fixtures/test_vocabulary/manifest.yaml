@@ -1,0 +1,13 @@
+# A test-only plugin that ships nothing but a memory vocabulary fragment.
+#
+# Memory tests need fact keys beyond the core's (a bank, a card, a broker) to exercise
+# relations to organisations, multi-valued properties and look-alike entities. The core
+# ontology deliberately has none of them: they belong to whichever plugin brings them.
+# The `test_vocabulary` fixture (tests/conftest.py) installs this directory through the
+# same seam a real plugin uses -- `iris_harness.memory.ontology.vocabulary_fragments()`,
+# which reads `ontology:` from an installed plugin's manifest -- so these tests run the
+# same in every tree, whichever domain plugins it carries.
+name: test_vocabulary
+version: 0.0.0
+description: Test-only memory vocabulary (tests/conftest.py `test_vocabulary`).
+ontology: ontology

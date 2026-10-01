@@ -1,0 +1,48 @@
+name: Configuration or setup problem
+description: Install, `iris doctor`, onboarding, profiles, models or provider setup does not work.
+labels: [config]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove secrets, app passwords, OAuth tokens and email addresses before pasting anything.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Install (uv tool / pipx / Docker / Poetry)
+        - iris doctor
+        - iris email demo
+        - iris email setup (IMAP)
+        - iris email setup (Gmail OAuth)
+        - Profiles and plugins (config/profiles, iris --dump-config)
+        - Models and tiers (Ollama, LM Studio, cloud)
+        - Vault and secrets
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What you ran and what happened
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`iris doctor` output"
+      render: text
+  - type: textarea
+    id: config
+    attributes:
+      label: Effective configuration
+      description: The relevant part of `iris --dump-config` and any `IRIS_*` variables you set, secret values removed.
+      render: text
+  - type: input
+    id: platform
+    attributes:
+      label: IRIS version, OS, Python
+      placeholder: 0.1.0, Ubuntu 24.04, Python 3.12
+    validations:
+      required: true

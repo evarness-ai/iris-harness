@@ -1,0 +1,74 @@
+# The `licenses` check's policy (OSS plan R11, R19): every distribution a plain
+# `pip install iris-harness` puts in an environment must carry a license on this allow
+# list. scripts/check_licenses.py reads it; .github/public/workflows/ci.yml runs it on
+# the core install (no extras).
+#
+# The allow list is OSI-approved licenses, permissive and weak-copyleft: what an
+# Apache-2.0 project can depend on without changing its own terms. Strong copyleft
+# (GPL, AGPL) is not on it even though the OSI approves it; a dual-licensed package
+# passes when ONE of its options is allowed (SPDX `OR`), and a package whose files are
+# under several licenses (SPDX `AND`) needs every one allowed.
+#
+# Changing this file is a licensing decision: one CODEOWNER review (R11).
+
+[allow]
+licenses = [
+    # permissive
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "CNRI-Python",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MIT-CMU",
+    "PSF-2.0",
+    "Python-2.0",
+    "Unlicense",
+    "Zlib",
+    # weak copyleft (file- or library-scoped)
+    "LGPL-2.1-only",
+    "LGPL-2.1-or-later",
+    "LGPL-3.0-only",
+    "LGPL-3.0-or-later",
+    "MPL-1.1",
+    "MPL-2.0",
+    # Public-domain dedication. Not an OSI licence (the OSI does not review dedications),
+    # listed so numpy's vendored CC0 files (`... AND CC0-1.0`) pass.
+    "CC0-1.0",
+]
+
+# Never in the core install, whatever their license says. arize-phoenix is Elastic-2.0
+# (source-available, not OSI): it is the optional `[phoenix]` extra (R19).
+[deny]
+arize-phoenix = "Elastic-2.0, not OSI: the optional [phoenix] extra only (R19)"
+
+# Free-text `License:` values and trove classifiers, mapped to SPDX ids. A value that is
+# neither an SPDX expression nor listed here falls through to the classifiers, then to
+# [packages], then fails the check: add the mapping here after reading the package.
+[aliases]
+"Apache 2.0" = "Apache-2.0"
+"Apache License 2.0" = "Apache-2.0"
+"Apache License, Version 2.0" = "Apache-2.0"
+"Apache License Version 2.0" = "Apache-2.0"
+"Apache Software License" = "Apache-2.0"
+"MIT License" = "MIT"
+"BSD License" = "BSD-3-Clause"
+"Modified BSD License" = "BSD-3-Clause"
+"3-Clause BSD License" = "BSD-3-Clause"
+"The BSD 2-Clause License" = "BSD-2-Clause"
+"ISC License" = "ISC"
+"ISC License (ISCL)" = "ISC"
+"Python Software Foundation License" = "PSF-2.0"
+"Mozilla Public License 2.0 (MPL 2.0)" = "MPL-2.0"
+
+# Reviewed by hand: packages whose metadata names no usable license. Each entry says
+# what was read. Re-review when the package's metadata changes (the check then reports
+# the new value beside this one).
+[packages.pypdfium2]
+license = "Apache-2.0 OR BSD-3-Clause"
+reason = """`License: BSD-3-Clause, Apache-2.0, dependency licenses`. Its README (5.13.0): \
+"pypdfium2 itself is available by the terms and conditions of Apache-2.0 / BSD-3-Clause"; \
+docs CC-BY-4.0; the bundled PDFium binary is BSD-style, with its dependencies' licenses \
+(freetype, icu, libjpeg-turbo, libpng, zlib, ...) shipped in the wheel's BUILD_LICENSES."""

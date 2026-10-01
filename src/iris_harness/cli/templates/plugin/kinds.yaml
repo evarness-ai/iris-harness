@@ -1,0 +1,24 @@
+# The kinds `iris plugin new --kind` generates (OSS plan R10). Each is the template tree
+# of that name beside this file, laid over `_common/` (a kind's file replaces the common
+# file at the same path). `summary` is the one line the CLI and the generated files use;
+# `distribution` is the IRIS distribution the plugin depends on -- the version range comes
+# from the stable tier (iris_harness/sdk/stable_tier.yaml); `dependencies` are any other
+# packages the template's code imports; `entry_point` is what the plugin's
+# `iris_harness.plugins` entry point names ({package} is the import package) -- by default
+# its `setup`, and the package itself for a declarative plugin, which has none.
+tool:
+  summary: one read-only tool on the governed ReAct loop
+  distribution: iris-harness
+channel:
+  summary: a delivery channel on the harness's gateway
+  distribution: iris-harness
+mail-provider:
+  summary: a mailbox the email sweep syncs, written against the mail-provider facade
+  distribution: iris-harness[email]
+research-provider:
+  summary: a web-search backend in the research tool's provider chain
+  distribution: iris-harness
+skill:
+  summary: a declarative plugin whose tools are declared in its manifest and bound to plain functions
+  distribution: iris-harness
+  entry_point: "{package}"

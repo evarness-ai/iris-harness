@@ -1,0 +1,5 @@
+# When the morning note goes out (cron: 07:00, Monday to Friday) and what it says.
+schedule: "0 7 * * 1-5"
+lines:
+  - Stand-up at 9:30.
+  - Water the plants.

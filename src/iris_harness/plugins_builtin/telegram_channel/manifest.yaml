@@ -1,0 +1,13 @@
+name: telegram_channel
+version: 0.1.0
+description: >-
+  Telegram as a delivery surface. Registers the Telegram connector from the
+  `telegram`-typed rows of config/channels.yaml, so proactive notices (heartbeat
+  briefs, routine deliveries, activity completions) can reach a phone. The
+  gateway, the console sink and the default-channel fallback are core; a surface
+  is not, which is what makes `web` and `telegram` peers.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+provides:
+  - channel

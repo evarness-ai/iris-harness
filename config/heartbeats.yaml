@@ -1,0 +1,298 @@
+# Heartbeat definitions for IRIS proactive autonomy.
+#
+# Each entry is registered with the HeartbeatScheduler at startup. The `handler`
+# field must match a callable registered via `HeartbeatScheduler.register_handler`.
+#
+# Schedules support cron expressions (5-field) or `interval:<seconds>`.
+
+heartbeats:
+  - name: wiki_lint
+    handler: wiki_lint
+    schedule: "interval:3600"
+    description: "Run knowledge wiki lint to detect contradictions and orphan pages."
+    enabled: true
+    params: {}
+
+  - name: memory_housekeeping
+    handler: memory_housekeeping
+    # Checked hourly, run once a day: the last pass is recorded on disk, so a restart
+    # no longer resets the clock (an interval:86400 schedule never fired on a stack
+    # restarted more often than daily). A pass that leaves idle sessions waiting for
+    # their closing summary runs again at the next check.
+    schedule: "interval:3600"
+    description: "Daily retention pass — cool old conversations to their summary, sweep
+      orphan vectors, compact the database, rotate logs. Never deletes summaries,
+      confirmed facts, or anything the owner wrote."
+    enabled: true
+    params:
+      min_hours_between: 23
+
+  - name: learning_tick
+    handler: learning_tick
+    schedule: "interval:900"
+    description: "Drive the self-learning loop — propose, evaluate, and discard
+      experiments."
+    enabled: true
+    params: {}
+
+  - name: escalation_priors_tick
+    handler: escalation_priors_tick
+    schedule: "interval:3600"
+    description: "Mine escalation history into predictive start-tier priors
+      (ADR-0068 L5); applied only when priors.enabled."
+    enabled: true
+    params: {}
+
+  - name: crystallize_tick
+    handler: crystallize_tick
+    schedule: "interval:21600"
+    description: "Crystallize clean recurring successes into quarantined skill
+      proposals (success-trace mining + optional LLM synthesis)."
+    enabled: true
+    params: {}
+
+  - name: routine_reflection_tick
+    handler: routine_reflection_tick
+    schedule: "interval:43200"
+    description: "Routines learning loop — propose changes to failing/stale
+      routines via the HITL approval queue (opt-in IRIS_ROUTINE_REFLECTION)."
+    enabled: true
+    params: {}
+
+  - name: learning_analysis_tick
+    handler: learning_analysis_tick
+    schedule: "interval:43200"
+    description: "Learning analyst — interpret the measured intelligence report and
+      persist ranked, advisory recommendations (opt-in IRIS_LEARNING_ANALYST;
+      propose-only, never auto-applied)."
+    enabled: true
+    params: {}
+
+  - name: behavior_mining_tick
+    handler: behavior_mining_tick
+    schedule: "interval:86400"
+    description: "Behavior-pattern mining (digital-twin layer) — analyze recent turns
+      and propose recurring habits for review (opt-in IRIS_BEHAVIOR_MINER; propose-only,
+      HITL via `iris behaviors`, never auto-written)."
+    enabled: true
+    params: {}
+
+  - name: intention_rollup_tick
+    handler: intention_rollup_tick
+    schedule: "interval:86400"
+    description: "Intention rollup (digital-twin layer 3) — aggregate open tasks,
+      routines, confirmed habits, and steering signals into higher-level goals the user
+      is working toward (opt-in IRIS_INTENTION_ROLLUP; propose-only, HITL via
+      `iris intentions`, approved goals become ACTIVE identity items)."
+    enabled: true
+    params: {}
+
+  - name: experiment_remeasure_tick
+    handler: experiment_remeasure_tick
+    schedule: "interval:21600"
+    description: "Re-measure recommendation-derived experiments (ADR-0069 #4 slice 3):
+      read each promoted target's current value, keep/discard past the window.
+      Always-on but only touches experiments a human explicitly promoted."
+    enabled: true
+    params: {}
+
+  - name: sandbox_preflight_tick
+    handler: sandbox_preflight_tick
+    schedule: "interval:43200"
+    description: "Sandbox replay-eval pre-flight (ADR-0070): replay a frozen workload
+      through an ISOLATED eval runtime under baseline vs a promoted experiment's
+      variant and stamp the verdict. Opt-in IRIS_SANDBOX_PREFLIGHT (off by default;
+      builds a runtime + runs local LLMs); never applies the change."
+    enabled: true
+    params: {}
+
+  - name: routine_tick
+    handler: routine_tick
+    schedule: "interval:60"
+    description: "Find due approved routines and execute their configured template."
+    enabled: true
+    params: {}
+
+  - name: notification_reminder_tick
+    handler: notification_reminder_tick
+    schedule: "interval:60"
+    description: "Fire every due reminder in the new delivery-only ReminderStore
+      (Phase 2 Track 2D / ADR-0005 §1). Each fire emits reminder.fired which the
+      channel subscriber turns into a user-facing notification. Distinct from
+      reminder_tick which drives the legacy reminders.py module."
+    enabled: true
+    params: {}
+
+  - name: approval_timeout_tick
+    handler: approval_timeout_tick
+    schedule: "interval:60"
+    description: "Time out HITL approvals nobody answered, and say so — on the channel
+      that was asked and in the conversation the halted run belongs to. Before this,
+      `expire_stale` had no production caller, so `timeout_at` never fired and a dead
+      request kept showing up as live in the Action Center."
+    enabled: true
+    params: {}
+
+  - name: pressure_tick
+    handler: pressure_tick
+    schedule: "interval:30"
+    description: "Sample host RAM/CPU/thermal pressure and update the LLM resource
+      governor mode."
+    enabled: true
+    params: {}
+
+  - name: email_sweep
+    handler: email_sweep
+    # 06:15, 12:15 and 18:15 in the owner's zone (IRIS_TZ; the scheduler reads cron in
+    # it). Loop-proof PR 5: new mail is invisible until the email judge has read it, so
+    # the sweep only needs to run just before each judge run.
+    schedule: "15 6,12,18 * * *"
+    description: "Fetch new mail from each connected Gmail account via Gmail
+      history.list delta (or cold-start) and emit email.swept per account. The email
+      judge's queue keeps each non-promo email waiting (hidden) until judged and
+      releases the rest at once as email.new_arrived. Per canonical doc §3.1."
+    enabled: true
+    params:
+      # Per account per run. Gmail's history cursor moves to the mailbox's latest id
+      # even when this cap cuts a delta short, so mail past the cap is never fetched:
+      # sized for the longest gap between runs (18:15 -> 06:15), not for one tick.
+      max_messages: 1000
+
+  - name: email_judge
+    handler: email_judge
+    # Fifteen minutes after each sweep, in the owner's zone (IRIS_TZ).
+    schedule: "30 6,12,18 * * *"
+    description: "Judge the waiting email oldest first, up to IRIS_EMAIL_JUDGE_MAX
+      (100) per run, on the Mac's email_judge model only (never another model or the
+      cloud): one bucket each (Bill, Event, Needs reply, FYI, Unsure), then release
+      it to the rest of IRIS as email.new_arrived and label it IRIS/* in Gmail. The Mac
+      unreachable stops the run; the rest waits for the next one. Off-switch:
+      IRIS_EMAIL_JUDGE=0 (new email then waits, hidden)."
+    # The Mac asleep or restarting at a slot skips the run; retry every 30 min until
+    # it answers, instead of leaving the mail hidden until the next slot (2026-09-28:
+    # the Mac restarted at 18:21, the 18:30 run timed out, 5 emails waited overnight).
+    retry_skipped_after_minutes: 30
+    enabled: true
+    params: {}
+
+  - name: email_semantic_index
+    handler: email_semantic_index
+    schedule: "interval:1800"
+    description: "Fill the semantic email index with mail it lacks (from before it
+      existed, or indexed by an older version), newest first, at most max_per_run per
+      run. New mail is indexed as it arrives. Off-switch: IRIS_EMAIL_SEMANTIC_SEARCH=0
+      (ADR-0121 PR 4)."
+    enabled: true
+    params:
+      max_per_run: 1000
+
+  - name: finance_ingest_tick
+    handler: finance_ingest_tick
+    schedule: "0 7 * * *"
+    description: "Daily statement ingestion across ALL connected inboxes (e.g. an
+      INR inbox + a USD inbox), then extraction of new pendings — so net worth and
+      dues stay fresh without a manual statement-ingest run. Currency follows the
+      matched institution (ADR-0007). Off-switch: IRIS_FINANCE_AUTO_INGEST=0."
+    enabled: true
+    params: {}
+
+  - name: finance_monitor
+    handler: finance_monitor
+    schedule: "0 8 * * *"
+    description: "Daily 8 AM finance check — bills due/overdue (statement-derived
+      + manual) and unusual category spend. Emits finance.alert; the morning
+      brief surfaces the same alerts. Per ADR-0006 / ADR-0039."
+    enabled: true
+    params: {}
+
+  # NOTE: the finance_retention heartbeat (ADR-0061) was retired in FMX1 —
+  # finance documents now live in FileManager custody, so filemanager_retention
+  # below owns their retention (ADR-0063).
+
+  - name: filemanager_retention
+    handler: filemanager_retention
+    schedule: "45 3 * * *"
+    description: "Daily 3:45 AM central custody retention sweep — purge managed
+      file bytes past their per-file window (policy in
+      config/filemanager/custody.yaml), keeping catalog metadata. The single
+      retention engine for all agents' files. Per ADR-0062."
+    enabled: true
+    params: {}
+
+  - name: filemanager_index
+    handler: filemanager_index
+    schedule: "15 4 * * *"
+    description: "Daily 4:15 AM root indexer — catalogue files in place across
+      allowed roots (local + iCloud Drive): media kind, sensitivity, password
+      state, image dimensions. No-op without roots. Per ADR-0064 (FMX2)."
+    enabled: true
+    params: {}
+
+  - name: filemanager_photos
+    handler: filemanager_photos
+    platforms: [darwin]  # the Apple Photos library
+    schedule: "30 4 * * *"
+    description: "Daily 4:30 AM Apple Photos catalogue — record photos/videos
+      from the Photos library (read-only) as photos-tier entries. Skips cleanly
+      without the library or Full Disk Access. Per ADR-0065 (FMX3)."
+    enabled: true
+    params: {}
+
+  - name: filemanager_vision
+    handler: filemanager_vision
+    schedule: "45 4 * * *"
+    description: "Daily 4:45 AM image enrichment over cataloged photos/images:
+      deterministic screenshot detection always runs; local model classification
+      runs only when IRIS_FM_VISION is enabled. Writes tags/caption/content_type
+      facets without changing classification."
+    enabled: true
+    params: {}
+
+  - name: meeting_prep
+    handler: meeting_prep
+    schedule: "0 18 * * *"
+    description: "Daily 6 PM meeting-prep — scan tomorrow's meetings (events with
+      attendees) and create one dedup-keyed prep task each. Calendar C3 / ADR-0043."
+    enabled: true
+    params: {}
+
+  - name: calendar_mirror
+    handler: calendar_mirror
+    schedule: "interval:900"
+    description: "Reconcile task events into the calendar — create/move/delete
+      events so calendar-visible due tasks mirror to the calendar. Bills are not
+      mirrored (loop-proof D7, one bill one reminder); the first run deletes the
+      old bill events once. Also syncs reminder cards. Idempotent. Calendar C3 / ADR-0043."
+    enabled: true
+    params: {}
+
+  - name: apple_calendar_sync
+    handler: apple_calendar_sync
+    platforms: [darwin]  # EventKit / Calendar.app
+    schedule: "interval:900"
+    description: "Read-back the user's Apple/iCloud Calendar.app events into calendar.db
+      so schedule queries see them. Darwin-only; silent without Full Access (never
+      prompts). EventKit read, never writes to Apple. ADR-0101."
+    enabled: true
+    params: {}
+
+  - name: health_tick
+    handler: health_tick
+    schedule: "interval:60"
+    description: "Sample runtime health (services, credentials, hardware) into a
+      cached HealthSnapshot for the system_health tool, GET /health, and the Web
+      UI banner. Local + zero-egress by default; the network credential
+      refresh-probe is opt-in via IRIS_HEALTH_NET_PROBE. Kill-switch:
+      IRIS_HEALTH_ENABLED=0. Per ADR-0069."
+    enabled: true
+    params: {}
+
+  - name: mission_proposal_tick
+    handler: mission_proposal_tick
+    schedule: "interval:43200"
+    description: "Proactive mission auto-creation — mine recurring episodic patterns
+      into PENDING mission proposals surfaced in the Action Center for approval
+      (propose-not-act, HITL). Inert unless IRIS_MISSION_AUTOCREATE=1. Never runs a
+      mission. The reactive trigger (multi-step chat goals) lives in the chat path."
+    enabled: true
+    params: {}

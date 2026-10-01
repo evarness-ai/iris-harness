@@ -1,0 +1,112 @@
+version: "1"
+routes:
+  - route: coding/git
+    description: Governed live git branch, commit, and push operations.
+    allowed_actions:
+      - branch_commit_push
+    rate_limit:
+      requests: 20
+      window_seconds: 3600
+
+  - route: coding/github
+    description: Governed pull request creation.
+    allowed_actions:
+      - create_pull_request
+    rate_limit:
+      requests: 5
+      window_seconds: 3600
+
+  - route: coding/mcp
+    description: Governed MCP server sessions and tool invocation.
+    allowed_actions:
+      - session_open
+      - call_tool
+      - invoke_server
+    requires_approval: true
+    rate_limit:
+      requests: 30
+      window_seconds: 3600
+
+  - route: coding/tool/*
+    description: Governed coding-agent tool execution.
+    rate_limit:
+      requests: 120
+      window_seconds: 3600
+
+  - route: coding/skill/*
+    description: Governed skill execution and promotion.
+    requires_approval: true
+    rate_limit:
+      requests: 60
+      window_seconds: 3600
+
+  - route: filemanager/read
+    description: Confined, audited file list/find/read/classify within allowed roots.
+    rate_limit:
+      requests: 240
+      window_seconds: 3600
+
+  - route: filemanager/write
+    description: Governed file mutations (R2 create/mkdir with undo; R3 parked for approval).
+    rate_limit:
+      requests: 60
+      window_seconds: 3600
+
+  - route: filemanager/organize
+    description: Organize-plan proposal and batch-approved execution (no unapproved moves).
+    requires_approval: true
+    rate_limit:
+      requests: 30
+      window_seconds: 3600
+
+  - route: filemanager/vault
+    description: Encrypted document vault add/list/read (decrypt in memory only).
+    requires_approval: true
+    rate_limit:
+      requests: 30
+      window_seconds: 3600
+
+  - route: filemanager/photos
+    description: Photo catalog queries and approved Apple Photos album write-back.
+    requires_approval: true
+    rate_limit:
+      requests: 30
+      window_seconds: 3600
+
+  - route: filemanager/render
+    description: Governed document rendering (markdown to PDF via the custodian).
+    rate_limit:
+      requests: 30
+      window_seconds: 3600
+
+  - route: rag/ingest
+    description: Model-proposed RAG ingestion; each file individually user-approved, secret denied.
+    requires_approval: true
+    rate_limit:
+      requests: 20
+      window_seconds: 3600
+
+  - route: research/draft
+    description: Research-agent draft composition into the managed drafts area.
+    rate_limit:
+      requests: 30
+      window_seconds: 3600
+
+  - route: llm/fast
+    description: Fast-tier local LLM access.
+    rate_limit:
+      requests: 600
+      window_seconds: 3600
+
+  - route: llm/advanced
+    description: Advanced local LLM access.
+    rate_limit:
+      requests: 240
+      window_seconds: 3600
+
+  - route: llm/cloud/*
+    description: Cloud LLM access.
+    requires_approval: true
+    rate_limit:
+      requests: 60
+      window_seconds: 3600

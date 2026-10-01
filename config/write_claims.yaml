@@ -1,0 +1,87 @@
+# Write claims the agent loop checks a final answer for (answer_guard.py).
+#
+# A final answer that says a change was made — "I've added it", "marked as done" —
+# while no tool that changes anything ran on this request is not true: the model
+# answered instead of calling the tool (2026-09-27 tool eval: qwen3.5 said "Marked
+# the expense report task as done." with no complete_task call). The loop turns such
+# an answer back once; if the next answer still claims the change, it is replaced by
+# an honest "nothing was saved".
+#
+# Matched case-insensitively on word boundaries, one sentence at a time; " ... "
+# inside a phrase means "anything in between" in that sentence. Tunable without code
+# (owner rule 2026-09-13: vocabulary lives in YAML, never in code).
+claims:
+  - i've added
+  - you've added
+  - you have added
+  - you've marked
+  - you have marked
+  - i have added
+  - has been added
+  - have been added
+  - is now added
+  - added ... to your
+  - i've marked
+  - i have marked
+  - has been marked
+  - have been marked
+  - is now marked
+  - marked ... as done
+  - marked ... as complete
+  - marked ... as completed
+  - i've completed
+  - has been completed
+  - i've created
+  - i have created
+  - has been created
+  - i've scheduled
+  - has been scheduled
+  - is now scheduled
+  - i've set
+  - has been set
+  - is now set
+  - i've updated
+  - has been updated
+  - i've deleted
+  - has been deleted
+  - i've removed
+  - has been removed
+  - i've cancelled
+  - has been cancelled
+  - has been canceled
+  - i've sent
+  - has been sent
+# A promise of the change as the answer ("I will mark the task as done now.") tells the
+# user it is being done, which is not true either. An answer that ends on a question is
+# exempt, so "I'll add it due Friday. Shall I go ahead?" stays an ask.
+promises:
+  - i will mark
+  - i'll mark
+  - i'm marking
+  - i will add
+  - i'll add
+  - i'm adding
+  - i will create
+  - i'll create
+  - i will complete
+  - i'll complete
+  - i will delete
+  - i'll delete
+  - i will cancel
+  - i'll cancel
+  - i will set
+  - i'll set
+# A whole answer that is only one of these claims the change by itself ("Done.").
+whole_answer_claims: [done, all done, done it, completed, all set, finished, it's done]
+# A sentence with one of these is not a claim ("it has not been added").
+negations:
+  [not, never, unable, cannot, failed, "can't", "couldn't", "won't", "didn't", "haven't", "hasn't",
+   "wasn't", "isn't", "aren't", "don't", "doesn't"]
+# A sentence with one of these describes what WOULD happen, not what did: "Once you
+# give me the details, I'll add the reminder" is help text, not a promise (2026-09-28:
+# the guard replaced a correct how-to answer with "nothing was saved").
+conditionals: [if, once, when, whenever, as soon as, after you, you can, you could,
+  just say, just tell, simply tell, simply say, for example]
+# After the turn-back, an answer that says the change happened on an EARLIER request
+# ("I already added it earlier") is kept: nothing in this run could have done it.
+prior_markers: [already, earlier, previously, last time, before]

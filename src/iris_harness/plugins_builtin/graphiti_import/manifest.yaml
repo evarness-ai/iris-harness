@@ -1,0 +1,13 @@
+name: graphiti_import
+version: 0.1.0
+description: >-
+  Imports a Graphiti graph export into IRIS memory (memris plan PR 9; ADR-0115
+  decision 11). A reader for Graphiti's entity / edge / episode records plus a
+  mappings file onto the core ontology; `iris graphiti import <export.json>` writes
+  what maps as statements and reports everything it did not map. Nothing runs during
+  a turn — the plugin only contributes the CLI command.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+cli: cli:register
+provides: []

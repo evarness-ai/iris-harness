@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+# Scripts should keep LF line endings
+*.sh text eol=lf
+
+# Python source
+*.py text eol=lf
+
+# Windows scripts can use CRLF if needed
+*.bat text eol=crlf
+*.cmd text eol=crlf

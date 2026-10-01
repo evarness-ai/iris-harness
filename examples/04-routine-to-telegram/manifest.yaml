@@ -1,0 +1,8 @@
+name: morning_note
+version: 0.1.0
+description: A morning note, sent to the owner's channel (Telegram) on a schedule.
+entrypoint: morning_note:setup
+flavor: python
+trust: in-process
+provides:
+  - heartbeat

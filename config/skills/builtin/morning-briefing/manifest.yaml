@@ -1,0 +1,400 @@
+name: morning-briefing
+version: 0.2.0
+description: Daily morning briefing — tasks, followups, inbox summary, focus
+  mail, today's and missed reminders, active items, approved routines, top GitHub repos, AI, global
+  and local news on your topics, and trending stocks.
+author: iris
+license: Apache-2.0
+kind: brief
+brief:
+  # {daypart} and {greeting} follow the owner's local time (the greetings table below):
+  # a digest delivered at 15:45 is the "Afternoon Briefing", not the "Morning" one.
+  subject: "IRIS {daypart} Briefing"
+  greetings:
+    - {starts: "05:00", greeting: "Good morning", daypart: "Morning"}
+    - {starts: "12:00", greeting: "Good afternoon", daypart: "Afternoon"}
+    - {starts: "17:00", greeting: "Good evening", daypart: "Evening"}
+    - {starts: "22:00", greeting: "Hello", daypart: "Late"}
+  recipient: "user"
+  uses:
+    - calendar-reminders
+    - calendar-events
+    - daily-plan
+    - iris-core
+    - iris-tasks
+    - email-followup
+    - email-triage
+    - finance-brief
+    - portfolio-brief
+    - web-fetch
+  layout: |
+    {{greeting}}. Briefing for {{date}}.
+
+    ## Today's plan
+    {{todays_plan}}
+
+    ## Today's events
+    {{todays_events}}
+
+    ## Due today
+    {{due_today}}
+
+    {{overdue}}
+
+    ## Open tasks
+    {{open_tasks}}
+
+    ## Bills due
+    {{bills_due}}
+
+    ## Unusual spend
+    {{unusual_spend}}
+
+    ## Awaiting reply (followups)
+    {{open_followups}}
+
+    ## Replies arrived (acknowledge or close)
+    {{resolved_followups}}
+
+    {{needs_reply}}
+
+    ## Inbox summary
+    {{email_summary}}
+
+    {{focus}}
+
+    ## Judged
+    {{judged_yesterday}}
+
+    {{missed_reminders}}
+
+    ## Reminders today
+    {{reminders}}
+
+    ## Active items
+    {{active_items}}
+
+    ## Approved routines
+    {{routines}}
+
+    ## Top GitHub repos
+    {{top_repos}}
+
+    ## AI / Tech news
+    {{news_ai}}
+
+    ## Global news
+    {{news_global}}
+
+    ## Local news
+    {{news_local}}
+
+    ## Top stocks
+    {{stocks}}
+
+    ## Market indexes
+    {{indexes}}
+
+    ## Portfolio
+    {{portfolio}}
+
+    {{learned_yesterday}}
+  # Closes the digest, after any "couldn't build" line (loop-proof D17).
+  footer_slots: [learned_yesterday]
+  slots:
+    greeting:
+      kind: literal
+      value: "{greeting}"
+    date:
+      kind: literal
+      value: "{today:%A, %B %d, %Y}"
+    todays_plan:
+      # Today's items only: overdue ones are the `overdue` line, expired ones are gone.
+      kind: tool
+      skill: daily-plan
+      tool: plan_today
+      args:
+        include_overdue: false
+        # Reminders have their own "Reminders today" section (D18: one item, one place).
+        include_reminders: false
+      format: bullets
+      item_template: "{when} {kind}: {title} {detail} {flag}"
+      empty: "Nothing scheduled today."
+      synthesis: true
+    todays_events:
+      kind: tool
+      skill: calendar-events
+      tool: list_today
+      args: {}
+      format: bullets
+      item_template: "{start}–{end} {summary} {location}"
+      empty: "No events today."
+    due_today:
+      kind: tool
+      skill: iris-tasks
+      tool: list_due_today
+      # Today's only: tasks due earlier are the one `overdue` line below.
+      args:
+        include_overdue: false
+      format: bullets
+      # Owner-facing: no ids or codes ("Renew car registration — due today 17:00 · high").
+      item_template: "{title} — {when}{flag}"
+      empty: "Nothing due today."
+    overdue:
+      # One short line, its own heading: "## Overdue (2)" then
+      # "- Renew registration · Call bank". A task shows here for digest.yaml
+      # `expiry.task_overdue_days`, then expires.
+      kind: tool
+      skill: iris-tasks
+      tool: list_overdue
+      args: {}
+      format: text
+      empty: "## Overdue\nNothing overdue."
+    open_tasks:
+      kind: tool
+      skill: iris-tasks
+      tool: list_open_tasks
+      # Not the tasks already under Due today / Overdue.
+      args:
+        skip_due_by_today: true
+      format: bullets
+      item_template: "{title}{flag}"
+      empty: "No open tasks."
+    bills_due:
+      kind: tool
+      skill: finance-brief
+      tool: brief_bills_due
+      args: {}
+      format: bullets
+      # `name` is the payee without its category tag; `text` the rest of the line, in
+      # the bill pushes' own words ("$35.00 min due Mon Oct 12 (in 3 days) · statement
+      # $1,284.50"). Only rows with `owed` set count toward the push line ("Bills 1"):
+      # a card in credit still shows here, as a credit.
+      item_template: "{name}: {text}"
+      count_if: owed
+      empty: "No bills due."
+    unusual_spend:
+      kind: tool
+      skill: finance-brief
+      tool: brief_unusual_spend
+      args: {}
+      format: bullets
+      item_template: "{category} ({currency}): {current} ({ratio})"
+      empty: "Spending looks normal."
+    open_followups:
+      kind: tool
+      skill: email-followup
+      tool: list_open_followups
+      args: {}
+      format: bullets
+      item_template: "{title} — awaiting {from}"
+      empty: "No followups awaiting reply."
+    resolved_followups:
+      kind: tool
+      skill: iris-tasks
+      tool: list_resolved_followups
+      args: {}
+      format: bullets
+      item_template: "{title} — reply from {from} arrived"
+      empty: "No new replies to acknowledge."
+    email_summary:
+      kind: tool
+      skill: email-triage
+      tool: email_inbox_summary
+      # One line per mailbox: its last 24 h grouped by triage category, largest first
+      # ("owner@gmail.com: 42 in the last 24 h — 12 updates · 9 promo · unsorted 3").
+      args:
+        view: last_24h
+      format: bullets
+      item_template: "{account}: {summary}"
+      empty: "No email accounts configured."
+    focus:
+      # Renders its own "## Focus — <categories>, newest N per inbox" heading; each line ends
+      # with a [👎](iris:not-useful/<sender>) link (loop-proof D17).
+      kind: tool
+      skill: email-triage
+      tool: email_focus
+      args: {}
+      format: text
+      empty: "## Focus\nFocus unavailable."
+    needs_reply:
+      # Renders its own "## Needs reply (N)" heading, then "Sender: subject" per email the
+      # email judge (or the owner) put in Needs reply, newest first, max 10; gone once the
+      # owner replies in the thread, re-buckets it, or after digest.yaml
+      # `expiry.needs_reply_days` (loop-proof PR 5). Wording in the email plugin's judge.yaml.
+      kind: tool
+      skill: email-triage
+      tool: email_needs_reply
+      args: {}
+      format: text
+      empty: "## Needs reply\nNothing waiting on you."
+    judged_yesterday:
+      # One line: "Judged yesterday: 41 · 3 bill · … · 2 unsure — please teach me (Action
+      # Center) · 7 waiting — …". Nothing on a day the judge had nothing (loop-proof PR 5).
+      kind: tool
+      skill: email-triage
+      tool: email_judged_yesterday
+      args: {}
+      format: text
+      empty: ""
+    missed_reminders:
+      # Reminders that could not be delivered (loop-proof D14/D18): its own heading,
+      # "## Missed reminders (1)" then "- Take out the recycling — due Mon 8:00 AM,
+      # couldn't be delivered". Nothing at all when none failed. A row is carried into
+      # digest.yaml `expiry.reminder_missed_digests` digests, then expires.
+      kind: tool
+      skill: calendar-reminders
+      tool: list_missed_reminders
+      args: {}
+      format: text
+      summary: >-
+        failed notifications that could not be delivered, undelivered alerts that
+        never reached my phone
+      empty: ""
+    reminders:
+      # Today's reminders from the one store ("9:30 AM — Call the pharmacy",
+      # " (every Monday)" when it repeats) — chat reminders included.
+      kind: tool
+      skill: calendar-reminders
+      tool: list_today_reminders
+      args: {}
+      format: bullets
+      summary: >-
+        my due reminders, the reminders I set for today and the time each one is due
+      item_template: "{line}"
+      empty: "No reminders today."
+    active_items:
+      kind: tool
+      skill: iris-core
+      tool: list_active_items
+      args: {}
+      format: bullets
+      item_template: "{text}"
+      empty: "No active items."
+    routines:
+      kind: tool
+      skill: iris-core
+      tool: list_approved_routines
+      args: {}
+      format: bullets
+      item_template: "{title} ({schedule})"
+      empty: "No approved routines."
+    top_repos:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: git
+        category: git-repositories
+        limit: 10
+      format: bullets
+      item_template: "[{title}]({url}) — {description} ({language}, ★{stars_today} today)"
+      empty: "GitHub trending unavailable."
+    # The news, one section per group (digest v5): each passes `news_group`, and the
+    # web-fetch tool asks one research query per topic of that group in Settings →
+    # Digest (digest.yaml `news_groups`); preferred sources are ranked first (★), never
+    # used as an allowlist (loop-proof D4). The headline is plain text; only the source
+    # name links to the story. The section heading the owner sees comes from the
+    # group's title in digest.yaml ("Local — St. Louis").
+    news_ai:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: news
+        category: digest-topics
+        news_group: news_ai
+        limit: 10
+      format: bullets
+      summary: >-
+        AI and technology news headlines, the latest artificial intelligence and
+        tech industry stories on my chosen topics
+      item_template: "{title} ([{source}]({url}){preferred})"
+      empty: "No AI or tech news today."
+    news_global:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: news
+        category: digest-topics
+        news_group: news_global
+        limit: 10
+      format: bullets
+      summary: >-
+        news from around the world: politics, conflicts, economies and
+        diplomacy between countries
+      item_template: "{title} ([{source}]({url}){preferred})"
+      empty: "No world news today."
+    news_local:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: news
+        category: digest-topics
+        news_group: news_local
+        limit: 10
+      format: bullets
+      summary: >-
+        local city news headlines for the area where I live
+      item_template: "{title} ([{source}]({url}){preferred})"
+      empty: "No local news today."
+    stocks:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: stocks
+        category: stocks-trending
+        limit: 10
+      format: bullets
+      summary: >-
+        trending and most-active individual company shares and equities, single
+        stock tickers like Apple Reliance Tesla, the day's biggest gaining and
+        losing companies on the exchange
+      item_template: "{symbol} {name} — {price} {currency} ({change_pct}%)"
+      empty: "Market data unavailable."
+    indexes:
+      kind: tool
+      skill: web-fetch
+      tool: fetch_web_content
+      args:
+        type: stocks
+        category: indexes
+        region: ALL
+        limit: 10
+      format: bullets
+      summary: >-
+        overall market index levels and benchmark index values, the aggregate
+        index reading and barometer gauge of the whole exchange for India and the
+        USA, broad index numbers
+      item_template: "{name} — {price} {currency} ({change_pct}%)"
+      empty: "Index data unavailable."
+    portfolio:
+      kind: tool
+      skill: portfolio-brief
+      tool: brief_portfolio
+      args: {}
+      format: bullets
+      summary: >-
+        my own personal investment portfolio holdings, the shares and funds I
+        personally own and hold, my positions and the stocks in my portfolio,
+        which of my own holdings are trending or moving today, my best and worst
+        performers, their current value, invested cost, and my profit and loss
+      item_template: "{line}"
+      empty: "No holdings tracked yet."
+    learned_yesterday:
+      # The footer (loop-proof D17): never omitted — "learned yesterday: nothing".
+      kind: tool
+      skill: iris-core
+      tool: learned_yesterday
+      args: {}
+      format: text
+      empty: "learned yesterday: nothing"
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

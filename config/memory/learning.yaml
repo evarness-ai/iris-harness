@@ -1,0 +1,71 @@
+# How memory learns: thresholds and budgets (ADR-0115 decisions 4, 6, 7 and 9).
+#
+# Read today: `confirmation` (memory/fact_keys.py — the ADR-0114 tiers; moved here from
+# fact_keys.yaml in PR 3), `subject_scope` (memory/fact_keys.py, PR 3b), `resolution`
+# (memory/resolution.py, PR 4a/4b), `learned_terms` (memory/vocabulary.py, PR 7) and
+# `linking` / `graph_tool` (memory/graph_context.py, PR 6). Every number is a starting point to be tuned from real use.
+
+confirmation:
+  # Tier A — remembered on the spot, announced in the reply, undone with "forget that".
+  # Only when the user states it about themselves in one of these shapes AND the key is
+  # allowed AND the value appears verbatim in the message. "i am running ollama for
+  # local models" is not "my name is ollama", so the store's worst row cannot come back.
+  auto_confirm_patterns:
+    - "(?i)\\bmy name is\\b"
+    - "(?i)\\b(?:i am|i'm)\\s+(?:called|known as)\\b"
+    - "(?i)\\bi live in\\b"
+    - "(?i)\\bi(?:'m| am) based in\\b"
+    - "(?i)\\bi (?:work|am working) (?:at|for)\\b"
+    - "(?i)\\bi work as\\b"
+    - "(?i)\\bmy (?:email|phone|blog|website|birthday|timezone|employer|bank|city|hometown|nationality) is\\b"
+    - "(?i)\\bmy (?:wife|husband|spouse|partner|son|daughter|dog|cat) is\\b"
+    - "(?i)\\bremember that\\b"
+
+  # Tier B — asked once per conversation, in the conversation, while the evidence is
+  # fresh. Below this confidence it goes to the queue instead of costing a question.
+  ask_min_confidence: 0.6
+  ask_max_per_session: 1
+
+  # Repetition confirms: people repeat what is true about them. The same key/value
+  # proposed this many times (in separate turns) stops waiting.
+  repeat_confirms_after: 3
+
+# Decision 6: statements may be about the owner or one hop away from the owner — someone
+# linked to the owner by a relation stated in the same message or already confirmed. A
+# one-hop fact is never confirmed on the spot (the patterns above describe the owner
+# speaking about themselves): it is asked about or queued. 0 = the owner only.
+subject_scope:
+  max_hops: 1
+
+# Decision 4: an exact or alias match (names folded by entity_aliases.yaml) is the same
+# entity; a look-alike at or above `ask_similarity` stays separate as a candidate, and
+# merges once the pair has turned up in `evidence_episodes` distinct conversations.
+# A candidate is asked about once, in the conversation that turned it up, sharing the
+# confirmation budget above (`ask_max_per_session`); a fact question goes first.
+resolution:
+  ask_similarity: 0.8
+  evidence_episodes: 3
+
+# Decision 7: a fact key the ontology lacks is an alias of an existing key above
+# `alias_similarity` (how alike the names look, 0-1), is activated as `<prefix>:<key>`
+# after `min_observations` across `min_episodes` conversations, and is forgotten after
+# `expire_days` unseen otherwise. It is only counted until then — never stored as a fact.
+# An activated term's facts follow the confirmation tiers above like any other key's.
+# Learned terms are rows in the memory database, never YAML (`iris ontology terms`).
+learned_terms:
+  prefix: learned
+  alias_similarity: 0.85
+  min_observations: 5
+  min_episodes: 3
+  expire_days: 90
+  max_examples: 3
+  # Keys the extractor invents for what a conversation is ABOUT, not who the user is
+  # (the store once held topic=, error=, source=, number=): never counted, never learned.
+  never_learn: [topic, subject, error, source, number, question, request, task, answer,
+                message, query, greeting, date, time, day, weather, mood, example]
+
+# Decision 9: automatic one-hop linking into the prompt, and the graph tool's reach.
+linking:
+  max_tokens: 400
+graph_tool:
+  max_hops: 2

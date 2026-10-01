@@ -1,0 +1,9 @@
+node_modules
+dist
+*.local
+.DS_Store
+
+# The repo-root .gitignore has `lib/` (Python build dir); our frontend source
+# lives in src/lib/ and must stay tracked.
+!src/lib/
+!src/lib/**

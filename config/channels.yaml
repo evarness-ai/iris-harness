@@ -1,0 +1,29 @@
+# Channel Gateway configuration.
+# Each channel maps a logical name to a connector type and parameters.
+# Environment-style placeholders (e.g. ${TELEGRAM_BOT_TOKEN}) are resolved
+# from os.environ at runtime. Channels with unresolved required vars are
+# silently skipped.
+#
+# default: name of the channel used for heartbeats and proactive notifications.
+# Falls back to "console" if the named channel fails to register. The check runs
+# after the channel plugins mount, so naming a plugin-provided surface here works.
+#
+# Which connector serves a row: `console` is core (the guaranteed fallback);
+# `telegram` comes from the telegram_channel plugin and `web` from web_channel, so
+# a profile that does not mount them simply has no such surface (OSS plan M4.5).
+default: telegram
+
+channels:
+  - name: console
+    type: console
+    description: Local development sink that writes to stdout.
+
+  - name: telegram
+    type: telegram
+    description: Personal Telegram bot for proactive notifications.
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    default_chat_id: ${TELEGRAM_CHAT_ID}
+
+  - name: web
+    type: web
+    description: The web UI's chat — a proactive notice lands in its session history.

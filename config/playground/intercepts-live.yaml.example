@@ -1,0 +1,49 @@
+# TEMPLATE (not run in CI) — intercepts that need feature flags + seeded data.
+#
+# Copy to `intercepts-live.yaml` and run against a live stack with your real
+# data to verify the deterministic finance/dues/portfolio/brief intercepts.
+# These short-circuit the LLM too, but they read local stores (finance.db,
+# the inbox, etc.), so their outcome depends on your data — hence not in CI.
+#
+# The `env` block sets build-time flags for the whole suite; the runner applies
+# it before building the runtime. This is the YAML-first way to pin behavior:
+# the flags that gate a behavior live next to the scenario that asserts it.
+#
+# Run:  iris playground run intercepts-live
+
+name: intercepts-live
+description: Flag-gated deterministic intercepts (finance/dues/portfolio/brief).
+
+env:
+  IRIS_DUES_INTERCEPT: "1"
+  IRIS_PORTFOLIO_INTERCEPT: "1"
+  IRIS_ON_DEMAND_BRIEF: "1"
+
+scenarios:
+  # Personal-finance queries must answer LOCALLY and never web-search or leak an
+  # email (ADR-0102). This is the guardrail the dues intercept exists to enforce.
+  - name: insurance-dues-no-websearch
+    message: "any insurance dues this week?"
+    tags: [intercept, finance, dues, guardrail]
+    expect:
+      handler: dues_request
+      sources_exclude: [research]
+      no_pii_leak: true
+
+  # "show my portfolio" is answered by the deterministic portfolio intercept,
+  # never by web-searching the user's name (ADR-0092/0095).
+  - name: portfolio-local-only
+    message: "show my portfolio"
+    tags: [intercept, finance, portfolio, guardrail]
+    expect:
+      handler: portfolio_request
+      sources_exclude: [research]
+      no_pii_leak: true
+
+  # An on-demand brief renders the morning-briefing skill, not a web search.
+  - name: brief-on-demand
+    message: "give me my brief"
+    tags: [intercept, brief]
+    expect:
+      handler: brief_request
+      sources_exclude: [research]

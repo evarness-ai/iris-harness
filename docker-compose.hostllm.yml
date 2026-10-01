@@ -1,0 +1,12 @@
+# Override: run IRIS in Docker but talk to the host's NATIVE Ollama (Metal-
+# accelerated) instead of the containerized one. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.hostllm.yml up -d governor iris-api
+# (the `make experiment-host` target does this for you).
+#
+# Faithful tier-2/3 behaviour needs Metal; containerized Ollama is CPU-only on a Mac.
+services:
+  iris-api:
+    environment:
+      OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

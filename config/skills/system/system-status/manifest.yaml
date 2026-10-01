@@ -1,0 +1,27 @@
+name: system-status
+version: 0.1.0
+description: |
+  System agent (S0) — a deterministic snapshot of IRIS's system status: host
+  resources (RAM / CPU / thermal, from the same sampler the LLM tier governor
+  uses) and IRIS's own state (connected accounts by provider, skill count,
+  enabled heartbeats, database sizes, FileManager roots). Read-only; composes
+  signals IRIS already has. The conversational system surface (time/date,
+  weather, identity, chat) lives in the system ReAct handler.
+author: iris-personal-assistant
+license: Apache-2.0
+default_enabled: true
+trust_level: first-party
+homepage: https://github.com/evarness-ai/iris-harness
+tools:
+  - name: system_status
+    description: |
+      Report host resources (RAM/CPU/thermal) and IRIS's own state (accounts,
+      skills, heartbeats, databases, FileManager roots).
+    governor_route: system/read
+    args: []
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

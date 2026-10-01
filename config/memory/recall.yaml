@@ -1,0 +1,34 @@
+# Cross-session recall (IRIS_MEMORY_RECALL_MODE).
+#
+#   push     (default)  up to 4 turns from other conversations, the nearest ones under
+#                       IRIS_MEMORY_RECALL_MAX_DISTANCE, are put in every prompt.
+#   pointer             no raw turns from other conversations. The prompt gets one short
+#                       note naming up to 2 related earlier conversations (title, date,
+#                       session_id) that recall_conversation can read on demand -- unless
+#                       the message clearly refers back (a phrase below), in which case
+#                       the nearest 2 turns are put in the prompt, as in push mode.
+#
+# The phrases are vocabulary, so they live here, not in code. Matched case-insensitively
+# as whole words/phrases anywhere in the owner's message. Keep them about the CONVERSATION
+# ("you said", "we discussed"): a time word alone ("earlier", "yesterday", "last week")
+# is usually about the calendar ("an earlier flight") and would fire the backstop wrongly.
+refers_back:
+  - last time
+  - previously
+  - the other day
+  - we discussed
+  - we talked about
+  - we decided
+  - you said
+  - you told me
+  - you mentioned
+  - i told you
+  - i said
+  - i mentioned
+  - did i tell you
+  - remind me what
+  - what did i
+  - what did we
+  - what was that
+  - remember when
+  - do you remember

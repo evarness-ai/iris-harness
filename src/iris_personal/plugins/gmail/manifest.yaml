@@ -1,0 +1,24 @@
+name: gmail
+version: 0.1.0
+description: >-
+  The Gmail provider: everything that talks to Gmail. Incremental and cold-start
+  fetch into the core email store, message bodies and attachments on demand, the
+  live attachment search, the installed-app OAuth flow and `iris auth gmail`. It
+  registers as the mail provider for `gmail:` accounts through the core's
+  `email.providers` registry and reports the Gmail credential row to System
+  Health; it registers nothing of the six PluginAPI kinds, so `provides` is
+  empty. The record (`EmailStore`), the reads over it and the provider-agnostic
+  sweep heartbeat stay core.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+cli: cli:register
+provides: []
+# The Google API client the fetcher, the attachment reader and the OAuth flow import:
+# the `email` extra installs them. Without them the plugin does not mount, and an
+# unnamed run stays on the `default` profile (profiles/default.yaml).
+requires:
+  packages:
+    - google-api-python-client
+    - google-auth
+    - google-auth-oauthlib

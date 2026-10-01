@@ -1,0 +1,12 @@
+# Root of trust for MCP server signatures (operator-managed).
+# The IRIS agent process must NOT have write access to this file.
+# Add public keys with `iris mcp keygen --id <key_id>` (CLI lands in 6b.3),
+# then sign servers with `iris mcp sign <server> --key <key_id>`.
+version: 1
+keys: []
+# Example (do not use this fabricated key):
+#   - key_id: ops-2026
+#     public_key: <base64 ed25519 public key>
+#     comment: "primary signing key"
+revoked_key_ids: []
+revoked_signatures: []

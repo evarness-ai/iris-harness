@@ -1,0 +1,37 @@
+# Your email categories: an override of the email judge's shipped judge.yaml.
+# It goes to <config dir>/email/judge.yaml. Each top-level key here REPLACES the shipped
+# one (no deep merge), so `buckets:` lists every bucket, and must keep `unsure`.
+#
+# name        what IRIS calls the bucket in the digest, the Inbox and chat
+# label       the mailbox label IRIS writes (after you approve mailbox writes)
+# definition  what the judge model is told the bucket means
+buckets:
+  needs_reply:
+    name: Waiting on me
+    label: IRIS/Waiting-on-me
+    definition: A person is waiting on my answer, a decision or a document.
+  bill:
+    name: Money
+    label: IRIS/Money
+    definition: A bill, a statement or a payment that asks me to pay or check an amount.
+  event:
+    name: Dates
+    label: IRIS/Dates
+    definition: Something happens at a date and time I should keep (a meeting, a booking).
+  fyi:
+    name: Reading
+    label: IRIS/Reading
+    definition: Worth knowing, nothing to do.
+  unsure:
+    name: Unsure
+    label: IRIS/Unsure
+    definition: Too thin to call; I decide.
+
+# The words you use for a bucket in chat ("the carpool email is money"). Longest match
+# wins. `promo` is the judge's own release bucket, kept from the shipped list.
+bucket_words:
+  bill: [money, bill, statement, invoice, payment]
+  event: [dates, date, event, appointment, meeting, booking]
+  needs_reply: [waiting on me, needs a reply, reply, answer]
+  fyi: [reading, fyi, info, nothing to do]
+  promo: [promo, promotion, ad, marketing, spam]

@@ -1,0 +1,3819 @@
+{
+ "seed": 20260930,
+ "messages": [
+  {
+   "id": "demo-0001",
+   "thread_id": "t-demo-0001",
+   "kind": "social",
+   "from": "Trailhead Running Club <community@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "You have 3 new followers",
+   "minutes_ago": 4199,
+   "body": "You have 3 new followers. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0002",
+   "thread_id": "t-demo-0002",
+   "kind": "fyi",
+   "from": "Gardeners' Weekly <digest@gardenersweekly.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Gardeners' Weekly: hill repeats, explained",
+   "minutes_ago": 4189,
+   "body": "This week in Gardeners' Weekly: hill repeats, explained. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0003",
+   "thread_id": "t-demo-0003",
+   "kind": "fyi",
+   "from": "Hireline <jobs@hireline.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New jobs for you: Engineering Manager",
+   "minutes_ago": 4165,
+   "body": "12 new Engineering Manager roles match your saved search. See them on Hireline.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0004",
+   "thread_id": "t-demo-0004",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW86330276 is out for delivery",
+   "minutes_ago": 4154,
+   "body": "Parcel PW86330276 is out for delivery. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0005",
+   "thread_id": "t-demo-0005",
+   "kind": "fyi",
+   "from": "Harborstone Card Services <alerts@harborstone-card.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Transaction alert",
+   "minutes_ago": 4135,
+   "body": "A charge of $92.21 at Greenleaf Grocers was made.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0006",
+   "thread_id": "t-demo-0006",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New arrivals picked for you",
+   "minutes_ago": 4101,
+   "body": "New arrivals picked for you. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0007",
+   "thread_id": "t-demo-0007",
+   "kind": "social",
+   "from": "Trailhead Running Club <community@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Marcus Chen shared a post with you",
+   "minutes_ago": 4095,
+   "body": "Marcus Chen shared a post with you. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0008",
+   "thread_id": "t-demo-0008",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Lumina Home: 30% off everything this weekend",
+   "minutes_ago": 4058,
+   "body": "Lumina Home: 30% off everything this weekend. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0009",
+   "thread_id": "t-demo-0009",
+   "kind": "fyi",
+   "from": "City of Maplebrook <news@cityofmaplebrook.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Maplebrook City Bulletin: a gentle intro to property-based testing",
+   "minutes_ago": 4018,
+   "body": "This week in Maplebrook City Bulletin: a gentle intro to property-based testing. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0010",
+   "thread_id": "t-demo-0010",
+   "kind": "fyi",
+   "from": "Code & Coffee <newsletter@codeandcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Code & Coffee: hill repeats, explained",
+   "minutes_ago": 3994,
+   "body": "This week in Code & Coffee: hill repeats, explained. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0011",
+   "thread_id": "t-demo-0011",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Earn double points this week",
+   "minutes_ago": 3977,
+   "body": "Earn double points this week. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0012",
+   "thread_id": "t-demo-0012",
+   "kind": "fyi",
+   "from": "Clearpath Internet <news@clearpath-net.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Service update: faster upload speeds",
+   "minutes_ago": 3885,
+   "body": "We raised upload speeds on your plan at no cost. Nothing to do on your side.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0013",
+   "thread_id": "t-demo-0013",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "We saved your favorites",
+   "minutes_ago": 3879,
+   "body": "We saved your favorites. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0014",
+   "thread_id": "t-demo-0014",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Brambleberry Kids gift guide: under $25",
+   "minutes_ago": 3861,
+   "body": "Brambleberry Kids gift guide: under $25. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0015",
+   "thread_id": "t-demo-0015",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW91581856 is arriving",
+   "minutes_ago": 3832,
+   "body": "Parcel PW91581856 is arriving {nice+2}. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0016",
+   "thread_id": "t-demo-0016",
+   "kind": "event",
+   "from": "Riverside Physio <frontdesk@riverside-physio.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your physiotherapy session is booked",
+   "minutes_ago": 3792,
+   "body": "Please arrive 10 minutes early for your follow-up session with Jordan.\n\nWhen: {when+14@08:15}\nDate: {nice+14}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0017",
+   "thread_id": "t-demo-0017",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Voyagely: 30% off everything this weekend",
+   "minutes_ago": 3722,
+   "body": "Voyagely: 30% off everything this weekend. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0018",
+   "thread_id": "t-demo-0018",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Last chance: free shipping ends tonight",
+   "minutes_ago": 3646,
+   "body": "Last chance: free shipping ends tonight. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0019",
+   "thread_id": "t-demo-0019",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New arrivals picked for you",
+   "minutes_ago": 3627,
+   "body": "New arrivals picked for you. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0020",
+   "thread_id": "t-demo-0020",
+   "kind": "bill",
+   "from": "Clearpath Internet <billing@clearpath-net.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your home internet bill is ready",
+   "minutes_ago": 3550,
+   "body": "Hello Sam,\n\nYour home internet bill for this period is ready.\n\nAmount due: $66.67\nDue date: {date+17}\n\nThe full bill is attached. Pay online or set up autopay from your account page.\n\nThank you for being a customer.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0021",
+   "thread_id": "t-demo-0021",
+   "kind": "fyi",
+   "from": "Lanternfish Hardware <orders@lanternfish-hardware.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Lanternfish Hardware receipt (order 345937)",
+   "minutes_ago": 3535,
+   "body": "Thanks for shopping with Lanternfish Hardware. Order 345937, total $72.70, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0022",
+   "thread_id": "t-demo-0022",
+   "kind": "fyi",
+   "from": "Cloudnest Storage <security@cloudnest.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New sign-in to your account",
+   "minutes_ago": 3474,
+   "body": "We noticed a new sign-in from a Mac in Maplebrook. If this was you, no action is needed.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0023",
+   "thread_id": "t-demo-0023",
+   "kind": "bill",
+   "from": "Tidewell Mobile <billing@tidewell-mobile.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your mobile plan bill is ready",
+   "minutes_ago": 3459,
+   "body": "Hello Sam,\n\nYour mobile plan bill for this period is ready.\n\nAmount due: $74.44\nDue date: {date+14}\n\nThe full bill is attached. Pay online or set up autopay from your account page.\n\nThank you for being a customer.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0024",
+   "thread_id": "t-demo-0024",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Earn double points this week",
+   "minutes_ago": 3450,
+   "body": "Earn double points this week. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0025",
+   "thread_id": "t-demo-0025",
+   "kind": "bill",
+   "from": "Maplebrook Water District <billing@maplebrook-water.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Payment received for your water and sewer account",
+   "minutes_ago": 3440,
+   "body": "Thanks! Payment received: $84.13 on {nice-1}.\nNo action is needed. A receipt is in your account history.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0026",
+   "thread_id": "t-demo-0026",
+   "kind": "fyi",
+   "from": "Harborstone Card Services <alerts@harborstone-card.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Transaction alert",
+   "minutes_ago": 3438,
+   "body": "A charge of $37.79 at Lanternfish Hardware was made.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0027",
+   "thread_id": "t-demo-0027",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Flash sale: 6 hours only",
+   "minutes_ago": 3430,
+   "body": "Flash sale: 6 hours only. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0028",
+   "thread_id": "t-demo-0028",
+   "kind": "fyi",
+   "from": "Northfield Books <orders@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Northfield Books receipt (order 558259)",
+   "minutes_ago": 3430,
+   "body": "Thanks for shopping with Northfield Books. Order 558259, total $129.08, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "receipt-558259.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 38127,
+     "attachment_id": "demo-0028-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0029",
+   "thread_id": "t-demo-0029",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "We saved your favorites",
+   "minutes_ago": 3413,
+   "body": "We saved your favorites. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0030",
+   "thread_id": "t-demo-0030",
+   "kind": "fyi",
+   "from": "Gardeners' Weekly <digest@gardenersweekly.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Gardeners' Weekly: reading a flame graph in ten minutes",
+   "minutes_ago": 3396,
+   "body": "This week in Gardeners' Weekly: reading a flame graph in ten minutes. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0031",
+   "thread_id": "t-demo-0031",
+   "kind": "social",
+   "from": "Circlely <notify@circlely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "5 people viewed your profile",
+   "minutes_ago": 3395,
+   "body": "5 people viewed your profile. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0032",
+   "thread_id": "t-demo-0032",
+   "kind": "event",
+   "from": "Jonah Weiss <jonah.weiss@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Invitation: team lunch",
+   "minutes_ago": 3394,
+   "body": "You have been invited to the team lunch at the Copper Pot.\n\nWhen: {when+7@12:30}\nWhere: 3rd floor, Harbor room\n\nOrganizer: Jonah Weiss",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "invite.ics",
+     "mime_type": "text/calendar",
+     "size_bytes": 812,
+     "attachment_id": "demo-0032-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0033",
+   "thread_id": "t-demo-0033",
+   "kind": "needs_reply",
+   "from": "Marcus Chen <marcus.chen@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Conference talk proposal",
+   "minutes_ago": 3382,
+   "body": "Would you co-present the migration story at the spring conference? The proposal is due soon, so let me know if you are in.\n\nMarcus",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0034",
+   "thread_id": "t-demo-0034",
+   "kind": "fyi",
+   "from": "Hireline <jobs@hireline.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New jobs for you: Staff Engineer",
+   "minutes_ago": 3369,
+   "body": "12 new Staff Engineer roles match your saved search. See them on Hireline.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0035",
+   "thread_id": "t-demo-0035",
+   "kind": "fyi",
+   "from": "Brightwater Utilities <updates@brightwater-utilities.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Planned maintenance in your area",
+   "minutes_ago": 3367,
+   "body": "Crews will upgrade lines in your area on {nice+6}. Short outages are possible.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0036",
+   "thread_id": "t-demo-0036",
+   "kind": "bill",
+   "from": "Harborstone Card Services <statements@harborstone-card.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Harborstone statement is available",
+   "minutes_ago": 3362,
+   "body": "Your monthly statement for the card ending 4417 is available.\n\nStatement balance: $2073.99\nMinimum payment: $41.48\nPayment due: {date+21}\n\nSign in to view the statement or schedule a payment.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "statement-4417.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 142311,
+     "attachment_id": "demo-0036-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0037",
+   "thread_id": "t-demo-0037",
+   "kind": "unsure",
+   "from": "Mei Lin <mei.lin@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "this",
+   "minutes_ago": 3352,
+   "body": "Sent from my phone",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0038",
+   "thread_id": "t-demo-0038",
+   "kind": "fyi",
+   "from": "Lanternfish Hardware <orders@lanternfish-hardware.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Lanternfish Hardware receipt (order 643372)",
+   "minutes_ago": 3347,
+   "body": "Thanks for shopping with Lanternfish Hardware. Order 643372, total $23.26, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0039",
+   "thread_id": "t-demo-0039",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Members save an extra 15% today",
+   "minutes_ago": 3334,
+   "body": "Members save an extra 15% today. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0040",
+   "thread_id": "t-demo-0040",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Members save an extra 15% today",
+   "minutes_ago": 3288,
+   "body": "Members save an extra 15% today. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0041",
+   "thread_id": "t-demo-0041",
+   "kind": "fyi",
+   "from": "Northfield Books <orders@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Northfield Books receipt (order 961848)",
+   "minutes_ago": 3258,
+   "body": "Thanks for shopping with Northfield Books. Order 961848, total $63.84, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "receipt-961848.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 37340,
+     "attachment_id": "demo-0041-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0042",
+   "thread_id": "t-demo-0042",
+   "kind": "fyi",
+   "from": "The Morning Ledger <newsletter@morningledger.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The Morning Ledger: the quiet comeback of the paper notebook",
+   "minutes_ago": 3257,
+   "body": "This week in The Morning Ledger: the quiet comeback of the paper notebook. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0043",
+   "thread_id": "t-demo-0043",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The fall collection is here",
+   "minutes_ago": 3240,
+   "body": "The fall collection is here. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0044",
+   "thread_id": "t-demo-0044",
+   "kind": "fyi",
+   "from": "Gardeners' Weekly <digest@gardenersweekly.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Gardeners' Weekly: five charts on the housing market",
+   "minutes_ago": 3229,
+   "body": "This week in Gardeners' Weekly: five charts on the housing market. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0045",
+   "thread_id": "t-demo-0045",
+   "kind": "needs_reply",
+   "from": "Jonah Weiss <jonah.weiss@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Reference letter",
+   "minutes_ago": 3190,
+   "body": "Hi Sam,\n\nI am applying for the fellowship. Would you be willing to write a short reference letter? The deadline is {nice+14}.\n\nThanks so much,\nJonah",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0046",
+   "thread_id": "t-demo-0046",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW77946535 was delivered to your front door",
+   "minutes_ago": 3174,
+   "body": "Parcel PW77946535 was delivered to your front door. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0047",
+   "thread_id": "t-demo-0047",
+   "kind": "needs_reply",
+   "from": "Petra Raman <petra.raman@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Borrowing your ladder",
+   "minutes_ago": 3164,
+   "body": "Hi! Can you lend us your tall ladder this weekend? We are finally painting the hallway.\n\nPriya",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0048",
+   "thread_id": "t-demo-0048",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The fall collection is here",
+   "minutes_ago": 3147,
+   "body": "The fall collection is here. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0049",
+   "thread_id": "t-demo-0049",
+   "kind": "needs_reply",
+   "from": "Lena Okafor <lena.okafor@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Headcount for Q1",
+   "minutes_ago": 3109,
+   "body": "Sam, can you send me your Q1 headcount estimate by {date+6}? A range is fine for now.\n\nLena",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0050",
+   "thread_id": "t-demo-0050",
+   "kind": "social",
+   "from": "Pinloop <updates@pinloop.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your weekly activity summary",
+   "minutes_ago": 3102,
+   "body": "Your weekly activity summary. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0051",
+   "thread_id": "t-demo-0051",
+   "kind": "sent",
+   "from": "Sam Rivera <sam.rivera@example.com>",
+   "to": [
+    "Diego Alvarez <diego.alvarez@example.com>"
+   ],
+   "cc": [],
+   "subject": "Your package",
+   "minutes_ago": 3084,
+   "body": "A package for you landed on our porch; I'll drop it by.",
+   "labels": [
+    "SENT"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0052",
+   "thread_id": "t-demo-0052",
+   "kind": "fyi",
+   "from": "Lanternfish Hardware <orders@lanternfish-hardware.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Lanternfish Hardware receipt (order 605127)",
+   "minutes_ago": 3080,
+   "body": "Thanks for shopping with Lanternfish Hardware. Order 605127, total $12.49, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0053",
+   "thread_id": "t-demo-0053",
+   "kind": "sent",
+   "from": "Sam Rivera <sam.rivera@example.com>",
+   "to": [
+    "Marcus Chen <marcus.chen@example.org>"
+   ],
+   "cc": [],
+   "subject": "Notes from today",
+   "minutes_ago": 3074,
+   "body": "Sharing my notes from the planning session.",
+   "labels": [
+    "SENT"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0054",
+   "thread_id": "t-rollout",
+   "kind": "needs_reply",
+   "from": "Owen Fitzgerald <owen.fitzgerald@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Rollout plan for the Harbor account",
+   "minutes_ago": 3045,
+   "body": "Hi Sam,\n\nThanks for the call. Could you send the rollout plan by {date+3}? Our board meets the day after.\n\nBest,\nOwen",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "harbor-rollout-draft.xlsx",
+     "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+     "size_bytes": 48551,
+     "attachment_id": "demo-0054-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0055",
+   "thread_id": "t-demo-0055",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Brambleberry Kids gift guide: under $25",
+   "minutes_ago": 3014,
+   "body": "Brambleberry Kids gift guide: under $25. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0056",
+   "thread_id": "t-demo-0056",
+   "kind": "needs_reply",
+   "from": "Lena Okafor <lena.okafor@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Friday standup",
+   "minutes_ago": 2999,
+   "body": "Sam, I am out on Friday. Can you run the standup? The notes template is in the team folder.\n\nLena",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0057",
+   "thread_id": "t-demo-0057",
+   "kind": "event",
+   "from": "Willow Creek Elementary <office@willowcreek-school.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Family science night in the gym",
+   "minutes_ago": 2988,
+   "body": "Families are invited to science night; students will show their projects.\n\nWhen: {when+5@18:00}\nDate: {nice+5}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "science-night-flyer.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 211880,
+     "attachment_id": "demo-0057-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0058",
+   "thread_id": "t-demo-0058",
+   "kind": "fyi",
+   "from": "Trailhead Running Club <news@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Trailhead Notes: what the new transit plan means for commuters",
+   "minutes_ago": 2987,
+   "body": "This week in Trailhead Notes: what the new transit plan means for commuters. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0059",
+   "thread_id": "t-demo-0059",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW87183778 is out for delivery",
+   "minutes_ago": 2977,
+   "body": "Parcel PW87183778 is out for delivery. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0060",
+   "thread_id": "t-demo-0060",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Last chance: free shipping ends tonight",
+   "minutes_ago": 2936,
+   "body": "Last chance: free shipping ends tonight. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0061",
+   "thread_id": "t-demo-0061",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Earn double points this week",
+   "minutes_ago": 2919,
+   "body": "Earn double points this week. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0062",
+   "thread_id": "t-demo-0062",
+   "kind": "bill",
+   "from": "Summit Auto Finance <loans@summit-autofinance.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Payment received for your car loan account",
+   "minutes_ago": 2892,
+   "body": "Thanks! Payment received: $401.36 on {nice-1}.\nNo action is needed. A receipt is in your account history.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0063",
+   "thread_id": "t-demo-0063",
+   "kind": "fyi",
+   "from": "Trailhead Running Club <news@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Trailhead Notes: a field guide to fall bulbs",
+   "minutes_ago": 2875,
+   "body": "This week in Trailhead Notes: a field guide to fall bulbs. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0064",
+   "thread_id": "t-rollout",
+   "kind": "sent",
+   "from": "Sam Rivera <sam.rivera@example.com>",
+   "to": [
+    "Owen Fitzgerald <owen.fitzgerald@example.org>"
+   ],
+   "cc": [],
+   "subject": "Re: Rollout plan for the Harbor account",
+   "minutes_ago": 2845,
+   "body": "Attached is the plan. Happy to walk through it.",
+   "labels": [
+    "SENT"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0065",
+   "thread_id": "t-demo-0065",
+   "kind": "bill",
+   "from": "Clearpath Internet <billing@clearpath-net.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Reminder: home internet payment due soon",
+   "minutes_ago": 2819,
+   "body": "This is a friendly reminder about your home internet account.\n\nAmount due: $76.90\nDue date: {date+3}\n\nIf you already paid, thank you.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0066",
+   "thread_id": "t-demo-0066",
+   "kind": "fyi",
+   "from": "Harborstone Card Services <alerts@harborstone-card.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your credit limit was reviewed",
+   "minutes_ago": 2812,
+   "body": "Good news: your limit is unchanged.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0067",
+   "thread_id": "t-demo-0067",
+   "kind": "event",
+   "from": "Orchard Lane Dental <appointments@orchardlane-dental.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Appointment confirmed: cleaning and check-up",
+   "minutes_ago": 2806,
+   "body": "Your appointment with Dr. Hale is confirmed.\n\nWhen: {when+9@10:30}\nDate: {nice+9}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "orchard-lane-appointment.ics",
+     "mime_type": "text/calendar",
+     "size_bytes": 812,
+     "attachment_id": "demo-0067-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0068",
+   "thread_id": "t-demo-0068",
+   "kind": "needs_reply",
+   "from": "Tomas Varga <tomas.varga@example.net>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Lease renewal",
+   "minutes_ago": 2763,
+   "body": "Hello Sam,\n\nYour lease renews in two months. Would you like to renew for another year? Let me know if you have questions.\n\nTomas",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0069",
+   "thread_id": "t-demo-0069",
+   "kind": "fyi",
+   "from": "Gardeners' Weekly <digest@gardenersweekly.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Gardeners' Weekly: the case for boring technology",
+   "minutes_ago": 2751,
+   "body": "This week in Gardeners' Weekly: the case for boring technology. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0070",
+   "thread_id": "t-demo-0070",
+   "kind": "fyi",
+   "from": "Greenleaf Grocers <receipts@greenleaf-grocers.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Greenleaf Grocers receipt (order 951972)",
+   "minutes_ago": 2727,
+   "body": "Thanks for shopping with Greenleaf Grocers. Order 951972, total $119.23, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0071",
+   "thread_id": "t-demo-0071",
+   "kind": "needs_reply",
+   "from": "Marcus Chen <marcus.chen@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Draft vendor review",
+   "minutes_ago": 2719,
+   "body": "Hi Sam,\n\nThe vendor review draft is attached. Could you look it over before {nice+2}? Mostly sections 3 and 4.\n\nThanks,\nMarcus",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "vendor-review-draft.docx",
+     "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+     "size_bytes": 88020,
+     "attachment_id": "demo-0071-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0072",
+   "thread_id": "t-demo-0072",
+   "kind": "fyi",
+   "from": "Gardeners' Weekly <digest@gardenersweekly.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Gardeners' Weekly: three recipes for the last of the zucchini",
+   "minutes_ago": 2719,
+   "body": "This week in Gardeners' Weekly: three recipes for the last of the zucchini. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0073",
+   "thread_id": "t-demo-0073",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Voyagely gift guide: under $25",
+   "minutes_ago": 2711,
+   "body": "Voyagely gift guide: under $25. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0074",
+   "thread_id": "t-demo-0074",
+   "kind": "bill",
+   "from": "Brightwater Utilities <billing@brightwater-utilities.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Reminder: electricity payment due soon",
+   "minutes_ago": 2690,
+   "body": "This is a friendly reminder about your electricity account.\n\nAmount due: $96.93\nDue date: {date+2}\n\nIf you already paid, thank you.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0075",
+   "thread_id": "t-demo-0075",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your cart misses you",
+   "minutes_ago": 2670,
+   "body": "Your cart misses you. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0076",
+   "thread_id": "t-demo-0076",
+   "kind": "event",
+   "from": "Willow Creek Elementary <office@willowcreek-school.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Parent-teacher conference scheduled",
+   "minutes_ago": 2635,
+   "body": "Your conference with Ms. Duarte is scheduled in room 12.\n\nWhen: {when+9@16:10}\nDate: {nice+9}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0077",
+   "thread_id": "t-demo-0077",
+   "kind": "fyi",
+   "from": "Hireline <jobs@hireline.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New jobs for you: Data Analyst",
+   "minutes_ago": 2630,
+   "body": "12 new Data Analyst roles match your saved search. See them on Hireline.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0078",
+   "thread_id": "t-demo-0078",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Last chance: free shipping ends tonight",
+   "minutes_ago": 2623,
+   "body": "Last chance: free shipping ends tonight. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0079",
+   "thread_id": "t-demo-0079",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Last chance: free shipping ends tonight",
+   "minutes_ago": 2535,
+   "body": "Last chance: free shipping ends tonight. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0080",
+   "thread_id": "t-demo-0080",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New arrivals picked for you",
+   "minutes_ago": 2507,
+   "body": "New arrivals picked for you. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0081",
+   "thread_id": "t-dinner",
+   "kind": "needs_reply",
+   "from": "Petra Raman <petra.raman@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Dinner next Saturday?",
+   "minutes_ago": 2471,
+   "body": "Hi Sam,\n\nWe are hosting a small dinner next Saturday. Are you free around 7? Let me know if Alex can come too.\n\nPriya",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0082",
+   "thread_id": "t-demo-0082",
+   "kind": "event",
+   "from": "Brightline Vet Clinic <care@brightline-vet.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Appointment confirmed for Juniper (annual exam)",
+   "minutes_ago": 2449,
+   "body": "Juniper's annual exam and vaccines are booked with Dr. Moss.\n\nWhen: {when+18@09:00}\nDate: {nice+18}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "juniper-vet.ics",
+     "mime_type": "text/calendar",
+     "size_bytes": 812,
+     "attachment_id": "demo-0082-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0083",
+   "thread_id": "t-demo-0083",
+   "kind": "needs_reply",
+   "from": "Owen Fitzgerald <owen.fitzgerald@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Quarterly check-in",
+   "minutes_ago": 2449,
+   "body": "Hi Sam,\n\nCan you suggest two times for our quarterly check-in next week?\n\nOwen",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0084",
+   "thread_id": "t-demo-0084",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Earn double points this week",
+   "minutes_ago": 2444,
+   "body": "Earn double points this week. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0085",
+   "thread_id": "t-demo-0085",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "We saved your favorites",
+   "minutes_ago": 2389,
+   "body": "We saved your favorites. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0086",
+   "thread_id": "t-dinner",
+   "kind": "sent",
+   "from": "Sam Rivera <sam.rivera@example.com>",
+   "to": [
+    "Petra Raman <petra.raman@example.com>"
+   ],
+   "cc": [],
+   "subject": "Re: Dinner next Saturday?",
+   "minutes_ago": 2381,
+   "body": "We'd love to! Both of us will be there. Sent from my laptop.",
+   "labels": [
+    "SENT"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0087",
+   "thread_id": "t-demo-0087",
+   "kind": "event",
+   "from": "Marcus Chen <marcus.chen@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Invitation: vendor review walkthrough",
+   "minutes_ago": 2370,
+   "body": "You have been invited to the vendor review walkthrough.\n\nWhen: {when+1@11:30}\nWhere: 3rd floor, Harbor room\n\nOrganizer: Marcus Chen",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "invite.ics",
+     "mime_type": "text/calendar",
+     "size_bytes": 812,
+     "attachment_id": "demo-0087-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0088",
+   "thread_id": "t-demo-0088",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Peak Outfitters gift guide: under $25",
+   "minutes_ago": 2348,
+   "body": "Peak Outfitters gift guide: under $25. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0089",
+   "thread_id": "t-demo-0089",
+   "kind": "bill",
+   "from": "Maplebrook Water District <billing@maplebrook-water.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your water and sewer bill is ready",
+   "minutes_ago": 2297,
+   "body": "Hello Sam,\n\nYour water and sewer bill for this period is ready.\n\nAmount due: $87.03\nDue date: {date+4}\n\nThe full bill is attached. Pay online or set up autopay from your account page.\n\nThank you for being a customer.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "water-and-sewer-bill.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 75131,
+     "attachment_id": "demo-0089-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0090",
+   "thread_id": "t-demo-0090",
+   "kind": "event",
+   "from": "Nora Svensson <nora.svensson@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Invitation: design crit",
+   "minutes_ago": 2250,
+   "body": "You have been invited to the design crit for the onboarding flow.\n\nWhen: {when+3@15:00}\nWhere: 3rd floor, Harbor room\n\nOrganizer: Nora Svensson",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "invite.ics",
+     "mime_type": "text/calendar",
+     "size_bytes": 812,
+     "attachment_id": "demo-0090-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0091",
+   "thread_id": "t-demo-0091",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW59268955 is arriving",
+   "minutes_ago": 2234,
+   "body": "Parcel PW59268955 is arriving {nice+2}. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0092",
+   "thread_id": "t-demo-0092",
+   "kind": "bill",
+   "from": "Tidewell Mobile <billing@tidewell-mobile.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Reminder: mobile plan payment due soon",
+   "minutes_ago": 2182,
+   "body": "This is a friendly reminder about your mobile plan account.\n\nAmount due: $40.17\nDue date: {date+6}\n\nIf you already paid, thank you.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0093",
+   "thread_id": "t-demo-0093",
+   "kind": "fyi",
+   "from": "Trailhead Running Club <news@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Trailhead Notes: leaf collection starts on the east side",
+   "minutes_ago": 2155,
+   "body": "This week in Trailhead Notes: leaf collection starts on the east side. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0094",
+   "thread_id": "t-rollout",
+   "kind": "needs_reply",
+   "from": "Owen Fitzgerald <owen.fitzgerald@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Re: Rollout plan for the Harbor account",
+   "minutes_ago": 2145,
+   "body": "Got it, thank you. One more question: can you confirm the go-live date is still {nice+12}?\n\nOwen",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0095",
+   "thread_id": "t-demo-0095",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your cart misses you",
+   "minutes_ago": 2108,
+   "body": "Your cart misses you. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0096",
+   "thread_id": "t-demo-0096",
+   "kind": "fyi",
+   "from": "Tidewell Mobile <updates@tidewell-mobile.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "You used 80% of your data",
+   "minutes_ago": 2099,
+   "body": "You have used 80% of this month's data. It resets on {nice+11}.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0097",
+   "thread_id": "t-demo-0097",
+   "kind": "event",
+   "from": "The Copper Pot Bistro <reservations@copperpot-bistro.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Reservation confirmed for 4 guests",
+   "minutes_ago": 2082,
+   "body": "We look forward to seeing you. Your table for 4 is held for 15 minutes.\n\nWhen: {when+20@19:30}\nDate: {nice+20}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0098",
+   "thread_id": "t-boiler",
+   "kind": "needs_reply",
+   "from": "Tomas Varga <tomas.varga@example.net>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Boiler inspection",
+   "minutes_ago": 2075,
+   "body": "Hello Sam,\n\nThe annual boiler inspection is due. Can you let me in on a weekday morning next week?\n\nTomas",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0099",
+   "thread_id": "t-dinner",
+   "kind": "needs_reply",
+   "from": "Petra Raman <petra.raman@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Re: Dinner next Saturday?",
+   "minutes_ago": 2071,
+   "body": "Wonderful. Could you bring a dessert? Anything without nuts, please.\n\nP.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0100",
+   "thread_id": "t-demo-0100",
+   "kind": "social",
+   "from": "Trailhead Running Club <community@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "5 people viewed your profile",
+   "minutes_ago": 2070,
+   "body": "5 people viewed your profile. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0101",
+   "thread_id": "t-birthday",
+   "kind": "needs_reply",
+   "from": "Hannah Brooks <hannah.brooks@example.net>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [
+    "Diego Alvarez <diego.alvarez@example.com>"
+   ],
+   "subject": "Mom's birthday plans",
+   "minutes_ago": 2061,
+   "body": "Hi both,\n\nMom turns 70 next month. What do you think about a picnic at Lakeside Park instead of a restaurant?\n\nH",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0102",
+   "thread_id": "t-demo-0102",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Members save an extra 15% today",
+   "minutes_ago": 2050,
+   "body": "Members save an extra 15% today. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0103",
+   "thread_id": "t-demo-0103",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Last chance: free shipping ends tonight",
+   "minutes_ago": 2024,
+   "body": "Last chance: free shipping ends tonight. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0104",
+   "thread_id": "t-boiler",
+   "kind": "sent",
+   "from": "Sam Rivera <sam.rivera@example.com>",
+   "to": [
+    "Tomas Varga <tomas.varga@example.net>"
+   ],
+   "cc": [],
+   "subject": "Re: Boiler inspection",
+   "minutes_ago": 2015,
+   "body": "Tuesday at 9 works. See you then.",
+   "labels": [
+    "SENT"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0105",
+   "thread_id": "t-demo-0105",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Last chance: free shipping ends tonight",
+   "minutes_ago": 2006,
+   "body": "Last chance: free shipping ends tonight. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0106",
+   "thread_id": "t-demo-0106",
+   "kind": "fyi",
+   "from": "Northfield Books <orders@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Northfield Books receipt (order 749328)",
+   "minutes_ago": 1956,
+   "body": "Thanks for shopping with Northfield Books. Order 749328, total $106.31, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "receipt-749328.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 26022,
+     "attachment_id": "demo-0106-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0107",
+   "thread_id": "t-demo-0107",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Flash sale: 6 hours only",
+   "minutes_ago": 1919,
+   "body": "Flash sale: 6 hours only. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0108",
+   "thread_id": "t-demo-0108",
+   "kind": "fyi",
+   "from": "Code & Coffee <newsletter@codeandcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Code & Coffee: why your tomatoes split, and how to stop it",
+   "minutes_ago": 1917,
+   "body": "This week in Code & Coffee: why your tomatoes split, and how to stop it. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0109",
+   "thread_id": "t-demo-0109",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Lumina Home gift guide: under $25",
+   "minutes_ago": 1882,
+   "body": "Lumina Home gift guide: under $25. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0110",
+   "thread_id": "t-demo-0110",
+   "kind": "bill",
+   "from": "Brightwater Utilities <billing@brightwater-utilities.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your electricity bill is ready",
+   "minutes_ago": 1851,
+   "body": "Hello Sam,\n\nYour electricity bill for this period is ready.\n\nAmount due: $121.39\nDue date: {date+14}\n\nThe full bill is attached. Pay online or set up autopay from your account page.\n\nThank you for being a customer.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "electricity-bill.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 85823,
+     "attachment_id": "demo-0110-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0111",
+   "thread_id": "t-demo-0111",
+   "kind": "needs_reply",
+   "from": "Remy Kumar <remy.kumar@example.net>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Coffee next week?",
+   "minutes_ago": 1780,
+   "body": "Hi Sam,\n\nIt has been a while. Are you free for coffee next week? I would love to hear about the new role.\n\nRavi",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0112",
+   "thread_id": "t-birthday",
+   "kind": "needs_reply",
+   "from": "Hannah Brooks <hannah.brooks@example.net>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [
+    "Diego Alvarez <diego.alvarez@example.com>"
+   ],
+   "subject": "Re: Mom's birthday plans",
+   "minutes_ago": 1761,
+   "body": "Diego is in for the picnic. Sam, would you handle the cake? Let me know if that is too much.\n\nH",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0113",
+   "thread_id": "t-demo-0113",
+   "kind": "fyi",
+   "from": "City of Maplebrook <alerts@cityofmaplebrook.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Street sweeping on your block",
+   "minutes_ago": 1757,
+   "body": "Street sweeping is scheduled on your block. Please move cars from the east side.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0114",
+   "thread_id": "t-demo-0114",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your cart misses you",
+   "minutes_ago": 1753,
+   "body": "Your cart misses you. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0115",
+   "thread_id": "t-demo-0115",
+   "kind": "fyi",
+   "from": "Trailhead Running Club <news@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Trailhead Notes: recovery weeks are training too",
+   "minutes_ago": 1749,
+   "body": "This week in Trailhead Notes: recovery weeks are training too. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0116",
+   "thread_id": "t-demo-0116",
+   "kind": "automated_ask",
+   "from": "Cloudnest Storage <noreply@cloudnest.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Action required: confirm your email preferences",
+   "minutes_ago": 1701,
+   "body": "Could you take a moment to confirm how often we may email you?",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0117",
+   "thread_id": "t-demo-0117",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Earn double points this week",
+   "minutes_ago": 1687,
+   "body": "Earn double points this week. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0118",
+   "thread_id": "t-demo-0118",
+   "kind": "automated_ask",
+   "from": "Tidewell Mobile <survey@tidewell-mobile.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Tell us about your service",
+   "minutes_ago": 1674,
+   "body": "Can you spare two minutes for our customer survey?",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0119",
+   "thread_id": "t-demo-0119",
+   "kind": "fyi",
+   "from": "Greenleaf Grocers <receipts@greenleaf-grocers.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Greenleaf Grocers receipt (order 572957)",
+   "minutes_ago": 1659,
+   "body": "Thanks for shopping with Greenleaf Grocers. Order 572957, total $149.32, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0120",
+   "thread_id": "t-demo-0120",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New arrivals picked for you",
+   "minutes_ago": 1615,
+   "body": "New arrivals picked for you. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0121",
+   "thread_id": "t-demo-0121",
+   "kind": "fyi",
+   "from": "Cloudnest Storage <security@cloudnest.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your password was changed",
+   "minutes_ago": 1488,
+   "body": "The password for your account was changed. If this was you, you can ignore this message.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0122",
+   "thread_id": "t-demo-0122",
+   "kind": "social",
+   "from": "Pinloop <updates@pinloop.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Petra Raman commented on your photo",
+   "minutes_ago": 1451,
+   "body": "Petra Raman commented on your photo. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0123",
+   "thread_id": "t-demo-0123",
+   "kind": "fyi",
+   "from": "Lanternfish Hardware <orders@lanternfish-hardware.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Lanternfish Hardware receipt (order 581503)",
+   "minutes_ago": 1441,
+   "body": "Thanks for shopping with Lanternfish Hardware. Order 581503, total $74.77, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0124",
+   "thread_id": "t-demo-0124",
+   "kind": "fyi",
+   "from": "City of Maplebrook <news@cityofmaplebrook.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Maplebrook City Bulletin: why your tomatoes split, and how to stop it",
+   "minutes_ago": 1427,
+   "body": "This week in Maplebrook City Bulletin: why your tomatoes split, and how to stop it. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0125",
+   "thread_id": "t-demo-0125",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Members save an extra 15% today",
+   "minutes_ago": 1423,
+   "body": "Members save an extra 15% today. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0126",
+   "thread_id": "t-demo-0126",
+   "kind": "fyi",
+   "from": "Code & Coffee <newsletter@codeandcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Code & Coffee: a gentle intro to property-based testing",
+   "minutes_ago": 1412,
+   "body": "This week in Code & Coffee: a gentle intro to property-based testing. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0127",
+   "thread_id": "t-demo-0127",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The fall collection is here",
+   "minutes_ago": 1407,
+   "body": "The fall collection is here. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0128",
+   "thread_id": "t-demo-0128",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Brambleberry Kids: 30% off everything this weekend",
+   "minutes_ago": 1404,
+   "body": "Brambleberry Kids: 30% off everything this weekend. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0129",
+   "thread_id": "t-demo-0129",
+   "kind": "automated_ask",
+   "from": "Northfield Books <feedback@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "How was your order?",
+   "minutes_ago": 1392,
+   "body": "Would you rate your recent order? It takes 30 seconds.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0130",
+   "thread_id": "t-demo-0130",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Last chance: free shipping ends tonight",
+   "minutes_ago": 1385,
+   "body": "Last chance: free shipping ends tonight. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0131",
+   "thread_id": "t-demo-0131",
+   "kind": "bill",
+   "from": "Tidewell Mobile <billing@tidewell-mobile.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Payment received for your mobile plan account",
+   "minutes_ago": 1377,
+   "body": "Thanks! Payment received: $48.94 on {nice-1}.\nNo action is needed. A receipt is in your account history.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0132",
+   "thread_id": "t-demo-0132",
+   "kind": "fyi",
+   "from": "The Morning Ledger <newsletter@morningledger.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The Morning Ledger: a history of the neighborhood farmers market",
+   "minutes_ago": 1338,
+   "body": "This week in The Morning Ledger: a history of the neighborhood farmers market. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0133",
+   "thread_id": "t-demo-0133",
+   "kind": "social",
+   "from": "Pinloop <updates@pinloop.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Nora Svensson tagged you in a photo",
+   "minutes_ago": 1304,
+   "body": "Nora Svensson tagged you in a photo. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0134",
+   "thread_id": "t-demo-0134",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW31254393 is out for delivery",
+   "minutes_ago": 1286,
+   "body": "Parcel PW31254393 is out for delivery. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0135",
+   "thread_id": "t-demo-0135",
+   "kind": "bill",
+   "from": "Oakridge Property Management <rent@oakridge-pm.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Payment received for your rent account",
+   "minutes_ago": 1226,
+   "body": "Thanks! Payment received: $1729.99 on {nice-1}.\nNo action is needed. A receipt is in your account history.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0136",
+   "thread_id": "t-demo-0136",
+   "kind": "fyi",
+   "from": "Northfield Books <orders@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Northfield Books receipt (order 699189)",
+   "minutes_ago": 1209,
+   "body": "Thanks for shopping with Northfield Books. Order 699189, total $109.60, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "receipt-699189.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 23942,
+     "attachment_id": "demo-0136-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0137",
+   "thread_id": "t-demo-0137",
+   "kind": "unsure",
+   "from": "Jonah Weiss <jonah.weiss@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Fwd:",
+   "minutes_ago": 1193,
+   "body": "Sent from my phone",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0138",
+   "thread_id": "t-demo-0138",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Earn double points this week",
+   "minutes_ago": 1145,
+   "body": "Earn double points this week. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0139",
+   "thread_id": "t-demo-0139",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Northfield Books: 30% off everything this weekend",
+   "minutes_ago": 1134,
+   "body": "Northfield Books: 30% off everything this weekend. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0140",
+   "thread_id": "t-demo-0140",
+   "kind": "needs_reply",
+   "from": "Aisha Patel <aisha.patel@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Bake sale volunteers",
+   "minutes_ago": 1109,
+   "body": "Hi Sam, could you help at the bake sale table for an hour on Friday? We are two people short.\n\nAisha",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0141",
+   "thread_id": "t-demo-0141",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW93824757 has shipped",
+   "minutes_ago": 1104,
+   "body": "Parcel PW93824757 has shipped. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0142",
+   "thread_id": "t-demo-0142",
+   "kind": "fyi",
+   "from": "City of Maplebrook <news@cityofmaplebrook.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Maplebrook City Bulletin: the week's library events and road closures",
+   "minutes_ago": 1000,
+   "body": "This week in Maplebrook City Bulletin: the week's library events and road closures. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0143",
+   "thread_id": "t-demo-0143",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New arrivals picked for you",
+   "minutes_ago": 994,
+   "body": "New arrivals picked for you. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0144",
+   "thread_id": "t-demo-0144",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW29597544 is out for delivery",
+   "minutes_ago": 953,
+   "body": "Parcel PW29597544 is out for delivery. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0145",
+   "thread_id": "t-demo-0145",
+   "kind": "fyi",
+   "from": "Hireline <jobs@hireline.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New jobs for you: Data Analyst",
+   "minutes_ago": 940,
+   "body": "12 new Data Analyst roles match your saved search. See them on Hireline.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0146",
+   "thread_id": "t-demo-0146",
+   "kind": "fyi",
+   "from": "Hireline <jobs@hireline.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New jobs for you: Data Analyst",
+   "minutes_ago": 929,
+   "body": "12 new Data Analyst roles match your saved search. See them on Hireline.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0147",
+   "thread_id": "t-demo-0147",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your cart misses you",
+   "minutes_ago": 923,
+   "body": "Your cart misses you. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0148",
+   "thread_id": "t-demo-0148",
+   "kind": "unsure",
+   "from": "Nora Svensson <nora.svensson@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "?",
+   "minutes_ago": 919,
+   "body": "Sent from my phone",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0149",
+   "thread_id": "t-demo-0149",
+   "kind": "fyi",
+   "from": "Gardeners' Weekly <digest@gardenersweekly.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Gardeners' Weekly: a history of the neighborhood farmers market",
+   "minutes_ago": 911,
+   "body": "This week in Gardeners' Weekly: a history of the neighborhood farmers market. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0150",
+   "thread_id": "t-demo-0150",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Members save an extra 15% today",
+   "minutes_ago": 891,
+   "body": "Members save an extra 15% today. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0151",
+   "thread_id": "t-demo-0151",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Earn double points this week",
+   "minutes_ago": 878,
+   "body": "Earn double points this week. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0152",
+   "thread_id": "t-demo-0152",
+   "kind": "bill",
+   "from": "Brightwater Utilities <billing@brightwater-utilities.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Payment received for your electricity account",
+   "minutes_ago": 853,
+   "body": "Thanks! Payment received: $185.28 on {nice-1}.\nNo action is needed. A receipt is in your account history.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0153",
+   "thread_id": "t-demo-0153",
+   "kind": "social",
+   "from": "Circlely <notify@circlely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New event near you: Saturday trail cleanup",
+   "minutes_ago": 834,
+   "body": "New event near you: Saturday trail cleanup. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0154",
+   "thread_id": "t-demo-0154",
+   "kind": "unsure",
+   "from": "Diego Alvarez <diego.alvarez@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Fwd: fwd",
+   "minutes_ago": 822,
+   "body": "Sent from my phone",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0155",
+   "thread_id": "t-demo-0155",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "We saved your favorites",
+   "minutes_ago": 819,
+   "body": "We saved your favorites. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0156",
+   "thread_id": "t-demo-0156",
+   "kind": "fyi",
+   "from": "Evergreen Mutual Insurance <policy@evergreen-mutual.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your policy documents are available",
+   "minutes_ago": 786,
+   "body": "Your updated policy documents are in your account. Coverage is unchanged.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0157",
+   "thread_id": "t-demo-0157",
+   "kind": "fyi",
+   "from": "The Morning Ledger <newsletter@morningledger.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The Morning Ledger: a field guide to fall bulbs",
+   "minutes_ago": 782,
+   "body": "This week in The Morning Ledger: a field guide to fall bulbs. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0158",
+   "thread_id": "t-demo-0158",
+   "kind": "social",
+   "from": "Trailhead Running Club <community@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Nora Svensson tagged you in a photo",
+   "minutes_ago": 777,
+   "body": "Nora Svensson tagged you in a photo. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0159",
+   "thread_id": "t-demo-0159",
+   "kind": "event",
+   "from": "Lena Okafor <lena.okafor@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Invitation: Q4 planning review",
+   "minutes_ago": 755,
+   "body": "You have been invited to the Q4 planning review.\n\nWhen: {when+5@14:00}\nWhere: 3rd floor, Harbor room\n\nOrganizer: Lena Okafor",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "invite.ics",
+     "mime_type": "text/calendar",
+     "size_bytes": 812,
+     "attachment_id": "demo-0159-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0160",
+   "thread_id": "t-demo-0160",
+   "kind": "fyi",
+   "from": "City of Maplebrook <news@cityofmaplebrook.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Maplebrook City Bulletin: leaf collection starts on the east side",
+   "minutes_ago": 735,
+   "body": "This week in Maplebrook City Bulletin: leaf collection starts on the east side. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0161",
+   "thread_id": "t-demo-0161",
+   "kind": "social",
+   "from": "Pinloop <updates@pinloop.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "You have 3 new followers",
+   "minutes_ago": 730,
+   "body": "You have 3 new followers. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0162",
+   "thread_id": "t-demo-0162",
+   "kind": "bill",
+   "from": "Evergreen Mutual Insurance <policy@evergreen-mutual.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your home insurance bill is ready",
+   "minutes_ago": 722,
+   "body": "Hello Sam,\n\nYour home insurance bill for this period is ready.\n\nAmount due: $92.07\nDue date: {date+4}\n\nThe full bill is attached. Pay online or set up autopay from your account page.\n\nThank you for being a customer.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "home-insurance-bill.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 70593,
+     "attachment_id": "demo-0162-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0163",
+   "thread_id": "t-demo-0163",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Northfield Books gift guide: under $25",
+   "minutes_ago": 718,
+   "body": "Northfield Books gift guide: under $25. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0164",
+   "thread_id": "t-demo-0164",
+   "kind": "needs_reply",
+   "from": "Nora Svensson <nora.svensson@example.org>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Onboarding copy review",
+   "minutes_ago": 702,
+   "body": "Hi Sam,\n\nCould you review the new onboarding copy by {date+4}? I left comments on the three screens that changed.\n\nNora",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0165",
+   "thread_id": "t-demo-0165",
+   "kind": "fyi",
+   "from": "Code & Coffee <newsletter@codeandcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Code & Coffee: three recipes for the last of the zucchini",
+   "minutes_ago": 682,
+   "body": "This week in Code & Coffee: three recipes for the last of the zucchini. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0166",
+   "thread_id": "t-demo-0166",
+   "kind": "bill",
+   "from": "Oakridge Property Management <rent@oakridge-pm.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your rent bill is ready",
+   "minutes_ago": 658,
+   "body": "Hello Sam,\n\nYour rent bill for this period is ready.\n\nAmount due: $1544.00\nDue date: {date+12}\n\nThe full bill is attached. Pay online or set up autopay from your account page.\n\nThank you for being a customer.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0167",
+   "thread_id": "t-demo-0167",
+   "kind": "unsure",
+   "from": "Remy Kumar <remy.kumar@example.net>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "hey",
+   "minutes_ago": 639,
+   "body": "Sent from my phone",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0168",
+   "thread_id": "t-demo-0168",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Northfield Books gift guide: under $25",
+   "minutes_ago": 629,
+   "body": "Northfield Books gift guide: under $25. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0169",
+   "thread_id": "t-demo-0169",
+   "kind": "fyi",
+   "from": "Code & Coffee <newsletter@codeandcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Code & Coffee: the case for boring technology",
+   "minutes_ago": 618,
+   "body": "This week in Code & Coffee: the case for boring technology. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0170",
+   "thread_id": "t-demo-0170",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "We saved your favorites",
+   "minutes_ago": 610,
+   "body": "We saved your favorites. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0171",
+   "thread_id": "t-demo-0171",
+   "kind": "social",
+   "from": "Circlely <notify@circlely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Marcus Chen shared a post with you",
+   "minutes_ago": 575,
+   "body": "Marcus Chen shared a post with you. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0172",
+   "thread_id": "t-demo-0172",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Members save an extra 15% today",
+   "minutes_ago": 568,
+   "body": "Members save an extra 15% today. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0173",
+   "thread_id": "t-demo-0173",
+   "kind": "event",
+   "from": "Kestrel Airways <itinerary@kestrel-air.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your trip is booked: Maplebrook to Port Juniper",
+   "minutes_ago": 561,
+   "body": "Booking reference KX7Q2M. Flight KA 214 departs Maplebrook Regional.\n\nWhen: {when+6@07:45}\nDate: {nice+6}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "itinerary-KX7Q2M.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 58204,
+     "attachment_id": "demo-0173-att-1"
+    },
+    {
+     "filename": "KA214.ics",
+     "mime_type": "text/calendar",
+     "size_bytes": 812,
+     "attachment_id": "demo-0173-att-2"
+    }
+   ]
+  },
+  {
+   "id": "demo-0174",
+   "thread_id": "t-demo-0174",
+   "kind": "bill",
+   "from": "Summit Auto Finance <loans@summit-autofinance.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your car loan bill is ready",
+   "minutes_ago": 559,
+   "body": "Hello Sam,\n\nYour car loan bill for this period is ready.\n\nAmount due: $405.43\nDue date: {date+14}\n\nThe full bill is attached. Pay online or set up autopay from your account page.\n\nThank you for being a customer.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": [
+    {
+     "filename": "car-loan-bill.pdf",
+     "mime_type": "application/pdf",
+     "size_bytes": 59116,
+     "attachment_id": "demo-0174-att-1"
+    }
+   ]
+  },
+  {
+   "id": "demo-0175",
+   "thread_id": "t-demo-0175",
+   "kind": "fyi",
+   "from": "Greenleaf Grocers <receipts@greenleaf-grocers.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Greenleaf Grocers receipt (order 789032)",
+   "minutes_ago": 554,
+   "body": "Thanks for shopping with Greenleaf Grocers. Order 789032, total $126.59, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0176",
+   "thread_id": "t-demo-0176",
+   "kind": "promo",
+   "from": "Lumina Home Goods <deals@luminahome.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Lumina Home gift guide: under $25",
+   "minutes_ago": 551,
+   "body": "Lumina Home gift guide: under $25. Shop the collection at Lumina Home. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0177",
+   "thread_id": "t-demo-0177",
+   "kind": "fyi",
+   "from": "The Morning Ledger <newsletter@morningledger.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The Morning Ledger: reading a flame graph in ten minutes",
+   "minutes_ago": 549,
+   "body": "This week in The Morning Ledger: reading a flame graph in ten minutes. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0178",
+   "thread_id": "t-demo-0178",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "We saved your favorites",
+   "minutes_ago": 528,
+   "body": "We saved your favorites. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0179",
+   "thread_id": "t-demo-0179",
+   "kind": "social",
+   "from": "Circlely <notify@circlely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Petra Raman commented on your photo",
+   "minutes_ago": 523,
+   "body": "Petra Raman commented on your photo. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0180",
+   "thread_id": "t-demo-0180",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW65589955 is arriving",
+   "minutes_ago": 515,
+   "body": "Parcel PW65589955 is arriving {nice+2}. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0181",
+   "thread_id": "t-demo-0181",
+   "kind": "fyi",
+   "from": "The Morning Ledger <newsletter@morningledger.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The Morning Ledger: recovery weeks are training too",
+   "minutes_ago": 504,
+   "body": "This week in The Morning Ledger: recovery weeks are training too. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0182",
+   "thread_id": "t-demo-0182",
+   "kind": "promo",
+   "from": "Northfield Books <offers@northfield-books.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "We saved your favorites",
+   "minutes_ago": 503,
+   "body": "We saved your favorites. Shop the collection at Northfield Books. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0183",
+   "thread_id": "t-demo-0183",
+   "kind": "promo",
+   "from": "Saltmarsh Coffee Roasters <hello@saltmarshcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your cart misses you",
+   "minutes_ago": 471,
+   "body": "Your cart misses you. Shop the collection at Saltmarsh Coffee. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0184",
+   "thread_id": "t-demo-0184",
+   "kind": "fyi",
+   "from": "Parcelwise <tracking@parcelwise.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your parcel PW18131638 is arriving",
+   "minutes_ago": 462,
+   "body": "Parcel PW18131638 is arriving {nice+2}. Track it any time on the Parcelwise site.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0185",
+   "thread_id": "t-demo-0185",
+   "kind": "needs_reply",
+   "from": "Hannah Brooks <hannah.brooks@example.net>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Photos from the lake",
+   "minutes_ago": 448,
+   "body": "I finally sorted the photos from the lake trip. Can you send me the ones from your phone too?\n\nH",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0186",
+   "thread_id": "t-demo-0186",
+   "kind": "fyi",
+   "from": "Code & Coffee <newsletter@codeandcoffee.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Code & Coffee: the week's library events and road closures",
+   "minutes_ago": 447,
+   "body": "This week in Code & Coffee: the week's library events and road closures. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0187",
+   "thread_id": "t-demo-0187",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Peak Outfitters: 30% off everything this weekend",
+   "minutes_ago": 420,
+   "body": "Peak Outfitters: 30% off everything this weekend. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0188",
+   "thread_id": "t-demo-0188",
+   "kind": "event",
+   "from": "Maplebrook Public Library <events@maplebrook-library.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "You're registered: Saturday storytime",
+   "minutes_ago": 392,
+   "body": "Your family is registered for storytime in the children's room.\n\nWhen: {when+16@11:00}\nDate: {nice+16}\n\nNeed to change it? Use the link in your account.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0189",
+   "thread_id": "t-demo-0189",
+   "kind": "needs_reply",
+   "from": "Mei Lin <mei.lin@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Book club pick",
+   "minutes_ago": 387,
+   "body": "Hi Sam,\n\nFor next month I am torn between two novels. What do you think: the lighthouse one or the one about the orchestra?\n\nMei",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0190",
+   "thread_id": "t-demo-0190",
+   "kind": "needs_reply",
+   "from": "Diego Alvarez <diego.alvarez@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Keeping an eye on our place",
+   "minutes_ago": 353,
+   "body": "Hey Sam, we are away from {nice+5} to {nice+9}. Could you water the plants once or twice? The spare key is where it always is.\n\nDiego",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0191",
+   "thread_id": "t-demo-0191",
+   "kind": "fyi",
+   "from": "The Morning Ledger <newsletter@morningledger.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "The Morning Ledger: five charts on the housing market",
+   "minutes_ago": 306,
+   "body": "This week in The Morning Ledger: five charts on the housing market. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0192",
+   "thread_id": "t-demo-0192",
+   "kind": "fyi",
+   "from": "Trailhead Running Club <news@trailheadrunners.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Trailhead Notes: the quiet comeback of the paper notebook",
+   "minutes_ago": 282,
+   "body": "This week in Trailhead Notes: the quiet comeback of the paper notebook. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0193",
+   "thread_id": "t-demo-0193",
+   "kind": "promo",
+   "from": "Peak Outfitters <offers@peakoutfitters.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Peak Outfitters: 30% off everything this weekend",
+   "minutes_ago": 244,
+   "body": "Peak Outfitters: 30% off everything this weekend. Shop the collection at Peak Outfitters. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0194",
+   "thread_id": "t-demo-0194",
+   "kind": "social",
+   "from": "Circlely <notify@circlely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your weekly activity summary",
+   "minutes_ago": 232,
+   "body": "Your weekly activity summary. Open the app to see more.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_SOCIAL"
+   ],
+   "vendor_category": "email/social",
+   "attachments": []
+  },
+  {
+   "id": "demo-0195",
+   "thread_id": "t-demo-0195",
+   "kind": "fyi",
+   "from": "Greenleaf Grocers <receipts@greenleaf-grocers.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your Greenleaf Grocers receipt (order 222173)",
+   "minutes_ago": 208,
+   "body": "Thanks for shopping with Greenleaf Grocers. Order 222173, total $79.02, paid by card. Keep this email for your records.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0196",
+   "thread_id": "t-demo-0196",
+   "kind": "fyi",
+   "from": "Hireline <jobs@hireline.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "New jobs for you: Engineering Manager",
+   "minutes_ago": 179,
+   "body": "12 new Engineering Manager roles match your saved search. See them on Hireline.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0197",
+   "thread_id": "t-demo-0197",
+   "kind": "promo",
+   "from": "Brambleberry Kids <sale@brambleberrykids.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Brambleberry Kids gift guide: under $25",
+   "minutes_ago": 143,
+   "body": "Brambleberry Kids gift guide: under $25. Shop the collection at Brambleberry Kids. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  },
+  {
+   "id": "demo-0198",
+   "thread_id": "t-demo-0198",
+   "kind": "fyi",
+   "from": "City of Maplebrook <news@cityofmaplebrook.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Maplebrook City Bulletin: what the new transit plan means for commuters",
+   "minutes_ago": 134,
+   "body": "This week in Maplebrook City Bulletin: what the new transit plan means for commuters. Plus reader mail, a short quiz and the calendar of upcoming talks.\n\nYou are receiving this because you subscribed. Unsubscribe any time.",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0199",
+   "thread_id": "t-demo-0199",
+   "kind": "needs_reply",
+   "from": "Aisha Patel <aisha.patel@example.com>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Carpool swap this week",
+   "minutes_ago": 127,
+   "body": "Hi! Would you swap carpool days with me this week, Wednesday for Thursday? Our schedule changed.\n\nAisha",
+   "labels": [
+    "INBOX"
+   ],
+   "vendor_category": null,
+   "attachments": []
+  },
+  {
+   "id": "demo-0200",
+   "thread_id": "t-demo-0200",
+   "kind": "promo",
+   "from": "Voyagely Travel <deals@voyagely.test>",
+   "to": [
+    "sam.rivera@example.com"
+   ],
+   "cc": [],
+   "subject": "Your cart misses you",
+   "minutes_ago": 91,
+   "body": "Your cart misses you. Shop the collection at Voyagely. Offer ends {nice+3}.",
+   "labels": [
+    "INBOX",
+    "CATEGORY_PROMOTIONS"
+   ],
+   "vendor_category": "email/promotions",
+   "attachments": []
+  }
+ ]
+}

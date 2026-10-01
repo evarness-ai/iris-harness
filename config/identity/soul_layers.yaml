@@ -1,0 +1,26 @@
+# Which parts of SOUL.md ride in every prompt (L0) and which are fetched on demand (L2).
+#
+# SOUL.md is the user's file and is never rewritten: this is a read-time split by
+# section heading. Anything NOT listed here stays in L0 — a section the user adds is
+# theirs, and silently hiding it would be the wrong default.
+#
+# Why: the file is ~7.5K chars (~1.9K tokens) on every turn, and the parts below are
+# the ones a turn rarely needs — an internals tour, style notes, and a tool policy the
+# per-turn tool catalog already states. `iris_doc("OPERATING")` returns them in full.
+
+# Section headings (## level, matched case-insensitively, without the ##) moved to L2.
+extended_sections:
+  - Operational primer
+  - Reasoning style
+  - Reflection prompts
+  - Success criteria
+  - Tool selection policy
+  - Tool selection guidance
+
+# The few lines of tool policy that DO earn their place in every prompt. Kept here
+# rather than in code so the wording stays config, like the rest of the vocabulary.
+tool_policy_summary: |
+  ## Tool policy (summary)
+  - Prefer a tool that returns real data over answering from memory; say so when you do.
+  - Use the cheapest local tier that can do the job; escalate only when it cannot.
+  - Full policy and the harness internals: call iris_doc("OPERATING").

@@ -1,0 +1,28 @@
+# Minimal SearXNG settings for the IRIS research engine.
+# The one setting that matters: search.formats MUST include `json` — the research
+# engine's SearxngProvider calls the JSON API (/search?format=json), which SearXNG
+# disables by default.
+#
+# Before first start, set a unique server.secret_key (any long random string):
+#   sed -i '' "s/CHANGE_ME_TO_A_LONG_RANDOM_STRING/$(openssl rand -hex 32)/" deploy/searxng/settings.yml
+
+use_default_settings: true
+
+general:
+  instance_name: "iris-searxng"
+
+server:
+  secret_key: "CHANGE_ME_TO_A_LONG_RANDOM_STRING"
+  limiter: false # local single-user; no bot-limiting needed
+  image_proxy: false
+
+search:
+  # REQUIRED by the research engine — exposes the JSON API the provider consumes.
+  formats:
+    - html
+    - json
+  safe_search: 1
+  autocomplete: ""
+
+ui:
+  static_use_hash: true

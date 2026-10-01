@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>IRIS is out of reach</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; min-height: 100dvh; display: grid; place-items: center;
+        padding: 24px calc(24px + env(safe-area-inset-left, 0px));
+        background: #0c0f14; color: #e9eef5;
+        font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      }
+      main { max-width: 22rem; text-align: center; }
+      h1 { font-size: 17px; margin: 0 0 8px; }
+      p { margin: 0 0 12px; color: #b2becd; font-size: 14px; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #5dcaa5; }
+      button {
+        appearance: none; border: 1px solid #334052; background: transparent; color: #e9eef5;
+        font: inherit; font-size: 14px; padding: 10px 18px; min-height: 44px;
+        border-radius: 8px; cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Can't reach IRIS</h1>
+      <!-- The harness is tailnet-only, so "offline" here almost always means
+           Tailscale is off rather than the phone having no signal. Saying the
+           likely cause beats a generic dinosaur. -->
+      <p>
+        The console is only reachable over your tailnet. Check that
+        <code>Tailscale</code> is connected, then try again.
+      </p>
+      <p>A push notification can arrive without the tailnet; opening it needs one.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

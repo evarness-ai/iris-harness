@@ -1,0 +1,35 @@
+{
+  "nodes": [
+    {"uuid": "n-ana", "name": "Ana Lima", "labels": ["Entity", "Person"], "summary": "An engineer.", "created_at": "2023-01-05T10:00:00Z", "group_id": "g1"},
+    {"uuid": "n-acme", "name": "Acme Corp", "labels": ["Entity", "Organization"], "created_at": "2023-01-05T10:00:00Z", "group_id": "g1"},
+    {"uuid": "n-globex", "name": "Globex", "labels": ["Entity", "Company"], "created_at": "2024-06-02T09:00:00Z", "group_id": "g1"},
+    {"uuid": "n-leeds", "name": "Leeds", "labels": ["Entity", "City"], "created_at": "2023-02-01T08:00:00Z", "group_id": "g1"},
+    {"uuid": "n-chess", "name": "Chess", "labels": ["Entity", "Hobby"], "created_at": "2023-03-01T08:00:00Z", "group_id": "g1"},
+    {"uuid": "n-thing", "name": "Something", "labels": ["Entity"], "created_at": "2023-03-01T08:00:00Z", "group_id": "g1"},
+    {"uuid": "n-lonely", "name": "Nobody", "labels": ["Entity", "Person"], "created_at": "2023-03-01T08:00:00Z", "group_id": "g1"}
+  ],
+  "edges": [
+    {"uuid": "e-acme", "source_node_uuid": "n-ana", "target_node_uuid": "n-acme", "name": "WORKS_AT",
+     "fact": "Ana works at Acme Corp.", "episodes": ["ep-1", "ep-2"],
+     "created_at": "2023-01-05T10:00:00Z", "valid_at": "2023-01-01T00:00:00Z",
+     "invalid_at": "2024-06-01T00:00:00Z", "expired_at": "2024-06-02T09:00:00Z"},
+    {"uuid": "e-globex", "source_node_uuid": "n-ana", "target_node_uuid": "n-globex", "name": "WORKS_AT",
+     "fact": "Ana joined Globex.", "episodes": ["ep-2"],
+     "created_at": "2024-06-02T09:00:00Z", "valid_at": "2024-06-01T00:00:00Z", "invalid_at": null, "expired_at": null},
+    {"uuid": "e-leeds", "source_node_uuid": "n-ana", "target_node_uuid": "n-leeds", "name": "LIVES_IN",
+     "fact": "Ana lives in Leeds.", "episodes": ["ep-1"],
+     "created_at": "2023-02-01T08:00:00Z", "valid_at": null, "invalid_at": null, "expired_at": "2024-01-01T00:00:00Z"},
+    {"uuid": "e-likes", "source_node_uuid": "n-ana", "target_node_uuid": "n-chess", "name": "ENJOYS",
+     "fact": "Ana enjoys chess.", "episodes": ["ep-1"], "created_at": "2023-03-01T08:00:00Z"},
+    {"uuid": "e-studies", "source_node_uuid": "n-ana", "target_node_uuid": "n-thing", "name": "STUDIES",
+     "fact": "Ana studies something.", "episodes": [], "created_at": "2023-03-01T08:00:00Z"}
+  ],
+  "episodes": [
+    {"uuid": "ep-1", "name": "chat 2023-01-05", "content": "…", "source": "message", "valid_at": "2023-01-05T10:00:00Z", "created_at": "2023-01-05T10:00:00Z"},
+    {"uuid": "ep-2", "name": "chat 2024-06-02", "content": "…", "source": "message", "valid_at": "2024-06-02T09:00:00Z", "created_at": "2024-06-02T09:00:00Z"}
+  ],
+  "episodic_edges": [
+    {"uuid": "m-1", "source_node_uuid": "ep-1", "target_node_uuid": "n-ana", "created_at": "2023-01-05T10:00:00Z"},
+    {"uuid": "m-2", "source_node_uuid": "ep-2", "target_node_uuid": "n-globex", "created_at": "2024-06-02T09:00:00Z"}
+  ]
+}

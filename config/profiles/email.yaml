@@ -1,0 +1,28 @@
+# The email assistant: the default profile plus the email plugins -- the mailbox
+# providers (Gmail, IMAP) and the email workflows (triage, the judge, the digest,
+# `iris email demo`). This is release 1's public product (OSS plan R1/R2).
+#
+# The providers are optional: each mounts when it is installed and loadable here. Gmail
+# needs the Google API packages `iris-harness[email]` installs; IMAP needs nothing but
+# the standard library. With IRIS_PROFILE unset, `default` hands over to this profile
+# once email_workflows and at least one provider load (default.yaml,
+# prefer_when_installed; requires_one_of below) -- so an install with the email slice
+# is the email assistant even without the extra, over IMAP (owner decision 2026-09-30).
+#
+# Keep the first six rows in step with default.yaml: this profile is that one plus email.
+name: email
+description: Governed core + reference plugins + the email assistant.
+plugins:
+  - name: system
+  - name: telegram_channel
+  - name: web_channel
+  - name: web_push_channel  # digest headline + approval nudges to the phone (loop-proof PR 2)
+  - name: research
+  - name: code_exec
+  - name: gmail
+    optional: true
+  - name: imap
+    optional: true
+  - name: email_workflows
+requires_one_of:
+  - [gmail, imap]

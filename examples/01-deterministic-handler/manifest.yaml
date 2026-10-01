@@ -1,0 +1,8 @@
+name: opening_hours
+version: 0.1.0
+description: Answers "when is the library open?" from hours.yaml, with no model call.
+entrypoint: opening_hours:setup
+flavor: python
+trust: in-process
+provides:
+  - intercept

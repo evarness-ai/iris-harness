@@ -1,0 +1,175 @@
+# The deterministic intercept dispatch chain.
+#
+# Before a turn reaches the intent router + agent loop, it runs through this
+# ordered chain of deterministic short-circuits (first match wins). Both the
+# non-streaming chat() and the streaming chat_stream() consume THIS one
+# declaration, so the two paths can never drift apart (they used to hand-copy
+# the chain, which is how chat_stream ended up missing the pipeline.phase
+# observability that chat() emitted).
+#
+# Each entry:
+#   name         — the intercept id; the runtime logs `<name>.end` on a match
+#                  (this is what the playground reads to know which intercept
+#                  answered) and the handler method is `_handle_<name>_turn`.
+#   handler      — the IrisRuntime method to call (message, session_id, span[, channel]);
+#                  a dotted name reaches a collaborator the runtime holds
+#                  (`routines.handle_routine_authoring_turn`), `plugin:<name>` a plugin's.
+#   enabled      — set false to remove an intercept from the chain (default true).
+#   passes_channel — true for handlers that also take the channel kwarg.
+#   trace_text   — human label for the streaming trace event; omit for no trace
+#                  event (the turn still yields its done result).
+#   trace_fields — metadata keys surfaced in the streaming trace payload.
+#
+# Order matters and is intentional: confirmation resolves a pending decision
+# first; reminder/meeting creation own their verbs before the time/date reply;
+# finance/brief short-circuits precede routine authoring; standing-instruction
+# capture is last before the agent loop.
+#
+# SAFETY-JUDGE COVERAGE (2026-07-06 red-team). An intercept answers BEFORE the
+# ResponseCurator, so the faithfulness / grounding / output-safety / escalation
+# judges never see an intercept-answered turn. Every intercept must therefore be
+# safe by construction: a deterministic intercept emits templated / local-data
+# text, and an intercept that invokes a GENERATIVE model (image_categorize,
+# meeting_creation, routine_authoring, standing_instruction) must constrain that
+# model to structured extraction and template the user-facing response from
+# parsed fields — never echo raw model prose. A new intercept is pinned by
+# tests/unit/test_runtime/test_intercept_safety_coverage.py: it must be
+# classified there (deterministic vs model-using) before it can ship.
+
+intercepts:
+  - name: confirmation
+    handler: confirmations.handle_confirmation_turn
+    trace_text: "confirmation resolved"
+    trace_fields: [confirmation]
+    resolves_confirmation: true
+  - name: cleanup_selection
+    handler: plugin:filemanager
+    trace_text: "cleanup selection archived"
+    trace_fields: [cleanup_selection, plan_id, archived]
+    resolves_confirmation: true
+  - name: categorize_selection
+    handler: plugin:filemanager
+    trace_text: "categorize selection filed"
+    trace_fields: [categorize_selection, plan_id, filed]
+    resolves_confirmation: true
+  - name: organize_confirmation
+    handler: plugin:filemanager
+    trace_text: "organize plan approved/rejected"
+    trace_fields: [organize_confirmation, plan_id]
+    resolves_confirmation: true
+  - name: filemanager_skill_confirmation
+    handler: plugin:filemanager
+    trace_text: "filemanager action approved/rejected"
+    trace_fields: [fm_skill_confirmation, source_kind]
+    resolves_confirmation: true
+  - name: folder_files
+    handler: plugin:filemanager
+    trace_text: "folder file count answered locally"
+    trace_fields: [folder_files_intercept, folder, file_count]
+  - name: image_categorize_request
+    handler: plugin:filemanager
+    passes_channel: true  # large folders go async → completion notice routes back on this channel
+    trace_text: "image categories proposed"
+    trace_fields: [categorize_intercept, folder, categories]
+  - name: organize_request
+    handler: plugin:filemanager
+    passes_channel: true
+    trace_text: "organize plan proposed"
+    trace_fields: [organize_intercept, folder, plan_id]
+  - name: cleanup_request
+    handler: plugin:filemanager
+    passes_channel: true
+    trace_text: "cleanup groups proposed"
+    trace_fields: [cleanup_intercept, folder, groups]
+  - name: move_request
+    handler: plugin:filemanager
+    trace_text: "move-by-type proposed/moved"
+    trace_fields: [move_intercept, folder, count]
+  # "the Capital One email isn't FYI, it needs a reply" / "X is promo" — the owner
+  # moving a judged email to another bucket, and "what did you judge today?" (loop-proof
+  # PR 5). Ahead of the reminder/meeting/finance intercepts, which would read "event" or
+  # "bill" in it as their own; it claims only a turn that names a judged email.
+  - name: email_rebucket
+    handler: plugin:email_workflows
+    trace_text: "email re-bucketed"
+    trace_fields: [email_rebucket, message_id]
+    guard_output: true  # parity decision B: the reply names the email by its subject and sender
+  # Done / Snooze / Cancel / "what reminders do I have" on reminders that exist
+  # (loop-proof PR 3b). Ahead of reminder_creation, so "snooze the dentist reminder
+  # to 6pm" is an answer, not a new reminder; a bare "done" is claimed only when a
+  # reminder was sent in the last couple of hours.
+  - name: reminder_action
+    handler: plugin:calendar
+    trace_text: "reminder answered"
+    trace_fields: [reminder_action, reminder_id]
+  - name: reminder_creation
+    handler: plugin:calendar   # registered by the calendar plugin (OSS plan M5.7 track A)
+    trace_text: "reminder created"
+    trace_fields: [reminder_id]
+  - name: meeting_creation
+    handler: plugin:calendar   # registered by the calendar plugin (OSS plan M5.7 track A)
+    trace_text: "event created"
+    trace_fields: [calendar_event_id]
+  - name: time_date
+    handler: plugin:system   # registered by the `system` reference plugin (OSS plan M1)
+    trace_text: "deterministic time/date response"
+  - name: brief_request
+    handler: plugin:planner   # registered by the planner plugin (OSS plan M5.7 track A)
+    trace_text: "brief rendered on demand"
+    trace_fields: [brief_skill]
+    guard_output: true  # parity decision B: the brief renders event summaries, followup titles/senders, inbox and news text
+  - name: brief_config
+    handler: plugin:planner   # registered by the planner plugin (OSS plan M5.7 track A)
+    trace_text: "brief configured"
+  - name: portfolio_request
+    handler: plugin:finance_workflows
+    trace_text: "portfolio answered locally"
+  # "paid discover" / "I paid the Wingtip card" — the owner closing a bill (loop-proof
+  # PR 4). Ahead of account_statement, which would read "discover" as a question.
+  - name: bill_paid
+    handler: plugin:finance_workflows
+    trace_text: "bill marked paid"
+    trace_fields: [bill_paid, due_id]
+    guard_output: true  # parity decision B: names the bill by its issuer when no configured institution matches
+  # "What's my Discover bill" — one named account's statement cycle from the records
+  # (ADR-0121). Ahead of dues_request, which answers "what do I owe" across everything.
+  - name: account_statement
+    handler: plugin:finance_workflows
+    trace_text: "account statement answered from records"
+    trace_fields: [account_statement, institution, emails_read]
+    guard_output: true  # parity decision B: the answer cites the statement email's subject
+  - name: dues_request
+    handler: plugin:finance_workflows
+    trace_text: "dues answered locally"
+    guard_output: true  # parity decision B: each due is labelled by its issuer, parsed out of the email
+  # "how much was my electricity bill" — one named biller's amount, from the dues
+  # derived from bill emails. After dues_request, which owns "what do I owe".
+  - name: bill_amount_request
+    handler: plugin:finance_workflows
+    trace_text: "bill amount answered locally"
+    trace_fields: [bill_amount_intercept, matched_issuers]
+    guard_output: true  # parity decision B: names the bill by its issuer, parsed out of the email
+  - name: statement_email_details
+    handler: plugin:finance_workflows
+    trace_text: "statement details answered from inbox"
+    trace_fields: [search_query]
+    guard_output: true  # parity decision B: returns inbox search output: subjects, senders, snippets
+  # The user deciding a discovered account ("the Discover card is mine") — ahead of
+  # accounts_request, which answers "what accounts do I have" (ADR-0113 follow-up).
+  - name: account_confirmation
+    handler: plugin:finance_workflows
+    trace_text: "discovered accounts decided"
+    trace_fields: [account_confirmation, accounts]
+  - name: accounts_request
+    handler: plugin:finance_workflows
+    trace_text: "accounts answered locally"
+    trace_fields: [accounts, filtered_to]
+  - name: routine_management
+    handler: routines.handle_routine_management_turn
+  - name: routine_authoring
+    handler: routines.handle_routine_authoring_turn
+    passes_channel: true
+  - name: standing_instruction
+    handler: _handle_standing_instruction_turn
+    trace_text: "standing instruction captured"
+    trace_fields: [behavior_name]

@@ -1,0 +1,16 @@
+# The permission contract's operator override (docs/architecture/plugin-capabilities.md §4).
+#
+# A plugin may call its own tools, and another plugin's tools only when its manifest lists
+# them under `uses: tools`. The kernel's caller policy enforces that on every tool call a
+# plugin makes from code (api.tools). This file can only NARROW it: take a tool away from a
+# plugin caller. A grant belongs in the plugin's manifest, where the dependency is visible.
+#
+# A capability a plugin consumes (`capabilities: uses/requires`) is governed the same way:
+# take it away whole, or one method at a time.
+#
+# deny:
+#   planner: [configure_brief]     # the planner plugin may no longer call configure_brief
+#   finance_workflows:
+#     - capability:mail.read          # nor any method of mail.read
+#     - capability:mail.read.search   # or just this one
+deny: {}

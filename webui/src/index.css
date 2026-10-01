@@ -1,0 +1,86 @@
+@import "./styles/tokens.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: light dark;
+  }
+  body {
+    margin: 0;
+    @apply bg-bg font-sans text-base text-fg antialiased;
+  }
+}
+
+/* React Flow theming via tokens (swaps with the active theme). */
+.react-flow__attribution {
+  display: none;
+}
+.react-flow__edge-path {
+  stroke: var(--border-strong);
+}
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--primary);
+}
+.react-flow__controls button {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-muted);
+  fill: var(--fg-muted);
+}
+.react-flow__controls button:hover {
+  background: var(--surface-raised);
+}
+
+/* Pulse on the active node during replay. */
+@keyframes iris-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(93 202 165 / 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgb(93 202 165 / 0);
+  }
+}
+.iris-node-active {
+  animation: iris-pulse 1.1s ease-out infinite;
+}
+
+
+/* ── App shell: the page does not move, its panes do ──────────────────────
+ *
+ * Dragging the console used to rubber-band the whole document, which on a
+ * phone reads as the app coming loose. The shell has been a definite-height
+ * column since #564 and every screen scrolls in the outlet wrapper, so the
+ * document itself never needed to scroll — this stops it pretending it can.
+ *
+ * `overscroll-behavior: none` also stops a scroll that reaches the end of an
+ * inner pane from continuing into the page behind it. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  /* Removes the 300ms double-tap-to-zoom wait, and the zoom with it. */
+  touch-action: manipulation;
+  /* A long press on the shell should not offer to select the chrome; text
+     inside the conversation stays selectable below. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Anything the owner might want to copy — a message, a command, an id —
+   stays selectable. Losing copy-paste to win a native feel is a bad trade. */
+p,
+pre,
+code,
+input,
+textarea,
+[data-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
+}

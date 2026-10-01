@@ -1,0 +1,131 @@
+# Routing golden set — Phase 2 scenario harness.
+#
+# expect_intent / expect_agent are the SEMANTICALLY correct route per the
+# router prompt rules in intent_router.py, not what any classifier currently
+# does. class: clear = unambiguous; ambiguous = defensible either way (the
+# chosen expectation is noted); adversarial = crafted to trip keyword rules.
+#
+# Probe ADV-01 is the live Phase 1 misroute: "reply" keyword sent a hello
+# message to the email agent.
+
+cases:
+  # ---- communication / email ----
+  - {id: com-01, class: clear, utterance: "summarize my inbox from today", expect_intent: communication, expect_agent: email}
+  - {id: com-02, class: clear, utterance: "check my gmail for new messages", expect_intent: communication, expect_agent: email}
+  - {id: com-03, class: clear, utterance: "draft an email to Sarah about the quarterly report", expect_intent: communication, expect_agent: email}
+  - {id: com-04, class: clear, utterance: "send a follow up to the recruiter", expect_intent: communication, expect_agent: email}
+  - {id: com-05, class: clear, utterance: "any unread emails from my bank?", expect_intent: communication, expect_agent: email}
+  - {id: com-06, class: clear, utterance: "forward the invoice email to my accountant", expect_intent: communication, expect_agent: email}
+  - {id: com-07, class: clear, utterance: "message Sarah that I'm running late", expect_intent: communication, expect_agent: email}
+
+  # ---- calendar ----
+  - {id: cal-01, class: clear, utterance: "schedule a meeting with Alex tomorrow at 3pm", expect_intent: calendar, expect_agent: calendar}
+  - {id: cal-02, class: clear, utterance: "what's on my calendar for friday?", expect_intent: calendar, expect_agent: calendar}
+  - {id: cal-03, class: clear, utterance: "remind me to call mom at 6pm", expect_intent: calendar, expect_agent: calendar}
+  - {id: cal-04, class: clear, utterance: "move my dentist appointment to next week", expect_intent: calendar, expect_agent: calendar}
+  - {id: cal-05, class: clear, utterance: "set up a recurring standup every weekday at 9", expect_intent: calendar, expect_agent: calendar}
+  - {id: cal-06, class: clear, utterance: "cancel tomorrow's 2pm event", expect_intent: calendar, expect_agent: calendar}
+  - {id: cal-07, class: clear, utterance: "what's my schedule today?", expect_intent: calendar, expect_agent: calendar}
+
+  # ---- files ----
+  - {id: fil-01, class: clear, utterance: "find the tax folder in my documents", expect_intent: files, expect_agent: filemanager}
+  - {id: fil-02, class: clear, utterance: "upload the contract to storage", expect_intent: files, expect_agent: filemanager}
+  - {id: fil-03, class: clear, utterance: "rename the file budget_v2 to budget_final", expect_intent: files, expect_agent: filemanager}
+  - {id: fil-04, class: clear, utterance: "how much storage am I using?", expect_intent: files, expect_agent: filemanager}
+  - {id: fil-05, class: clear, utterance: "download the latest backup folder", expect_intent: files, expect_agent: filemanager}
+
+  # ---- coding ----
+  - {id: cod-01, class: clear, utterance: "write a python function to parse csv files", expect_intent: coding, expect_agent: coding_agent}
+  - {id: cod-02, class: clear, utterance: "refactor the auth module to use dependency injection", expect_intent: coding, expect_agent: coding_agent}
+  - {id: cod-03, class: clear, utterance: "debug this stack trace for me", expect_intent: coding, expect_agent: coding_agent}
+  - {id: cod-04, class: clear, utterance: "implement unit tests for the parser class", expect_intent: coding, expect_agent: coding_agent}
+  - {id: cod-05, class: clear, utterance: "build a telegram bot service", expect_intent: coding, expect_agent: coding_agent}
+  - {id: cod-06, class: clear, utterance: "fix bug in the login flow", expect_intent: coding, expect_agent: coding_agent}
+
+  # ---- code_exec ----
+  - {id: exe-01, class: clear, utterance: "create a pdf summary of this week's ai news", expect_intent: code_exec, expect_agent: code_exec}
+  - {id: exe-02, class: clear, utterance: "calculate the compound interest on 10000 at 7% for 5 years", expect_intent: code_exec, expect_agent: code_exec}
+  - {id: exe-03, class: clear, utterance: "plot a chart of my monthly expenses", expect_intent: code_exec, expect_agent: code_exec}
+  - {id: exe-04, class: clear, utterance: "convert this json to csv", expect_intent: code_exec, expect_agent: code_exec}
+  - {id: exe-05, class: clear, utterance: "run the backup script in the sandbox", expect_intent: code_exec, expect_agent: code_exec}
+  - {id: exe-06, class: clear, utterance: "generate an excel report of the test results", expect_intent: code_exec, expect_agent: code_exec}
+
+  # ---- search ----
+  - {id: sea-01, class: clear, utterance: "look up the latest mlx release notes", expect_intent: search, expect_agent: rag}
+  - {id: sea-02, class: clear, utterance: "research local llm quantization techniques", expect_intent: search, expect_agent: rag}
+  - {id: sea-03, class: clear, utterance: "find out who won the f1 race yesterday", expect_intent: search, expect_agent: rag}
+  - {id: sea-04, class: clear, utterance: "query the web for apple silicon benchmarks", expect_intent: search, expect_agent: rag}
+
+  # ---- weather ----
+  - {id: wea-01, class: clear, utterance: "what's the weather in Springfield today?", expect_intent: weather, expect_agent: system}
+  - {id: wea-02, class: clear, utterance: "will it rain this weekend?", expect_intent: weather, expect_agent: system}
+  - {id: wea-03, class: clear, utterance: "current temperature outside", expect_intent: weather, expect_agent: system}
+  - {id: wea-04, class: clear, utterance: "how's the weather where you are?", expect_intent: weather, expect_agent: system}
+
+  # ---- system ----
+  - {id: sys-01, class: clear, utterance: "what time is it?", expect_intent: system, expect_agent: system}
+  - {id: sys-02, class: clear, utterance: "what's today's date?", expect_intent: system, expect_agent: system}
+  - {id: sys-03, class: clear, utterance: "which timezone are you using?", expect_intent: system, expect_agent: system}
+
+  # ---- help ----
+  - {id: hel-01, class: clear, utterance: "what can you do?", expect_intent: help, expect_agent: system}
+  - {id: hel-02, class: clear, utterance: "help me understand how routines work", expect_intent: help, expect_agent: system}
+  - {id: hel-03, class: clear, utterance: "explain how you triage my email", expect_intent: help, expect_agent: system}
+
+  # ---- general ----
+  - {id: gen-01, class: clear, utterance: "tell me a fun fact about octopuses", expect_intent: general, expect_agent: system}
+  - {id: gen-02, class: clear, utterance: "translate good morning to japanese", expect_intent: general, expect_agent: system}
+  - {id: gen-03, class: clear, utterance: "what is the best way to learn rust?", expect_intent: general, expect_agent: system}
+  - {id: gen-04, class: clear, utterance: "how should I approach system design interviews?", expect_intent: general, expect_agent: system}
+  - {id: gen-05, class: clear, utterance: "give me a haiku about autumn", expect_intent: general, expect_agent: system}
+
+  # ---- profile_query ----
+  - {id: pro-01, class: clear, utterance: "what's my name?", expect_intent: profile_query, expect_agent: system}
+  - {id: pro-02, class: clear, utterance: "who am i?", expect_intent: profile_query, expect_agent: system}
+  - {id: pro-03, class: clear, utterance: "what languages do i prefer?", expect_intent: profile_query, expect_agent: system}
+  - {id: pro-04, class: clear, utterance: "tell me about myself", expect_intent: profile_query, expect_agent: system}
+  - {id: pro-05, class: clear, utterance: "what are my priorities?", expect_intent: profile_query, expect_agent: system}
+
+  # ---- adversarial & ambiguous probes ----
+  - {id: adv-01, class: adversarial, utterance: "Please reply with just the single word: hello", expect_intent: general, expect_agent: system,
+     note: "Live Phase 1 misroute: 'reply' keyword sent this to the email agent."}
+  - {id: adv-02, class: ambiguous, utterance: "remind me to reply to John's email", expect_intent: calendar, expect_agent: calendar,
+     note: "Reminder action on an email topic; expectation = calendar (the verb governs)."}
+  - {id: adv-03, class: ambiguous, utterance: "search my inbox for the flight confirmation", expect_intent: communication, expect_agent: email,
+     note: "Inbox search is an email operation, not web search."}
+  - {id: adv-04, class: adversarial, utterance: "what's the best email client for mac?", expect_intent: general, expect_agent: system,
+     note: "Advice question about email, not an email operation."}
+  - {id: adv-05, class: adversarial, utterance: "how do I send an email from python?", expect_intent: general, expect_agent: system,
+     note: "How-do-I advice; neither email op nor a coding task request."}
+  - {id: adv-06, class: adversarial, utterance: "create an email agent that triages my inbox", expect_intent: coding, expect_agent: coding_agent,
+     note: "Coding verbs + artifact noun must win over the email domain keyword."}
+  - {id: adv-07, class: ambiguous, utterance: "find my passport scan", expect_intent: files, expect_agent: filemanager,
+     note: "Personal file lookup; 'find' alone must not mean web search."}
+  - {id: adv-08, class: ambiguous, utterance: "book a meeting room and email the team", expect_intent: calendar, expect_agent: calendar,
+     note: "Multi-step; first action governs. is_multi_step should be true."}
+  - {id: adv-09, class: ambiguous, utterance: "what time is my flight?", expect_intent: calendar, expect_agent: calendar,
+     note: "Event lookup, not clock time. 'what time' keyword trap."}
+  - {id: adv-10, class: adversarial, utterance: "weather looks bad, should I cancel my trip?", expect_intent: general, expect_agent: system,
+     note: "Decision advice mentioning weather; not a forecast request."}
+  - {id: adv-11, class: clear, utterance: "plot the weather trend for the last month", expect_intent: code_exec, expect_agent: code_exec,
+     note: "Visualization wins over the weather keyword."}
+  - {id: adv-12, class: ambiguous, utterance: "send the report", expect_intent: communication, expect_agent: email}
+  - {id: adv-13, class: ambiguous, utterance: "schedule the database backup script", expect_intent: calendar, expect_agent: calendar,
+     note: "Scheduling intent; script is the object, not the task."}
+  - {id: adv-14, class: ambiguous, utterance: "explain this error message", expect_intent: help, expect_agent: system,
+     note: "'message' keyword trap toward email."}
+  - {id: adv-15, class: ambiguous, utterance: "download the email attachments to my documents folder", expect_intent: communication, expect_agent: email,
+     note: "Email operation; 'download/folder' keyword traps toward files."}
+  - {id: adv-16, class: clear, utterance: "run a search for nearby restaurants", expect_intent: search, expect_agent: rag}
+  - {id: adv-17, class: clear, utterance: "calculate my average email response time", expect_intent: code_exec, expect_agent: code_exec,
+     note: "Computation wins over the email keyword."}
+  - {id: adv-18, class: adversarial, utterance: "who am I meeting tomorrow?", expect_intent: calendar, expect_agent: calendar,
+     note: "'who am i' profile keyword trap."}
+  - {id: adv-19, class: clear, utterance: "make a reminder list in markdown", expect_intent: code_exec, expect_agent: code_exec,
+     note: "Artifact production; 'remind' keyword trap toward calendar."}
+  - {id: adv-20, class: adversarial, utterance: "find and fix the bug in my email parser", expect_intent: coding, expect_agent: coding_agent,
+     note: "Coding task; 'email' keyword trap."}
+  - {id: adv-21, class: ambiguous, utterance: "update my calendar and send invites", expect_intent: calendar, expect_agent: calendar,
+     note: "Multi-step; calendar first."}
+  - {id: adv-22, class: clear, utterance: "what's the date of my next appointment?", expect_intent: calendar, expect_agent: calendar,
+     note: "'date' keyword trap toward system."}

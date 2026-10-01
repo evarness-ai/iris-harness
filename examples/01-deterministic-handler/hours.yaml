@@ -1,0 +1,5 @@
+# The opening hours the handler answers with. Edit this file, not the code.
+hours:
+  Monday to Friday: 9:00 to 18:00
+  Saturday: 10:00 to 14:00
+  Sunday: closed

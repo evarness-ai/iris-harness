@@ -1,0 +1,19 @@
+# Paths whose change invalidates every test's assumptions: one anchored regex per line,
+# joined with `|` by scripts/changed_tests.sh. tests/unit/test_scripts asserts that every
+# line still matches at least one tracked file, so a move that leaves a stale trigger
+# behind fails loudly instead of silently ceasing to fire (OSS plan M6, decision 9).
+^pyproject\.toml$
+^poetry\.lock$
+^tests/conftest\.py$
+^config/intercepts\.yaml$
+^config/llm_tiers\.yaml$
+^config/profiles/.*\.yaml$
+^src/iris_harness/runtime/bootstrap\.py$
+^src/iris_harness/runtime/turn/.*
+^src/iris_harness/sdk/.*
+^src/iris_harness/runtime/plugin_host/.*
+^src/iris_harness/plugins_builtin/.*
+^src/iris_personal/plugins/.*
+^src/iris_harness/agent/agentic_core\.py$
+^src/iris_harness/agent/agent_executor\.py$
+^src/iris_harness/kernel/governance/kernel\.py$

@@ -1,0 +1,399 @@
+{
+  "groups": [
+    {
+      "id": "chat",
+      "label": null,
+      "items": [
+        {
+          "id": "chat",
+          "label": "Chat",
+          "route": "/chat",
+          "title": "Chat",
+          "subtitle": "Talk to IRIS — streaming, local-first",
+          "icon": "message-square",
+          "group": "chat",
+          "order": 10,
+          "nav": true,
+          "plugin": null,
+          "status": null,
+          "mobile_tab": {
+            "label": "Chat",
+            "order": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "harness",
+      "label": "Harness",
+      "items": [
+        {
+          "id": "overview",
+          "label": "Overview",
+          "route": "/overview",
+          "title": "Control Overview",
+          "subtitle": "LLM mode, self-learning, routines & heartbeats at a glance",
+          "icon": "layout-dashboard",
+          "group": "harness",
+          "order": 10,
+          "nav": true,
+          "plugin": null,
+          "status": null,
+          "mobile_tab": {
+            "label": "Control",
+            "order": 4
+          }
+        },
+        {
+          "id": "agents",
+          "label": "Agents",
+          "route": "/agents",
+          "title": "Agents",
+          "subtitle": "Agents and the plugins that provide them — tools, registrations & YAML (read-only)",
+          "icon": "bot",
+          "group": "harness",
+          "order": 20,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "routines",
+          "label": "Routines",
+          "route": "/routines",
+          "title": "Routines",
+          "subtitle": "Scheduled invocations + reflection-loop proposals",
+          "icon": "calendar-clock",
+          "group": "harness",
+          "order": 30,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "heartbeats",
+          "label": "Heartbeats",
+          "route": "/heartbeats",
+          "title": "Heartbeats",
+          "subtitle": "Background autonomy ticks and their recent runs",
+          "icon": "heart-pulse",
+          "group": "harness",
+          "order": 40,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "playground",
+          "label": "Playground",
+          "route": "/playground",
+          "title": "Playground",
+          "subtitle": "Run YAML scenarios against the harness + config↔runtime drift",
+          "icon": "flask-conical",
+          "group": "harness",
+          "order": 50,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        }
+      ]
+    },
+    {
+      "id": "operations",
+      "label": "Operations",
+      "items": [
+        {
+          "id": "actions",
+          "label": "Action Center",
+          "route": "/actions",
+          "title": "Action Center",
+          "subtitle": "Pending actions from background agents + Health — resolve blockers here",
+          "icon": "inbox",
+          "group": "operations",
+          "order": 10,
+          "nav": true,
+          "plugin": null,
+          "status": null,
+          "mobile_tab": {
+            "label": "Activity",
+            "order": 3
+          }
+        },
+        {
+          "id": "digest",
+          "label": "Digest",
+          "route": "/digest",
+          "title": "Digest",
+          "subtitle": "The full morning digest, as delivered — stored and re-readable",
+          "icon": "newspaper",
+          "group": "operations",
+          "order": 20,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "inbox",
+          "label": "Inbox",
+          "route": "/inbox",
+          "title": "Inbox",
+          "subtitle": "What IRIS sorted each email into — change any of them",
+          "icon": "mail",
+          "group": "operations",
+          "order": 30,
+          "nav": true,
+          "plugin": "email_workflows",
+          "status": "loaded"
+        },
+        {
+          "id": "activity",
+          "label": "System Jobs",
+          "route": "/activity",
+          "title": "System Jobs",
+          "subtitle": "Background system jobs — what IRIS is doing and has done (read-only)",
+          "icon": "activity",
+          "group": "operations",
+          "order": 40,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "sessions",
+          "label": "Sessions",
+          "route": "/sessions",
+          "title": "Sessions",
+          "subtitle": "Recent conversation sessions and their turns",
+          "icon": "history",
+          "group": "operations",
+          "order": 50,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "calltrace",
+          "label": "Call Trace",
+          "route": "/calltrace",
+          "title": "Agent Call Trace",
+          "subtitle": "End-to-end graph trace of an IRIS request, reconstructed from logs",
+          "icon": "waypoints",
+          "group": "operations",
+          "order": 60,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        }
+      ]
+    },
+    {
+      "id": "knowledge",
+      "label": "Memory & Knowledge",
+      "items": [
+        {
+          "id": "memory",
+          "label": "Memory",
+          "route": "/memory",
+          "title": "Memory",
+          "subtitle": "What IRIS knows about you, what is waiting for your yes, and what it keeps",
+          "icon": "brain",
+          "group": "knowledge",
+          "order": 10,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        }
+      ]
+    },
+    {
+      "id": "learning",
+      "label": "Learning",
+      "items": [
+        {
+          "id": "learning",
+          "label": "Self-Learning",
+          "route": "/learning",
+          "title": "Self-Learning",
+          "subtitle": "Signal health + the experiments ledger (read-only)",
+          "icon": "sparkles",
+          "group": "learning",
+          "order": 10,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "twin",
+          "label": "Digital Twin",
+          "route": "/twin",
+          "title": "Digital Twin",
+          "subtitle": "What IRIS has learned about you — habits, steering & goals (HITL review)",
+          "icon": "user-round",
+          "group": "learning",
+          "order": 20,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        }
+      ]
+    },
+    {
+      "id": "system",
+      "label": "System",
+      "items": [
+        {
+          "id": "setup",
+          "label": "Setup",
+          "route": "/setup",
+          "title": "Email setup",
+          "subtitle": "Connect a mailbox and walk the setup steps — nothing is written to it before you approve",
+          "icon": "list-checks",
+          "group": "system",
+          "order": 5,
+          "nav": true,
+          "plugin": "email_workflows",
+          "status": "loaded"
+        },
+        {
+          "id": "health",
+          "label": "Health",
+          "route": "/health",
+          "title": "System Health",
+          "subtitle": "Services, credentials & hardware — live diagnostics (read-only)",
+          "icon": "stethoscope",
+          "group": "system",
+          "order": 10,
+          "nav": true,
+          "plugin": null,
+          "status": null,
+          "mobile_tab": {
+            "label": "Pulse",
+            "order": 2
+          }
+        },
+        {
+          "id": "governance",
+          "label": "Governance",
+          "route": "/governance",
+          "title": "Governance",
+          "subtitle": "Policy posture & audit ledger (read-only)",
+          "icon": "shield-check",
+          "group": "system",
+          "order": 20,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "devices",
+          "label": "Devices",
+          "route": "/devices",
+          "title": "Devices",
+          "subtitle": "Phones and browsers paired with this IRIS — pair a new one, revoke a lost one",
+          "icon": "monitor-smartphone",
+          "group": "system",
+          "order": 30,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
+          "id": "settings",
+          "label": "Settings",
+          "route": "/settings",
+          "title": "Settings",
+          "subtitle": "Agents, plugins, features, guards and history — changes are saved and survive deploys",
+          "icon": "settings",
+          "group": "system",
+          "order": 40,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        }
+      ]
+    }
+  ],
+  "off_nav": [
+    {
+      "id": "knowledge",
+      "label": "Context Map",
+      "route": "/knowledge",
+      "title": "Context Map",
+      "subtitle": "The auto-built wiki as a graph",
+      "icon": "waypoints",
+      "group": "knowledge",
+      "order": 90,
+      "nav": false,
+      "plugin": null,
+      "status": null
+    },
+    {
+      "id": "more",
+      "label": "More",
+      "route": "/more",
+      "title": "More",
+      "subtitle": "Every screen, grouped as on the desktop",
+      "icon": "menu",
+      "group": "system",
+      "order": 90,
+      "nav": false,
+      "plugin": null,
+      "status": null
+    },
+    {
+      "id": "pair",
+      "label": "Pair",
+      "route": "/pair",
+      "title": "Pair this browser",
+      "subtitle": "",
+      "icon": "monitor-smartphone",
+      "group": "system",
+      "order": 91,
+      "nav": false,
+      "plugin": null,
+      "status": null
+    }
+  ],
+  "mobile_tabs": [
+    {
+      "route": "/chat",
+      "label": "Chat"
+    },
+    {
+      "route": "/health",
+      "label": "Pulse"
+    },
+    {
+      "route": "/actions",
+      "label": "Activity"
+    },
+    {
+      "route": "/overview",
+      "label": "Control"
+    }
+  ],
+  "unavailable": [
+    {
+      "id": "reminders",
+      "label": "Reminder",
+      "route": "/reminders",
+      "plugin": "calendar",
+      "reason": "not in the profile"
+    },
+    {
+      "id": "documents",
+      "label": "Documents",
+      "route": "/documents",
+      "plugin": "file_organizer",
+      "reason": "not in the profile"
+    },
+    {
+      "id": "portfolio",
+      "label": "Portfolio",
+      "route": "/portfolio",
+      "plugin": "finance_workflows",
+      "reason": "not in the profile"
+    }
+  ],
+  "problems": []
+}

@@ -1,0 +1,238 @@
+# The morning digest's defaults (loop-proof plan D3-D5, ADR-0122).
+#
+# This file is the DEFAULT. The owner's changes from Settings -> Digest (or from chat:
+# "add X to my digest") are saved on the data volume (settings.db, section `digest`,
+# ADR-0120) and laid over it by `load_digest_settings`
+# (src/iris_harness/services/digest/settings.py). A deploy that changes this file
+# changes every field the owner has not changed.
+
+# Send the morning digest at all.
+enabled: true
+
+# Local time the digest goes out, HH:MM in IRIS_TZ (UTC when IRIS_TZ is unset).
+time: "07:00"
+
+# Jobs the digest runs, in order, right before it renders (loop-proof PR 5): mail is
+# swept and judged first so the digest never shows a stale or half-judged inbox. Each
+# runs like the Heartbeats screen's "Run now" (a kept run the job checks count), on the
+# scheduled digest and on a manual "run the digest now" alike. `if_setting` names an
+# on/off setting, read with its declared default; the job runs only while it is on. A
+# job that is not registered or is turned off is skipped (logged); one already running
+# is waited for, not started twice. Once `run_first_budget_seconds` is spent no further
+# job starts. A job that fails never stops the digest. Not edited from the app.
+run_first:
+  - heartbeat: email_sweep
+    if_setting: IRIS_EMAIL_JUDGE   # only while the email judge is on
+  - heartbeat: email_judge
+    if_setting: IRIS_EMAIL_JUDGE
+# 240 s keeps the digest on time: it fires 5 minutes early, and by then the 06:15 / 06:30
+# runs have done most of the work; mail not reached waits and the digest says so.
+run_first_budget_seconds: 240
+
+# Where it goes: `all` = every rendering (web stored, Telegram chunked, push
+# headline), or a comma-separated list of channel names.
+channel: all
+
+# The brief's tool-slot names, in the order they appear: the groups' order below, then
+# the sections in no group, `learned_yesterday` last. A slot the brief skill does not
+# have is skipped at render time. A section added here later reaches an owner who
+# reordered their digest too: it slots in after the section it follows here (last if
+# last). Within a group, sections show in this (the owner's) order.
+sections:
+  - todays_plan
+  - todays_events
+  - due_today
+  - overdue
+  - missed_reminders
+  - reminders
+  - open_tasks
+  - bills_due
+  - unusual_spend
+  - portfolio
+  - needs_reply
+  - focus
+  - judged_yesterday
+  - email_summary
+  - open_followups
+  - resolved_followups
+  - indexes
+  - stocks
+  - news_ai
+  - news_global
+  - news_local
+  - active_items
+  - routines
+  - learned_yesterday
+
+# Sections the digest knows but leaves off until the owner turns them on in Settings ->
+# Digest (the brief skill keeps the slot). Trending GitHub repos are opt-in.
+sections_off:
+  - top_repos
+
+# Always shown, always last, whatever the owner's list says: the footer that says what
+# IRIS learned yesterday (D17) is never omitted, and is in no group.
+locked_sections:
+  - learned_yesterday
+
+# The digest's layout (digest v5, prototype signed off 2026-09-25): the sections under
+# a few headed groups, in this order. A section in no group (active_items, routines,
+# top_repos when on) goes in a last group, "More". `push` is the group's line in the
+# phone notification: a format string over the number of items each of its sections
+# has ({bills_due} = how many bills are due); a group with no `push` has no line.
+# Owner-facing wording; change it here, not in code.
+groups:
+  - id: today
+    title: Today
+    icon: "☀️"
+    sections: [todays_plan, todays_events, due_today, overdue, missed_reminders, reminders, open_tasks]
+    push: "Events {todays_events} · Due today {due_today} · Tasks {open_tasks}"
+  - id: money
+    title: Money
+    icon: "💳"
+    sections: [bills_due, unusual_spend, portfolio]
+    push: "Bills {bills_due}"
+  - id: inbox
+    title: Inbox
+    icon: "📬"
+    sections: [needs_reply, focus, judged_yesterday, email_summary, open_followups, resolved_followups]
+    push: "Focus {focus}"
+  - id: markets
+    title: Markets
+    icon: "📈"
+    sections: [indexes, stocks]
+  - id: news
+    title: News
+    icon: "📰"
+    sections: [news_ai, news_global, news_local]
+
+# How each channel renders the groups.
+#   web       every group, a sub-heading per section; empty sections fold into one
+#             "nothing ..." line; links on the source name.
+#   telegram  one message per group, a card (quote block) per section, news in
+#             expandable cards; empty sections and empty groups are not sent; the last
+#             message has buttons to the full digest and Settings. `rule` is an optional
+#             line under each group heading ("" = none, the default: on a phone a
+#             fixed-length rule wraps at larger text sizes — owner 2026-09-25).
+#   web_push  a glance: one line per group from its `push`, at most `lines`, never the
+#             excluded groups; tapping opens the web copy.
+channels:
+  web: {layout: grouped, empty: fold, links: source}
+  telegram:
+    layout: message_per_group
+    section: card
+    news: expandable_card
+    empty: hide
+    links: source
+    buttons: [full_digest, settings]
+    rule: ""
+  web_push: {layout: headline, lines: 3, exclude_groups: [news, markets]}
+
+# When dated items leave the digest (owner rule 2026-09-25): every dated item ends
+# CLOSED (done, paid or dismissed by the owner) or EXPIRED (aged out, below). The
+# digest shows only open, unexpired items; an expired task stays in the store with
+# status `expired` and the reason. Days are the owner's local days (IRIS_TZ): a task
+# due Sep 22 with task_overdue_days 3 shows as Overdue Sep 23-25, expired from Sep 26.
+#   prep_after_event          minutes after its meeting ends, a prep task expires
+#   event_after_end           minutes after it ends, a calendar event leaves the digest
+#   task_overdue_days         days a dated task shows under Overdue, then expires
+#   bill_ask_days             days after its due date an unpaid bill is asked about
+#                             ("Did you pay?"), then
+#   bill_overdue_digest_days  days it stays in the digest before it expires
+#   inbox_notice_days         days a dated inbox notice stays in the digest
+#   reminder_missed_digests   digests a missed reminder is carried into
+# A plugin's own kinds are tuned here too, by the key its manifest declares under
+# `expiry:` (default and range are there): the email plugin's needs_reply_days (3) and
+# unsure_card_days (7), for example. A key no installed plugin declares is refused.
+expiry:
+  prep_after_event: 0
+  event_after_end: 0
+  task_overdue_days: 3
+  bill_ask_days: 3
+  bill_overdue_digest_days: 7
+  inbox_notice_days: 3
+  reminder_missed_digests: 1
+
+# Per-section knobs, e.g. {bills_due: {within_days: 7, line_cap: 5}}. `line_cap` is how
+# many lines a section shows (Settings -> Digest writes it); chat writes the dues
+# window and categories.
+section_config:
+  # Top 3 per news group (9 headlines), top 5 for the other long lists; change any of
+  # them in Settings -> Digest ("lines").
+  news_ai: {line_cap: 3}
+  news_global: {line_cap: 3}
+  news_local: {line_cap: 3}
+  stocks: {line_cap: 5}
+  indexes: {line_cap: 5}
+  top_repos: {line_cap: 5}
+
+# The digest's news, one section per group. Each topic becomes one research query
+# ("<topic> news"); a title or topic may say {news_local_area}. Settings -> Digest edits
+# each group's topics. `news_sources` and `news_language` below apply to all of them.
+news_groups:
+  news_ai:
+    title: AI / Tech
+    topics: [AI, technology]
+  news_global:
+    title: Global
+    topics: [world]
+  news_local:
+    title: "Local — {news_local_area}"
+    topics: ["{news_local_area}"]
+
+# The place the local news is about (Settings -> Digest).
+news_local_area: St. Louis
+
+# Topics for a news fetch that names no group (an ad-hoc `digest-topics` fetch); the
+# digest's own news uses `news_groups` above.
+news_topics:
+  - AI
+  - world
+
+# Preferred source domains, ranked first when they have a story. Never a strict
+# allowlist (D4): a topic with no story from these still shows the best others.
+news_sources: []
+
+# The language the news is in: a two-letter ISO 639-1 code, or `any`. Asked of the
+# search provider where it can (DuckDuckGo region, SearXNG/Brave language) and checked
+# on every headline (its writing script), so a Japanese headline never lands in an
+# English digest. A topic whose every result is in another language counts as failed,
+# so the digest names the section instead of printing it empty.
+news_language: en
+
+# Focus: the newest emails in these triage categories (ADR-0017 topic paths; a path
+# matches itself and everything under it), minus senders marked "not useful". The
+# newest `focus_per_account` from each inbox, then newest first across them, at most
+# `focus_limit` in all (Settings -> Digest edits both).
+focus_categories:
+  - email/personal
+  - email/family
+  - email/finance
+  - email/community
+focus_limit: 10
+focus_per_account: 5
+
+# An old section name -> the section(s) that replaced it. Applies to the owner's saved
+# settings whenever they are read (a saved `news` is the three news groups, on or off
+# together) and to the brief_prefs.json move below. A section split into several
+# leaves its per-section settings (lines) behind: each part takes this file's.
+renamed_sections:
+  news: [news_ai, news_global, news_local]
+  ai_news: news_ai
+  global_news: news_global
+
+# The one-time move of data/brief_prefs.json into the settings store.
+#   new_sections  did not exist when that file was written, so its silence about them
+#                 is not the owner turning them off.
+#   dropped_sections  left off even when that file had them on (the old tool wrote
+#                 every section on); the owner turns them back on in Settings.
+brief_prefs_migration:
+  new_sections:
+    - focus
+    - judged_yesterday
+    - learned_yesterday
+    - missed_reminders
+    - needs_reply
+    - news_local
+    - overdue
+  dropped_sections:
+    - top_repos

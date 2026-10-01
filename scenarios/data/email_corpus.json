@@ -1,0 +1,96 @@
+{
+  "account_id": "scenario@local",
+  "categories": [
+    {
+      "root": "finance", "branch": "bank", "leaf": "statements", "cohesion": 0.82,
+      "representatives": [
+        {"id": "rep-fin-1", "subject": "Your monthly account statement is ready", "from": "alerts@mybank.com", "snippet": "Your statement for account ending 4521 is now available to view online."},
+        {"id": "rep-fin-2", "subject": "eStatement available for March", "from": "no-reply@creditunion.org", "snippet": "Log in to view your March statement. Balance summary and transactions enclosed."},
+        {"id": "rep-fin-3", "subject": "Account statement and interest summary", "from": "statements@mybank.com", "snippet": "Attached is your quarterly interest summary and account statement."}
+      ]
+    },
+    {
+      "root": "shopping", "branch": "orders", "leaf": "receipts", "cohesion": 0.79,
+      "representatives": [
+        {"id": "rep-shp-1", "subject": "Your order has shipped!", "from": "ship-confirm@amazonia.com", "snippet": "Order #112-449 has shipped. Track your package for delivery updates."},
+        {"id": "rep-shp-2", "subject": "Receipt for your purchase", "from": "receipts@webstore.com", "snippet": "Thanks for your purchase. Your receipt and order total are below."},
+        {"id": "rep-shp-3", "subject": "Order confirmed: wireless earbuds", "from": "orders@gadgetshop.io", "snippet": "We received your order and are preparing it for shipment."}
+      ]
+    },
+    {
+      "root": "jobs", "branch": "alerts", "leaf": "openings", "cohesion": 0.77,
+      "representatives": [
+        {"id": "rep-job-1", "subject": "5 new jobs match your profile", "from": "alerts@jobboard.com", "snippet": "Senior Python Engineer at Acme and 4 other roles match your saved search."},
+        {"id": "rep-job-2", "subject": "New opening: Staff ML Engineer", "from": "noreply@careersite.io", "snippet": "A new position matching machine learning engineer was just posted."},
+        {"id": "rep-job-3", "subject": "Your weekly job alert digest", "from": "digest@jobboard.com", "snippet": "This week's roles for AI engineering in your area, plus salary insights."}
+      ]
+    },
+    {
+      "root": "news", "branch": "tech", "leaf": "newsletters", "cohesion": 0.75,
+      "representatives": [
+        {"id": "rep-new-1", "subject": "This week in AI: open weights roundup", "from": "newsletter@technews.dev", "snippet": "The biggest model releases this week, benchmarks, and what they mean."},
+        {"id": "rep-new-2", "subject": "Your morning tech briefing", "from": "brief@dailybyte.news", "snippet": "Chip wars, new frameworks, and the startup funding rounds you missed."},
+        {"id": "rep-new-3", "subject": "Issue #214: local inference goes mainstream", "from": "hello@mlweekly.io", "snippet": "Deep dive on quantization tradeoffs and on-device agents."}
+      ]
+    },
+    {
+      "root": "social", "branch": "networks", "leaf": "notifications", "cohesion": 0.74,
+      "representatives": [
+        {"id": "rep-soc-1", "subject": "You have 3 new connection requests", "from": "notify@linkhub.com", "snippet": "People are trying to connect with you. View their profiles."},
+        {"id": "rep-soc-2", "subject": "Someone liked your post", "from": "noreply@socialnet.com", "snippet": "Your post about weekend hiking got new reactions and comments."},
+        {"id": "rep-soc-3", "subject": "You were mentioned in a comment", "from": "notify@socialnet.com", "snippet": "Alex mentioned you in a comment on the photography group."}
+      ]
+    },
+    {
+      "root": "travel", "branch": "bookings", "leaf": "itineraries", "cohesion": 0.8,
+      "representatives": [
+        {"id": "rep-trv-1", "subject": "Your flight booking confirmation", "from": "bookings@skyair.com", "snippet": "Confirmation code XK4R2. Departure gate and itinerary details inside."},
+        {"id": "rep-trv-2", "subject": "Hotel reservation confirmed", "from": "reservations@stayinn.com", "snippet": "Your reservation for 2 nights is confirmed. Check-in from 3pm."},
+        {"id": "rep-trv-3", "subject": "Your trip itinerary and e-tickets", "from": "itinerary@travelhub.com", "snippet": "Full itinerary attached: flights, hotel, and airport transfer."}
+      ]
+    }
+  ],
+  "emails": [
+    {"id": "syn-001", "category": "email/finance/bank/statements", "subject": "Statement ready: account ending 4521", "from_address": "alerts@mybank.com", "snippet": "Your April statement is available. Total balance and transactions enclosed."},
+    {"id": "syn-002", "category": "email/finance/bank/statements", "subject": "Your eStatement for May is available", "from_address": "no-reply@creditunion.org", "snippet": "View your May statement online. Paperless delivery preferences active."},
+    {"id": "syn-003", "category": "email/finance/bank/statements", "subject": "Quarterly interest and statement summary", "from_address": "statements@mybank.com", "snippet": "Interest earned this quarter and your full statement are attached."},
+    {"id": "syn-004", "category": "email/finance/bank/statements", "subject": "Important: your annual account summary", "from_address": "alerts@mybank.com", "snippet": "Your annual summary of deposits, withdrawals and fees is ready to view."},
+    {"id": "syn-005", "category": "email/finance/bank/statements", "subject": "Savings account statement notification", "from_address": "notify@creditunion.org", "snippet": "A new statement was generated for your savings account."},
+    {"id": "syn-006", "category": "email/finance/bank/statements", "subject": "Your statement is ready to download", "from_address": "estatements@mybank.com", "snippet": "Download your latest account statement before it is archived."},
+
+    {"id": "syn-011", "category": "email/shopping/orders/receipts", "subject": "Shipped: your order #118-2231", "from_address": "ship-confirm@amazonia.com", "snippet": "Your package is on the way. Expected delivery Thursday."},
+    {"id": "syn-012", "category": "email/shopping/orders/receipts", "subject": "Your receipt from GadgetShop", "from_address": "orders@gadgetshop.io", "snippet": "Receipt for your USB-C hub purchase, order total 39.99."},
+    {"id": "syn-013", "category": "email/shopping/orders/receipts", "subject": "Order confirmation: running shoes", "from_address": "receipts@webstore.com", "snippet": "We've received your order and will email when it ships."},
+    {"id": "syn-014", "category": "email/shopping/orders/receipts", "subject": "Delivery update for your package", "from_address": "ship-confirm@amazonia.com", "snippet": "Your order is out for delivery today. Track it live."},
+    {"id": "syn-015", "category": "email/shopping/orders/receipts", "subject": "Invoice for order #99812", "from_address": "billing@webstore.com", "snippet": "Your invoice is attached. Thanks for shopping with us."},
+    {"id": "syn-016", "category": "email/shopping/orders/receipts", "subject": "Your return was processed", "from_address": "returns@gadgetshop.io", "snippet": "Refund issued to your original payment method for the returned item."},
+
+    {"id": "syn-021", "category": "email/jobs/alerts/openings", "subject": "8 new roles match: AI Engineer", "from_address": "alerts@jobboard.com", "snippet": "New matches for your saved search including remote positions."},
+    {"id": "syn-022", "category": "email/jobs/alerts/openings", "subject": "Just posted: Principal Engineer, ML Platform", "from_address": "noreply@careersite.io", "snippet": "A role matching your profile was posted an hour ago. Be an early applicant."},
+    {"id": "syn-023", "category": "email/jobs/alerts/openings", "subject": "Weekly digest: engineering roles near you", "from_address": "digest@jobboard.com", "snippet": "Curated openings this week plus interview tips and salary data."},
+    {"id": "syn-024", "category": "email/jobs/alerts/openings", "subject": "Recruiters viewed your profile", "from_address": "alerts@jobboard.com", "snippet": "3 recruiters viewed your profile this week. See who is hiring."},
+    {"id": "syn-025", "category": "email/jobs/alerts/openings", "subject": "New opening at a company you follow", "from_address": "noreply@careersite.io", "snippet": "Acme Robotics posted a Staff Software Engineer position."},
+    {"id": "syn-026", "category": "email/jobs/alerts/openings", "subject": "Your job alert: data platform roles", "from_address": "digest@jobboard.com", "snippet": "5 data platform engineering jobs were posted this week."},
+
+    {"id": "syn-031", "category": "email/news/tech/newsletters", "subject": "This week in AI: agents everywhere", "from_address": "newsletter@technews.dev", "snippet": "Agentic frameworks, new evals, and the local inference scene."},
+    {"id": "syn-032", "category": "email/news/tech/newsletters", "subject": "Your tuesday tech briefing", "from_address": "brief@dailybyte.news", "snippet": "Everything that mattered in tech today, in five minutes."},
+    {"id": "syn-033", "category": "email/news/tech/newsletters", "subject": "Issue #215: KV caches explained", "from_address": "hello@mlweekly.io", "snippet": "A practical guide to inference memory and compression tradeoffs."},
+    {"id": "syn-034", "category": "email/news/tech/newsletters", "subject": "Chip roundup: what shipped this quarter", "from_address": "newsletter@technews.dev", "snippet": "New silicon for the edge and what it means for on-device models."},
+    {"id": "syn-035", "category": "email/news/tech/newsletters", "subject": "The open weights leaderboard moved again", "from_address": "hello@mlweekly.io", "snippet": "Benchmarks, regressions, and this week's most downloaded models."},
+    {"id": "syn-036", "category": "email/news/tech/newsletters", "subject": "Morning brief: developer tools edition", "from_address": "brief@dailybyte.news", "snippet": "IDE updates, build systems, and productivity research."},
+
+    {"id": "syn-041", "category": "email/social/networks/notifications", "subject": "2 new connection requests waiting", "from_address": "notify@linkhub.com", "snippet": "Grow your network — people want to connect with you."},
+    {"id": "syn-042", "category": "email/social/networks/notifications", "subject": "Your post is getting attention", "from_address": "noreply@socialnet.com", "snippet": "12 new reactions on your post about trail running."},
+    {"id": "syn-043", "category": "email/social/networks/notifications", "subject": "Petra commented on your photo", "from_address": "notify@socialnet.com", "snippet": "See what Petra said about your sunset photo."},
+    {"id": "syn-044", "category": "email/social/networks/notifications", "subject": "You appeared in 9 searches this week", "from_address": "notify@linkhub.com", "snippet": "Your profile is getting noticed. See where you appeared."},
+    {"id": "syn-045", "category": "email/social/networks/notifications", "subject": "Group invite: weekend photographers", "from_address": "noreply@socialnet.com", "snippet": "You've been invited to join a photography community group."},
+    {"id": "syn-046", "category": "email/social/networks/notifications", "subject": "Someone shared your article", "from_address": "notify@linkhub.com", "snippet": "Your article on local AI assistants was shared by 4 people."},
+
+    {"id": "syn-051", "category": "email/travel/bookings/itineraries", "subject": "Booking confirmed: flight to Singapore", "from_address": "bookings@skyair.com", "snippet": "Confirmation QR7T9. Seat 14A, departure 22:40 from terminal 2."},
+    {"id": "syn-052", "category": "email/travel/bookings/itineraries", "subject": "Your hotel stay is confirmed", "from_address": "reservations@stayinn.com", "snippet": "3 nights, deluxe room, breakfast included. Check-in after 3pm."},
+    {"id": "syn-053", "category": "email/travel/bookings/itineraries", "subject": "E-tickets and full trip itinerary", "from_address": "itinerary@travelhub.com", "snippet": "Your e-tickets are attached along with the complete travel plan."},
+    {"id": "syn-054", "category": "email/travel/bookings/itineraries", "subject": "Check-in now open for your flight", "from_address": "bookings@skyair.com", "snippet": "Online check-in is open for flight SK402. Choose your seat now."},
+    {"id": "syn-055", "category": "email/travel/bookings/itineraries", "subject": "Your airport transfer is booked", "from_address": "itinerary@travelhub.com", "snippet": "Pickup confirmed for 6am from your hotel to the airport."},
+    {"id": "syn-056", "category": "email/travel/bookings/itineraries", "subject": "Reservation reminder: upcoming stay", "from_address": "reservations@stayinn.com", "snippet": "Your stay begins Friday. Manage your reservation online."}
+  ]
+}

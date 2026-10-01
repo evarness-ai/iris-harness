@@ -1,0 +1,23 @@
+name: noticeboard
+version: 0.1.0
+description: A shared noticeboard the model can read, pin and clear, under governance.
+entrypoint: noticeboard:setup
+flavor: python
+trust: in-process
+provides:
+  - tool
+
+# Every tool the plugin registers is declared here; an undeclared one is refused.
+# The declaration decides how the governed runner treats each call.
+tools:
+  list_notes:
+    effect: read
+    # Other people write the notes: scan each result for injected instructions.
+    content: external
+  pin_note:
+    effect: write
+    # A change the model asks the owner about once per run before making it.
+    confirm: once
+  remove_note:
+    # Nothing is removed until the owner approves this exact call.
+    effect: destructive

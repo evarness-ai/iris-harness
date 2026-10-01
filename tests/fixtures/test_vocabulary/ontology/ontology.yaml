@@ -1,0 +1,23 @@
+# The test vocabulary (tests/fixtures/test_vocabulary): organisations the owner deals
+# with and the cards they hold, under the `tv:` prefix. A fragment of the core ontology,
+# loaded exactly as a plugin's is; it only adds names.
+
+fragment:
+  id: urn:iris:ontology:test-vocabulary
+  version: 0.0.0
+
+prefixes:
+  tv: "urn:iris:ontology:test-vocabulary#"
+
+classes:
+  tv:Institution: { subclass_of: Organization, maps_to: schema:Organization }
+  tv:Card:        { subclass_of: Entity, label: "Card" }
+
+relations:
+  tv:banks_with:   { label: "banks with", domain: Person, range: tv:Institution }
+  tv:invests_with: { label: "invests with", domain: Person, range: tv:Institution }
+  tv:insured_by:   { label: "insured by", domain: Person, range: tv:Institution }
+  tv:holds_card:   { label: "holds card", domain: Person, range: tv:Card }
+
+attributes:
+  tv:currency:     { domain: Person, datatype: string }

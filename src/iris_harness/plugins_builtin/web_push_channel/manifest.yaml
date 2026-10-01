@@ -1,0 +1,13 @@
+name: web_push_channel
+version: 0.1.0
+description: >-
+  Notifications to a phone that is not looking at the console. Registers a
+  `web_push` connector, so the health watch's existing broadcast reaches every
+  browser that subscribed -- and nudges the owner when an approval is waiting.
+  On iOS this is the only path there is without an App Store account: a
+  Home Screen web app, a service worker, and standard W3C Web Push.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+provides:
+  - channel

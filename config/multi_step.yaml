@@ -1,0 +1,28 @@
+# Multi-step cues for the intent router (multi-step loop plan, decision 7; ADR-0111).
+#
+# A turn that contains one of these is a compound request: the task planner is asked
+# to decompose it, and it decomposes only when the sub-tasks need different agents or
+# can run in parallel — a sequential ask on one agent stays one task, because the
+# loop's own scratchpad already carries each step's result to the next.
+#
+# Matched case-insensitively on word boundaries; a phrase may contain " ... " to mean
+# "anything in between" ("first ... then"). Tunable without code (owner rule
+# 2026-09-13: vocabulary lives in YAML, never in code).
+cues:
+  - and then
+  - after that
+  - after this
+  - after which
+  - once that is done
+  - once that's done
+  - first ... then
+  - summarize ... and
+  - check ... and
+  - fetch ... then
+  - for each
+  - for every
+  - one for each
+  - both
+  - also
+  - as well as
+  - followed by

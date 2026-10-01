@@ -1,0 +1,85 @@
+# Source policy for the `news` search lens.
+#
+# Data, not code. Adding a source is one line under a tier; re-ranking a tier is one
+# number under `tiers`. Nothing in rank.py changes for either.
+#
+# Why a separate table from the web lens (rank.py TRUST_SCORES): the web table carries no
+# newsroom at all, so reuters.com and apnews.com fall to DEFAULT_TRUST (4.0) while its
+# `.org` suffix rule hands any .org 9.0. Trust is 0.40 of the blend, so on a news query
+# the web table ranks a random .org ABOVE the wire service that .org is quoting.
+#
+# Ships inside the plugin (pyproject packages plugins_builtin/**/*.yaml), so a core-only
+# install carries it. Override the path with IRIS_RESEARCH_NEWS_SOURCES.
+
+# Tier -> the 0..10 authority score every domain in that tier gets.
+# Same scale as rank.py's TRUST_SCORES; the ranker normalizes by 10.
+tiers:
+  wire: 10.0          # the original reporting most other outlets carry
+  official: 9.5       # the body making the announcement
+  newsroom: 8.5       # own desks, own corrections policy
+  broadcast: 8.0
+  beat: 7.5           # specialist desk, narrow subject, real reporting inside it
+  trade: 7.0
+  community: 5.0      # good for reaction, never for confirming a fact
+  syndicator: 3.0     # republishes other outlets' copy under its own domain
+
+# Tier -> domains. A leading dot is a suffix match (".gov" matches "cisa.gov");
+# anything else matches the exact host, or a subdomain of it.
+sources:
+  wire:
+    - reuters.com
+    - apnews.com
+    - afp.com
+
+  official:
+    - .gov
+    - europa.eu
+
+  newsroom:
+    - bbc.com
+    - bbc.co.uk
+    - npr.org
+    - nytimes.com
+    - wsj.com
+    - washingtonpost.com
+    - bloomberg.com
+    - ft.com
+    - economist.com
+    - theguardian.com
+
+  broadcast:
+    - aljazeera.com
+    - cnbc.com
+    - cbsnews.com
+    - nbcnews.com
+    - abcnews.go.com
+    - politico.com
+    - axios.com
+
+  beat:
+    - krebsonsecurity.com
+    - arstechnica.com
+    - bleepingcomputer.com
+    - therecord.media
+
+  trade:
+    - theverge.com
+    - wired.com
+    - techcrunch.com
+
+  community:
+    - news.ycombinator.com
+    - reddit.com
+
+  # Scored BELOW an unknown domain on purpose. The 2026-09-16 failure: asked for
+  # "breaking news today", five of the six results came from these three. The story may
+  # be real, but the domain tells you nothing about who reported it — and counting three
+  # copies of one wire story as three sources breaks corroboration.
+  syndicator:
+    - msn.com
+    - yahoo.com
+    - aol.com
+    - news.google.com
+
+# Deliberately absent: a ".org" entry. Authority for news is the newsroom, not the TLD.
+# npr.org is listed by name for exactly that reason.

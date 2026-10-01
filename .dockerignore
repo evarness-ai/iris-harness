@@ -1,0 +1,48 @@
+.git
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+.ruff_cache
+dist/
+*.egg-info/
+data/
+.env
+# `.env` above is anchored at the context root. An env file anywhere else (Vite reads
+# `webui/.env*`) must not reach an image layer either; the committed templates may.
+**/.env
+**/.env.*
+!**/.env.example
+*.db
+
+# Not code, and some of it is local/personal: keep it out of the published image.
+webui/node_modules/
+# The image builds the console itself (Dockerfile, `webui` stage). The `dist/` entry
+# above is anchored at the context root and does not match this directory, so without
+# this line `COPY . .` would carry a stale local build into the image.
+webui/dist/
+# The wheel's packaged copy of the build (scripts/bundle_webui.py), for the same reason.
+src/iris_harness/server/iris_api/webui_dist/
+htmlcov/
+graphify-out/
+~/
+.phase2-baselines/
+.benchmarks/
+scenarios/results/
+docs/testing-program/results/
+
+# build_image.sh builds from the Mac checkout, which also holds Claude Code's agent
+# worktrees (.claude/worktrees/*: full repo copies, each with its own data/ and .venv,
+# which the root-anchored `data/`, `.venv` and `*.db` lines above do not match) and
+# local editor/tool state. None of it belongs in an image.
+.claude/
+.vscode/
+.coverage
+.import_linter_cache/
+**/.DS_Store
+**/*.db
+**/*.db-wal
+**/*.db-shm

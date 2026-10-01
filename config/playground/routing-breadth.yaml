@@ -1,0 +1,108 @@
+# Natural phrasings vs the deterministic fast handlers, plus action-verb
+# negatives that must decline via the escalation gate (ADR-0103).
+#
+# Origin: the 2026-07-05 intercept campaign
+# (docs/experiments/2026-07-05-deterministic-intercept-campaign.md). Two of
+# these cases ("could you tell me what time it is", "in 2 hours") used to fall
+# to the agent loop (10-15 s, stochastic answers) until the nlu_parsing gaps
+# were fixed; they are the regression net for those fixes.
+#
+# Not CI: the three negative cases intentionally reach the agent loop, which
+# needs live Ollama. Run locally: iris playground run routing-breadth
+
+name: routing-breadth
+description: Natural phrasings hit the fast handlers; action verbs decline to the agent loop.
+
+env:
+  IRIS_DUES_INTERCEPT: "1"
+  IRIS_PORTFOLIO_INTERCEPT: "1"
+  IRIS_ON_DEMAND_BRIEF: "1"
+
+scenarios:
+  # --- positive: fast handler expected -------------------------------------
+  - name: time-direct
+    message: "what time is it?"
+    tags: [routing, time_date]
+    expect:
+      handler: time_date
+      sources_exclude: [research]
+
+  - name: time-polite
+    description: Polite lead-in must still hit the clock intercept (was an agent-loop miss).
+    message: "could you tell me what time it is"
+    tags: [routing, time_date, regression]
+    expect:
+      handler: time_date
+      sources_exclude: [research]
+
+  - name: date-direct
+    message: "what's today's date?"
+    tags: [routing, time_date]
+    expect:
+      handler: time_date
+
+  - name: reminder-absolute
+    message: "remind me to call the bank tomorrow at 9am"
+    tags: [routing, reminder]
+    expect:
+      handler: reminder_creation
+
+  - name: reminder-relative
+    description: Relative offset must parse deterministically (was an agent-loop miss).
+    message: "remind me to stretch in 2 hours"
+    tags: [routing, reminder, regression]
+    expect:
+      handler: reminder_creation
+
+  - name: brief-direct
+    message: "give me my brief"
+    tags: [routing, brief]
+    expect:
+      handler: brief_request
+      sources_exclude: [research]
+
+  - name: brief-morning
+    message: "morning brief please"
+    tags: [routing, brief]
+    expect:
+      handler: brief_request
+      sources_exclude: [research]
+
+  - name: portfolio-read
+    message: "show my portfolio"
+    tags: [routing, portfolio, guardrail]
+    expect:
+      handler: portfolio_request
+      sources_exclude: [research]
+      no_pii_leak: true
+
+  - name: dues-read
+    message: "any insurance dues this week?"
+    tags: [routing, dues, guardrail]
+    expect:
+      handler: dues_request
+      sources_exclude: [research]
+      no_pii_leak: true
+
+  # --- negative: action verbs must DECLINE the read-intercepts -------------
+  - name: portfolio-action-sell
+    description: Action verb on a read-intercept — escalation gate must decline.
+    message: "sell everything in my portfolio"
+    tags: [routing, escalation-gate, negative]
+    expect:
+      handler: ""
+      no_pii_leak: true
+
+  - name: dues-action-pay
+    message: "pay my insurance dues now"
+    tags: [routing, escalation-gate, negative]
+    expect:
+      handler: ""
+      no_pii_leak: true
+
+  - name: portfolio-action-rebalance
+    message: "can you rebalance my portfolio"
+    tags: [routing, escalation-gate, negative]
+    expect:
+      handler: ""
+      no_pii_leak: true

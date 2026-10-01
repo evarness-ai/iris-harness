@@ -1,0 +1,114 @@
+# The fact extractor's prompt (memory/fact_extractor.py; ADR-0115 decision 6).
+#
+# Extraction is closed: the model may only use keys the ontology has a property for.
+# `{keys}` is generated at run time from config/memory/mappings.yaml and ontology.yaml
+# — one line per key with what it means — plus the keys memory has learned (PR 7), so a
+# key added there is offered here with no code change (the hand-written list this
+# replaced taught "dietary_restriction"; the real key is dietary_preference). A key the
+# model makes up is never stored on sight: it is counted, and learned only if it recurs
+# (learning.yaml → learned_terms).
+# `{message}` is the user's message. Literal braces in the prompt are doubled: {{ }}.
+#
+# "about" (memris PR 3b) marks a fact about someone one hop from the owner. The model only
+# proposes it; capture keeps it when that person is linked to the owner by a relation in
+# the same message or one already confirmed, within learning.yaml's subject_scope.
+
+system_prompt: |
+  You extract durable user facts from a single chat message.
+
+  Return a JSON array. Each element is an object with these keys exactly:
+  - "key":   one of the keys listed under "Keys" below. Only when a durable fact about
+             the user fits none of them: a short new snake_case key naming it (memory
+             counts new keys and learns the ones that keep coming up).
+  - "value": the fact in the user's own words, trimmed of surrounding punctuation.
+  - "confidence": float in [0.0, 1.0]. Use 0.9 for direct first-person claims
+                  ("my name is X"), 0.6 for indirect mentions, 0.3 or less for
+                  inferences.
+  - "about": ONLY when the fact is about someone the user names through their own
+             relationship to them ("my wife Petra", "my son Arjun"): that person's name,
+             as written. Leave it out for facts about the user.
+
+  Keys (always use one of these when it fits):
+  {keys}
+
+  Rules:
+  1. Output ONLY the JSON array. No prose, no code fences, no commentary.
+  2. If the message contains no facts, output `[]`.
+  3. Do not invent facts. Skip anything you would have to guess.
+  4. Extract ONLY DURABLE facts about the user — identity, role, location, contact,
+     skills, and stable preferences (things still true next week). NEVER extract
+     ephemeral or conversational things: greetings ("hello"), the current task or
+     request ("plan my day"), relative dates/times ("today", "tomorrow", "6 pm"),
+     mood, weather, or what they are doing right now. When in doubt, omit it.
+  5. One fact per object. Multi-valued properties (e.g. languages) become
+     one object whose value is a comma-separated list.
+  6. Where the user LIVES and where they are FROM are different facts. "I live in",
+     "based in", "moved to" → "city" / "country" / "location". "I'm from", "grew up
+     in", "born in", "my hometown" → "hometown"; a citizenship → "nationality". Never
+     put one in the other's key.
+  7. A fact about someone the user names as their own (partner, child, family, pet)
+     uses the same keys, with "about" set to that person's name — and the relationship
+     itself is a fact about the user. Nobody else: a colleague's, a celebrity's or a
+     stranger's details are omitted.
+
+  For URLs / handles, the value is the bare domain or handle (e.g. "web3notes.example"),
+  NOT the surrounding sentence.
+
+  Examples:
+  Input:  "Hi! Can you plan my day and remind me at 6 pm tomorrow?"
+  Output: []
+  Input:  "Hey, I'm Robin, I live in Springfield and I work at Acme as a teacher."
+  Output: [
+    {{"key":"name","value":"Robin","confidence":0.95}},
+    {{"key":"location","value":"Springfield","confidence":0.9}},
+    {{"key":"employer","value":"Acme","confidence":0.9}},
+    {{"key":"profession","value":"teacher","confidence":0.9}}
+  ]
+  Input:  "I grew up in Chennai but I've lived in London for ten years."
+  Output: [
+    {{"key":"hometown","value":"Chennai","confidence":0.9}},
+    {{"key":"city","value":"London","confidence":0.9}}
+  ]
+  Input:  "My wife Petra works at Infosys."
+  Output: [
+    {{"key":"spouse","value":"Petra","confidence":0.9}},
+    {{"key":"employer","value":"Infosys","confidence":0.9,"about":"Petra"}}
+  ]
+  Input:  "I read that the Infosys CEO lives in Springfield."
+  Output: []
+  Input:  "I mentor two juniors at work."
+  Output: [
+    {{"key":"mentors","value":"two juniors","confidence":0.8}}
+  ]
+  Input:  "I write blogs at www.web3notes.example about agentic AI."
+  Output: [
+    {{"key":"blog","value":"www.web3notes.example","confidence":0.9}}
+  ]
+
+
+user_prompt: |
+  Message:
+  {message}
+
+  Return the JSON array now.
+
+# A deterministic floor UNDER the model, for self-statements a small model keeps missing
+# (issue 0020). Values are lifted verbatim from the message, so they pass grounding.
+declarative:
+  # A URL the user states, in a sentence matching `context`, is that key's value.
+  url_in_context:
+    - key: blog
+      context: "\\bblog(?:s|ging)?\\b"
+  # "my <noun> is/at/= <url or handle>": the noun becomes the key (then folded to its
+  # canonical key, or dropped when the ontology has no property for it).
+  my_noun_is:
+    - website
+    - site
+    - portfolio
+    - homepage
+    - blog
+    - github
+    - gitlab
+    - linkedin
+    - twitter
+    - handle

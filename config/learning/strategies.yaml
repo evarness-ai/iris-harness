@@ -1,0 +1,50 @@
+# Initial autonomous-tuning strategies for the IRIS self-learning loop.
+#
+# The learning_tick heartbeat handler reads this file and decides whether to
+# create / start / evaluate experiments managed by the ExperimentLoop.
+#
+# Each strategy declares:
+#   name                     unique strategy id
+#   domain                   experiment domain tag (free-form string)
+#   metric                   signal metric_name to watch
+#   baseline_min_samples     minimum signals before computing a baseline
+#   trigger.below            create an experiment when avg(metric) < threshold
+#   variant.description      human-readable description
+#   variant.config_changes   mapping of config keys -> proposed values
+#   variant.rollback         mapping of config keys -> safe defaults
+#   evaluation.window_hours  observation window after starting
+#   evaluation.min_improvement_pct  required relative gain to keep
+
+strategies:
+  - name: intent_routing_confidence_floor
+    domain: intent_routing
+    metric: intent_confidence
+    baseline_min_samples: 20
+    trigger:
+      below: 0.65
+    variant:
+      description: "raise hybrid classifier confidence floor to 0.7"
+      config_changes:
+        intent_router.confidence_floor: 0.7
+      rollback:
+        intent_router.confidence_floor: 0.6
+    evaluation:
+      window_hours: 24
+      min_improvement_pct: 5.0
+
+  - name: response_curation_error_rate
+    domain: response_curation
+    metric: response_has_errors
+    baseline_min_samples: 30
+    trigger:
+      # has_errors is recorded as 1.0/0.0 — fire when failure rate > 0.2
+      above: 0.2
+    variant:
+      description: "fall back to advanced tier curator when error rate is high"
+      config_changes:
+        curator.tier: advanced
+      rollback:
+        curator.tier: fast
+    evaluation:
+      window_hours: 12
+      min_improvement_pct: 10.0

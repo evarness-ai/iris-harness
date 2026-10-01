@@ -1,0 +1,23 @@
+# The scripted model the tests run on: ordered rules, the first that matches answers
+# (see iris_harness.testing.use_fake_model). No model server, no network.
+rules:
+  - name: answer from the tool
+    match:
+      user: '(?s)Observation:.*5 km = 3\.107 mi'
+    reply:
+      content: "Thought: I have it.\nFinal Answer: 5 km is 3.107 miles."
+  - name: report the refusal
+    match:
+      user: "(?s)Observation:.*from_unit.*must be one of"
+    reply:
+      content: "Thought: That unit is not supported.\nFinal Answer: I cannot convert parsecs."
+  - name: call the tool
+    match:
+      user: "User: How many miles is 5 km"
+    reply:
+      content: "Thought: Convert it.\nAction: __tmpl_{tool}_convert_length\nAction Input: {\"value\": 5, \"from_unit\": \"km\", \"to_unit\": \"mi\"}"
+  - name: call it with a bad unit
+    match:
+      user: "User: How many miles is 5 parsecs"
+    reply:
+      content: "Thought: Convert it.\nAction: __tmpl_{tool}_convert_length\nAction Input: {\"value\": 5, \"from_unit\": \"parsec\", \"to_unit\": \"mi\"}"

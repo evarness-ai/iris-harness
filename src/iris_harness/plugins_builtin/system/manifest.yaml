@@ -1,0 +1,19 @@
+name: system
+version: 0.1.0
+description: >-
+  Harness self-inspection: the deterministic time/date intercept, the
+  system_health tool the model calls to answer "is anything broken?", and the
+  health_tick heartbeat that refreshes the cached health snapshot.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+provides:
+  - intercept
+  - tool
+  - heartbeat
+tools:
+  system_health:
+    effect: read
+
+# ADR-0120: the app may not turn this plugin off (IRIS_PLUGINS_DISABLE).
+locked: "the harness's own health, time and status; the harness needs it"

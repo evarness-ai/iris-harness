@@ -1,0 +1,649 @@
+[tool.poetry]
+name = "iris-harness"
+version = "0.1.0"
+description = "IRIS - Intelligent Reasoning & Integration System: Privacy-first agentic AI assistant with local-first LLM orchestration"
+authors = ["IRIS Development Team"]
+readme = "README.md"
+license = "Apache-2.0"
+homepage = "https://github.com/evarness-ai/iris-harness"
+repository = "https://github.com/evarness-ai/iris-harness"
+documentation = "https://github.com/evarness-ai/iris-harness/blob/main/README.md"
+keywords = ["ai", "llm", "assistant", "privacy", "agentic", "langchain", "langgraph", "ollama", "local-first", "react-loop"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Communications :: Email",
+    "Topic :: Office/Business :: Scheduling",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+]
+packages = [
+    { include = "iris_harness", from = "src" },
+    { include = "memris", from = "src" },  # the memory-graph engine, public (ADR-0115 decision 10)
+    # The repo's config/ tree, shipped as package data at iris_harness/_data/config/ so
+    # a plain `pip install` has its defaults. Mapped, not copied: git holds one config/.
+    # foundation/paths.py config_dir() finds it when there is no checkout to read.
+    { include = "config", to = "iris_harness/_data" },
+    # The domains (M6.1b, decision 2). Public since release 1 for the email slice only
+    # (R2): the export cuts src/iris_personal to email/, connections/ and the email
+    # plugins (scripts/oss_public_slice.txt), and this one entry packages what is there.
+    { include = "iris_personal", from = "src" },
+]
+include = [
+    # The domain plugins' manifests: the loader reads manifest.yaml beside the module
+    # an entry point names, so a wheel without them loads plugins that register nothing.
+    { path = "src/iris_personal/plugins/**/*.yaml", format = ["sdist", "wheel"] },
+    { path = "src/iris_harness/plugins_builtin/**/*.yaml", format = ["sdist", "wheel"] },
+    # The web console's production build (OSS plan R6). Gitignored, so it ships only
+    # when named here: the release workflow fills it (scripts/bundle_webui.py) before
+    # the build, and static_ui.resolve_webui_dist() serves it from the installed package.
+    { path = "src/iris_harness/server/iris_api/webui_dist/**/*", format = ["sdist", "wheel"] },
+]
+# What the packaged config/ leaves out. Agent working notes never ship. The public-line
+# entries become live in the public pyproject only (scripts/oss_strip_private.sh): the
+# private domains' config, their skill packs, the coding agent's config and the
+# usage-derived skill proposals are private by purpose, so the public wheel carries none
+# of them even if the exported tree ever has the files. The private wheel keeps them,
+# because it ships iris_personal and iris_code, which read them. The email skill packs
+# (config/skills/email) ship: they import only the email slice (R2).
+exclude = [
+    "config/**/CLAUDE.md",
+"config/coding-agent/**/*",
+"config/filemanager/**/*",
+"config/finance/**/*",
+"config/finance_alerts.yaml",
+"config/market.yaml",
+"config/skills/auto/**/*",
+"config/skills/calendar/**/*",
+"config/skills/calendar-reminders/**/*",
+"config/skills/filemanager/**/*",
+"config/skills/finance/**/*",
+"config/skills/planner/**/*",
+"config/skills/research/research-draft/**/*",
+]
+
+[tool.poetry.urls]
+"Bug Tracker" = "https://github.com/evarness-ai/iris-harness/issues"
+"Changelog" = "https://github.com/evarness-ai/iris-harness/blob/main/CHANGELOG.md"
+
+[tool.poetry.scripts]
+iris = "iris_harness.main:main"
+
+# The domain plugins, discovered exactly as a third-party plugin is: by the
+# `iris_harness.plugins` entry-point group, with their manifest.yaml read from beside
+# the module named here (OSS plan M6, decisions 2 and 10). The public tree ships the
+# email slice's three (R2) -- the email profile mounts them; `default` names none -- and
+# the fenced four stay private until release 2.
+[tool.poetry.plugins."iris_harness.plugins"]
+email_workflows = "iris_personal.plugins.email_workflows.plugin:setup"
+gmail = "iris_personal.plugins.gmail.plugin:setup"
+imap = "iris_personal.plugins.imap.plugin:setup"
+
+[tool.poetry.dependencies]
+# 3.13 supported since 2026-09-26: the core has no 3.12-only code; what held it back was
+# numpy<2 (no cp313 wheels) and heavy dependencies nothing imported.
+python = ">=3.12,<3.14"
+
+# LangChain: the only parts the code imports. `langchain_core.tools.BaseTool` is every
+# tool's base class (skills, MCP bridge, research); the two chat clients are llm/client.py's
+# (lazily). 1.x since 2026-09-26, which the private coding agent's langgraph 1.x needs.
+langchain-core = "^1.6"
+langchain-openai = "^1.6"
+langchain-ollama = "^1.1"
+
+# Core
+pydantic = "^2.0"
+httpx = ">=0.27,<1"
+fastapi = ">=0.109,<1"
+# Pinned directly (fastapi allows >=0.46): 1.0.0 rebuilt request.url from the Host
+# header, which let a crafted Host move a request onto an auth-exempt path
+# (PYSEC-2026-161). The code no longer trusts request.url for that either.
+starlette = ">=1.3.1,<2"
+uvicorn = ">=0.27,<1"  # runs every server (Dockerfile, compose, `iris serve`)
+pyyaml = "^6.0"
+python-dotenv = "^1.2.1"
+numpy = ">=1.26"
+psutil = "^6.0.0"
+prompt_toolkit = ">=3.0"
+
+# Auth & Security
+pyjwt = "^2.13"
+cryptography = ">=43,<51"
+keyring = "^25.0.0"
+
+# Vector DB & RAG
+chromadb = ">=0.5.0"
+
+# Uploads: FastAPI parses UploadFile/File with it (POST /rag/upload); never imported.
+python-multipart = ">=0.0.31"
+
+# File watching
+watchdog = "^4.0.0"
+
+# Background jobs
+apscheduler = "^3.10.0"
+
+# PDF & OCR
+pillow = "^12.1.0"
+pytesseract = "^0.3.13"
+
+# Observability. OpenTelemetry is core: spans export over OTLP to any backend.
+# The Arize Phoenix server and trace UI is the OPTIONAL extra `phoenix`: it is
+# Elastic-2.0, not OSI, so the core install stays OSI-only (OSS plan R19). Lazy-imported
+# in foundation/observability/phoenix_setup.py; install with `poetry install -E phoenix`.
+# >=20: older pins strawberry-graphql to a vulnerable 0.314.
+arize-phoenix = {version = ">=20.0", optional = true}
+opentelemetry-api = ">=1.20.0"
+opentelemetry-sdk = ">=1.20.0"
+opentelemetry-exporter-otlp = ">=1.20.0"
+openinference-instrumentation-langchain = ">=0.1.0"
+ddgs = "^9.14"
+pyarrow = ">=15.0"
+duckdb = ">=1.1,<2"
+# Phase 1 Track 1E.2 — corpus-discovery embedder (per ADR-0018 §7); also backs the
+# opt-in BGE reranker and the transformers threat backend. OPTIONAL extra `ml`:
+# it pulls torch, and on Linux torch pulls ~5 GB of CUDA wheels, which made a
+# fresh `poetry install` exceed the 45-minute CI job. Lazy-imported everywhere so
+# the harness runs without it; install with `poetry install -E ml`.
+sentence-transformers = {version = "^5.5.1", optional = true}
+pypdfium2 = "^5.9.0"
+trafilatura = "^2.1.0"
+# The built-in web-fetch skill parses pages with it (config/skills/builtin/web-fetch).
+# It used to arrive only through langchain-community, so it was never declared.
+beautifulsoup4 = "^4.12"
+
+# The `email` extra's packages (OSS plan R2/R19): the Google API client the Gmail
+# plugin's fetcher, attachment reader and OAuth flow import. Public tree: optional, and
+# `iris-harness[email]` installs them. Private tree: main dependencies (in the block
+# below), because the calendar plugin imports them too. One line cannot be both, and an
+# extra may not name a main dependency: Poetry then writes it into the wheel as
+# extra-only, so a plain install would lose it. Keep the versions in step with the
+# block below (tests/unit/test_scripts/test_oss_export_fences.py checks).
+google-api-python-client = {version = "^2.0", optional = true}
+google-auth = {version = "^2.0", optional = true}
+google-auth-oauthlib = {version = "^1.0", optional = true}
+# scikit-learn: HDBSCAN, which email corpus discovery clusters with -- the `discover` step
+# of `iris email setup` and the demo (OSS plan R3/R4). It was never declared: it reached
+# the private venv only through sentence-transformers (the `ml` extra), so a plain
+# `iris-harness[email]` install failed at discover (found by the export's strict pass).
+# The public `email` extra declares it. The private tree still gets it only through `ml`
+# (a main dependency here needs a private re-lock; see the release-1 export notes).
+scikit-learn = {version = ">=1.3", optional = true}
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^9.1"
+pytest-asyncio = "^1.4"
+pytest-cov = "^7.1"
+pytest-benchmark = "^5.3"
+black = "^26.5"
+ruff = "^0.16.9"
+mypy = "^1.8"
+pre-commit = "^4.5.1"
+freezegun = "^1.5.0"
+types-pyyaml = "^6.0.12.20250915"
+pytest-xdist = "^3.6"
+import-linter = "^2.15"
+
+
+[tool.poetry.extras]
+# The email assistant (OSS plan R2/R6), declared in the public tree only: here the Google
+# packages are main dependencies already (see the dependency table), and an extra that
+# names a main dependency would make it extra-only in the wheel.
+email = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "scikit-learn"]
+ml = ["sentence-transformers"]
+phoenix = ["arize-phoenix"]
+all = ["sentence-transformers", "arize-phoenix", "google-api-python-client", "google-auth", "google-auth-oauthlib", "scikit-learn"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# BLE: a broad `except` must say why (`# noqa: BLE001 — reason`) or narrow. T20: no
+# stray print() outside the CLIs that print for a living (per-file-ignores below).
+# RUF100: a `# noqa` for a rule that is off or not triggered is an error, so markers
+# stay honest (0.16 upgrade: 1534 such markers removed; their reasons kept as comments).
+select = ["E", "W", "F", "I", "B", "C4", "UP", "S", "BLE", "T20", "RUF100"]
+ignore = ["E501", "S101"]
+
+[tool.ruff.lint.isort]
+# Every source root under src/, named so grouping does not depend on ruff's detection
+# (0.1.x filed iris_harness with third-party; 0.16 detects it). memris: ADR-0115.
+known-first-party = ["iris_harness", "iris_personal", "iris_code", "memris"]
+
+[tool.ruff.lint.per-file-ignores]
+# test fixtures use fake tokens (S105) and sha1 for deterministic IDs (S324) — not security-relevant
+"tests/*" = ["S101", "S105", "S106", "S108", "S324"]
+"tests/integration/**/*.py" = ["S101", "S603", "S607"]
+# the repo-script tests run our own scripts with a pinned PATH
+"tests/unit/test_scripts/*.py" = ["S603", "S607"]
+# The CLIs print for a living (T201): the coding agent's entry point, memris's module
+# entry points, and the harness's CLI package (raw --json output bypasses rich).
+"src/iris_code/cli.py" = ["T201"]
+"src/memris/**/__main__.py" = ["T201"]
+"src/iris_harness/cli/**" = ["T201"]
+# The `iris plugin new` templates are a third party's code once rendered: there
+# iris_harness is a third-party import and the plugin's own package is first-party, the
+# reverse of this repo, so their imports are grouped for the generated project (whose own
+# ruff config checks them -- tests/unit/iris_harness/test_cli/test_plugin_scaffold.py).
+"src/iris_harness/cli/templates/**" = ["I001"]
+# The deploy scripts are CLIs (stderr is their log) and the LLM proxy logs to its
+# container's stdout; both are touched only by the commit hook, not the src/ gate.
+# Standalone dev harness scripts insert src/ onto sys.path before importing
+# iris.* so they run without an editable install — imports must follow that setup.
+# They are CLIs too (T201: 29 of 32 print their report), checked only by the commit
+# hook, so editing one no longer trips over prints it has always had.
+"scripts/*" = ["E402", "T201"]
+# The quickstart's first turn is a script whose output is the point (OSS plan R18).
+"examples/00-quickstart/first_turn.py" = ["T201"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+# The `iris plugin new` templates: every kind has a `__tmpl_package`, which only becomes
+# a package when rendered. The rendered plugin is type-checked by its author's tooling.
+exclude = ["src/iris_harness/cli/templates/"]
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "chromadb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "bcrypt"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.auth.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "google.oauth2.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "googleapiclient.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pyobjc EventKit + Foundation (Apple calendar read/write) + Vision (image tagging)
+# ship no type stubs; present only on macOS. Override works whether or not they are
+# installed, so mypy is green on both the macOS dev box and the Linux CI runner.
+module = ["EventKit", "Foundation", "Vision"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "psutil"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Optional `ml` extra (torch-backed); lazily imported, absent on CI and in the
+# default install, so the type-checker must not require it either.
+module = ["sentence_transformers", "sentence_transformers.*", "transformers", "transformers.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "caldav.*"
+ignore_missing_imports = true
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "icalendar.*"
+ignore_missing_imports = true
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "github.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "git.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# The optional `phoenix` extra (arize-phoenix, OSS plan R19). Its import name is
+# `phoenix`, not `arize_phoenix`: the override named the distribution, so a no-extras
+# type-check (the public tree's, CI's) failed on foundation/observability/phoenix_setup.py.
+module = ["phoenix", "phoenix.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# scikit-learn (HDBSCAN for email corpus discovery) arrives with the optional `ml`
+# extra and ships no type stubs: absent in a no-extras install, untyped where present.
+# One override covers both, where an inline ignore can name only one of the two codes.
+module = ["sklearn", "sklearn.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "apscheduler.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "opentelemetry.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "openinference.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pyarrow.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "duckdb"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore:PydanticDeprecatedSince20:UserWarning",
+    "ignore:`json_encoders` is deprecated:DeprecationWarning:pydantic._internal._generate_schema",
+    'ignore:datetime.datetime.utcnow() is deprecated:DeprecationWarning',
+]
+# `examples/` holds the runnable examples; each carries its own test (OSS plan R18).
+testpaths = ["tests", "examples"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=src --cov-report=html --cov-report=term -m 'not real_llm and not real_embeddings and not smoke'"
+markers = [
+    "e2e: End-to-end integration tests",
+    "integration: Integration tests",
+    "performance: Performance benchmarks",
+    "real_llm: Test hits a live Ollama or cloud LLM (excluded from default run)",
+    "real_embeddings: Test loads ChromaDB / sentence-transformers (excluded from default run)",
+    "smoke: End-to-end playground run against a real in-process runtime (excluded from default run; scripts/ci_local.sh --smoke)",
+    "minilm: Test asserts on real all-MiniLM-L6-v2 similarities (the semantic routers); runs when chromadb's copy of the model is on disk, skips otherwise (the suite never downloads it)",
+]
+
+# OSS plan release gates 1, 2 and 8 — checked by `poetry run lint-imports` in CI.
+[tool.importlinter]
+# The public tree has the email slice of iris_personal (R2), so its contracts below that
+# name iris_personal hold there too; the private domains' are fenced.
+root_packages = ["iris_harness", "memris", "iris_personal"]
+
+[[tool.importlinter.contracts]]
+id = "memris-stands-alone"
+name = "memris imports nothing from IRIS, so another project can use it on its own (ADR-0115 decision 10)"
+type = "forbidden"
+source_modules = ["memris"]
+forbidden_modules = [
+  "iris_harness",
+  "iris_personal",
+]
+# EMPTY, and it stays empty: an edge into IRIS is a design error, not burn-down.
+ignore_imports = []
+
+
+[[tool.importlinter.contracts]]
+id = "plugins-use-the-public-api"
+name = "The reference plugins import iris_harness.sdk and nothing else from the core (gate 2)"
+type = "forbidden"
+source_modules = ["iris_harness.plugins_builtin"]
+# Direct imports only: the gate is about a plugin reaching past the SDK itself. The SDK
+# re-exports from below, and chains through it are its business, not the plugin's.
+allow_indirect_imports = true
+# Every core package EXCEPT `iris_harness.sdk` (M6.2 layer 8, decision 5). A forbidden
+# contract blocks only what it names, and it cannot say "all of iris_harness but the SDK"
+# (forbidding the root forbids its child, the SDK), so a new core package would be
+# silently allowed. tests/unit/test_import_contract_coverage.py closes that gap: it fails
+# until every top-level iris_harness package but the SDK is listed here.
+forbidden_modules = [
+  "iris_harness.main",
+  # M6.2 layer 10: the repo-root `services/` folder is `iris_harness/server/` -- the four
+  # FastAPI apps ship in the wheel now, so nothing needs the repo on PYTHONPATH to import
+  # them. They are listed ABOVE `cli` and `playground`, not beside them: the API serves
+  # CLI-backed endpoints and runs playground scenarios, so `|` would claim an
+  # independence that is not there.
+  "iris_harness.server",
+  "iris_harness.cli",
+  "iris_harness.playground",
+  # Stable tier, but for a plugin's TESTS: plugin code selects the fake via sdk.llm.
+  "iris_harness.testing",
+  "iris_harness.runtime",
+  "iris_harness.agent",
+  "iris_harness.services",
+  "iris_harness.memory",
+  "iris_harness.tools",
+  "iris_harness.llm",
+  "iris_harness.kernel",
+  "iris_harness.memory.identity",
+  "iris_harness.foundation",
+  "iris_harness.server",
+  # Plugin-capabilities step 3c: a reference plugin reaches no domain, library or plugin.
+  "iris_personal",
+]
+# EMPTY. The burn-down that landed with this contract at layer 8 listed 22 imports --
+# each one a capability the reference plugins needed and the SDK did not publish. M6.3
+# published them: sdk/{types,logging,llm,parsing,channels,health,learning,sandbox,
+# identity}.py. Gate 2 is now strict in fact, not with an asterisk.
+ignore_imports = []
+
+[[tool.importlinter.contracts]]
+id = "layers"
+name = "The harness core is layered top-down (OSS plan M6, decision 6): each package imports only packages in the layers below it"
+type = "layers"
+# Today's package names in the M6 layer order. Each M6.2 slice renames entries here as
+# packages move into their layer folder; the ignore list is the burn-down list — it only
+# shrinks, and an empty list is a release gate (M6.3).
+#
+#   1 cli / server / playground   2 plugins   3 sdk   4 runtime   5 agent   6 services
+#   7 memory   8 tools | llm   9 kernel   10 foundation
+#
+# Packages that will share ONE folder are listed as consecutive rows here, not as `|`
+# siblings, because a `|` row means "independent" and these import each other today
+# (main -> cli, health -> heartbeat, runtime -> core, ...). Placement notes:
+#   - `identity` is `memory/identity/` since M6.3: the vault absorbed its secret stores
+#     its SOUL/USER loader, which reaches up into memory, moves to agent/.
+#   - `system` sits with services: status composes health signals (-> health/).
+#   - tools/skills/sandbox/mcp are consecutive until they share one tools/ package; llm
+#     is the sibling that neither imports nor is imported by them.
+layers = [
+  "iris_harness.main",
+  # M6.2 layer 10: the repo-root `services/` folder is `iris_harness/server/` -- the four
+  # FastAPI apps ship in the wheel now, so nothing needs the repo on PYTHONPATH to import
+  # them. They are listed ABOVE `cli` and `playground`, not beside them: the API serves
+  # CLI-backed endpoints and runs playground scenarios, so `|` would claim an
+  # independence that is not there.
+  "iris_harness.server",
+  "iris_harness.cli",
+  "iris_harness.playground",
+  "iris_harness.plugins_builtin",
+  # R16: the testing half of the stable tier (the scripted fake model, `no_network`).
+  # Above the SDK and everything under it, so it may grow a harness fixture later; a
+  # plugin's tests import it, a plugin's code does not (the SDK-only contracts).
+  "iris_harness.testing",
+  # M6.2 layer 8: the author-facing half of the plugin seam is `iris_harness.sdk` --
+  # the facade a plugin imports, plus `types`, `logging` and the CLI seam. The host
+  # half is `runtime/plugin_host/` (layer 7). The entry-point GROUP name stays
+  # "iris_harness.plugins" (decision 5): it is a string, not a module.
+  "iris_harness.sdk",
+  "iris_harness.runtime",
+  # M6.2 layer 6: the five stages are one package, `agent/`. Decision 4 also sent the
+  # SOUL/USER loader here; the readers said memory instead -- it is `memory/identity/`.
+  "iris_harness.agent",
+  # M6.2 layer 5: the eleven long-lived services are one package -- health, routines,
+  # learning, notifications, system status, missions, activities, rag, tasks, channels
+  # and heartbeats. Five rows became one; what imports what inside the package is the
+  # package's own business, as in foundation and the kernel.
+  "iris_harness.services",
+  # M6.2 layer 4 + M6.3: conversational memory, the wiki (`knowledge/`), workflow state
+  # (`state/`, out of the kernel) and `identity/` (the SOUL/USER loader) are one package
+  # -- everything remembered across turns (decision 4). The loader could only fold in
+  # once the kernel's exfiltration guard stopped reading it directly and started asking
+  # (`kernel/governance/identity_redaction.py`); it was read from both sides before.
+  "iris_harness.memory",
+  # M6.2 layer 3: tools + skills + sandbox + mcp are one package. `llm` is its sibling
+  # -- neither imports the other, so they share one row.
+  "iris_harness.tools | iris_harness.llm",
+  # M6.2 layer 2: governance + governor are one package, the kernel. Its vault holds the
+  # credential and secret stores that were `identity/`'s (decision 4); the Drive OAuth
+  # flow left with the domains.
+  "iris_harness.kernel",
+  # M6.2 layer 1: persistence, observability, eventbus, data, paths -- and, since layer
+  # 10, `auth.py`: the pure half of `service_common`, which the CLI and the evaluator
+  # client read as well as the servers. The FastAPI middleware went up to `server/`
+  # (decision 7).
+  "iris_harness.foundation",
+]
+# EMPTY. Release gate 9 (M6.3) is an empty list here, and layer 7 is where it emptied:
+# the four remaining entries were all `runtime -> plugins`, and the plugin machinery the
+# runtime was reaching for is in the runtime now (`runtime/plugin_host/`).
+ignore_imports = []
+
+# Public as well since release 1: the exported tree carries the email slice (R2), and
+# the core may no more import it there than here.
+[[tool.importlinter.contracts]]
+id = "core-does-not-import-iris-personal"
+name = "The harness never imports the domains' root, src/iris_personal (OSS plan M6, decision 2)"
+type = "forbidden"
+source_modules = ["iris_harness"]
+forbidden_modules = ["iris_personal"]
+# Empty, and it stays empty: the 45 edges this contract started with were all broken
+# BEFORE the move (M6.1b b1-b3), which is what made the move mechanical. A new entry
+# here means the core grew a dependency on a domain -- fix the code, not the list.
+ignore_imports = []
+
+# Public as well since release 1. In the exported tree iris_personal IS the email slice,
+# so there this is the email contract R2 asks for: the public email slice imports
+# iris_harness.sdk and nothing else from the core, with an empty ignore list (every
+# burn-down entry below names a private domain and is fenced out).
+[[tool.importlinter.contracts]]
+id = "domains-use-the-sdk"
+name = "The domains (src/iris_personal) import iris_harness.sdk and nothing else from the core (core/SDK boundary plan PR 3d, decision D2)"
+type = "forbidden"
+source_modules = ["iris_personal"]
+allow_indirect_imports = true
+# Every core package but the SDK, by name; tests/unit/test_import_contract_coverage.py
+# fails when a new top-level iris_harness package is missing here (see gate 2 above).
+forbidden_modules = [
+  "iris_harness.main",
+  "iris_harness.server",
+  "iris_harness.cli",
+  "iris_harness.playground",
+  "iris_harness.plugins_builtin",
+  # A domain's tests may use the scripted fake; its code selects it through sdk.llm.
+  "iris_harness.testing",
+  "iris_harness.runtime",
+  "iris_harness.agent",
+  "iris_harness.services",
+  "iris_harness.memory",
+  "iris_harness.tools",
+  "iris_harness.llm",
+  "iris_harness.kernel",
+  "iris_harness.foundation",
+]
+# The burn-down list (75 edges on landing, exact importer -> imported pairs so a NEW
+# private importer of a listed module still fails). It only shrinks: each group names
+# the plan PR expected to remove it, and PR 7 empties it. Adding a line means a domain
+# reached past the SDK; publish what it needs in iris_harness.sdk instead.
+# config/skills/**/tools.py are not a package, so this contract cannot see them; the
+# plan's survey (an AST walk) still counts them.
+ignore_imports = [
+]
+
+# Plugin-capabilities step 3c (docs/architecture/plugin-capabilities.md §4, "No back
+# door"): a plugin reaches another plugin only through the governed paths -- tools
+# (`api.tools`), capabilities, events -- never by importing it. Two halves:
+#   1. plugins-are-independent: no plugin package imports another plugin package, in
+#      either root (the reference plugins and the domain plugins).
+#   2. <domain>-imports-no-other-domain: a domain -- its library plus the plugins that
+#      register over it -- imports no other domain's library. A plugin may import its own
+#      library (iris_personal/plugins/__init__.py says so). The domains:
+#        email    = iris_personal.email + iris_personal.connections
+#                   + plugins.email_workflows + plugins.gmail + plugins.imap
+#        finance  = iris_personal.finance + plugins.finance_workflows
+#        files    = iris_personal.filemanager + plugins.file_organizer
+#        calendar = iris_personal.calendar + plugins.calendar
+#        planner  = plugins.planner (no library: it composes the others)
+#      iris_personal.connections (the Google reconnect routes) is part of the email slice
+#      (R2): it reads email's account store, so calendar and file_organizer reach that
+#      store through it (debt below, retired via credentials.accounts).
+#      iris_personal.market (a keyless quote client) is a shared library no plugin owns,
+#      so importing it reaches no other plugin.
+# Every ignore_imports entry is DEBT, not a permitted dependency: an exact importer ->
+# imported pair (a new importer of a listed module still fails) that names what retires
+# it. Rollout step 5 retires all of them before release 1; the lists only shrink, and
+# end empty.
+# tests/unit/test_import_contract_coverage.py fails when a new plugin or library is not
+# placed in a domain below.
+[[tool.importlinter.contracts]]
+id = "plugins-are-independent"
+name = "No plugin imports another plugin's package (plugin-capabilities step 3c)"
+type = "independence"
+modules = [
+  "iris_harness.plugins_builtin.*",
+  "iris_personal.plugins.*",
+]
+ignore_imports = [
+  # Debt to retire before release 1 via mail.read (step 4): the CLI runs without the
+  # runtime, so it builds Gmail's provider itself to read bodies; it resolves the
+  # capability instead.
+  "iris_personal.plugins.email_workflows.cli -> iris_personal.plugins.gmail.provider",
+]
+
+[[tool.importlinter.contracts]]
+id = "libraries-import-no-plugin"
+name = "A domain library (the record) never imports a plugin (the workflows over it), directly or not"
+type = "forbidden"
+source_modules = [
+  "iris_personal.connections",
+  "iris_personal.email",
+]
+forbidden_modules = ["iris_personal.plugins", "iris_harness.plugins_builtin"]
+# EMPTY, and it stays empty: a library that needs a plugin has its dependency backwards.
+ignore_imports = []
+
+# Public as well: in the exported tree the domains it forbids are absent (import-linter
+# skips a forbidden module that is not in the graph), so there it stands guard against
+# one arriving -- release 2 brings them back, and email must still not reach them.
+[[tool.importlinter.contracts]]
+id = "email-imports-no-other-domain"
+name = "Email stands on its own: it imports no other domain, directly or not (finance depends on email, never the reverse)"
+type = "forbidden"
+source_modules = [
+  "iris_personal.connections",
+  "iris_personal.email",
+  "iris_personal.plugins.email_workflows",
+  "iris_personal.plugins.gmail",
+  "iris_personal.plugins.imap",
+]
+forbidden_modules = [
+  "iris_personal.calendar",
+  "iris_personal.filemanager",
+  "iris_personal.finance",
+  "iris_personal.plugins.calendar",
+  "iris_personal.plugins.file_organizer",
+  "iris_personal.plugins.finance_workflows",
+  "iris_personal.plugins.planner",
+]
+# EMPTY, and it stays empty. Indirect chains count too (no allow_indirect_imports), so
+# email cannot reach finance through a third module either.
+ignore_imports = []
+

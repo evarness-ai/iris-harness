@@ -1,0 +1,57 @@
+# Governance Phase 6 — threat-detection policy.
+# Defaults encode decisions D1-D5 from
+# docs/architecture/governance-phase6-threat-detection.md §9.
+# Sub-phase 6a.1 loads + validates this file but does NOT enforce yet
+# (shadow-mode logging only); enforcement hooks land in 6a.2-6a.4.
+version: 1
+enabled: true
+# shadow = log-don't-block (tune thresholds first); flip to enforce per guard
+# once shadow output is clean. Shadow downgrades every on_detect to warn.
+mode: shadow
+
+backend:
+  # D1: Prompt Guard 2 via a local transformers/ONNX runner (lazy-imported).
+  prompt_guard:
+    provider: transformers
+    model: meta-llama/Llama-Prompt-Guard-2-86M
+  # D5: llama-guard3:1b keeps the chat path responsive; 8b is an opt-in swap.
+  output_guard:
+    provider: ollama
+    model: llama-guard3:1b
+    endpoint: http://localhost:11434
+
+# D5: per-surface p95 latency budgets (ms). Over budget => fail_mode applies.
+latency_budget:
+  inbound: 150
+  retrieved: 150
+  output: 400
+
+# G1 — inbound user turn (future hook at PRE_CLASSIFY).
+inbound:
+  enabled: true
+  threshold: 0.8
+  on_detect: require_approval   # D2
+
+# G2 — retrieved/tool content at POST_TOOL_USE. Which results are scanned is each tool's own
+# declaration (`content: external`), never a list of names here.
+retrieved:
+  enabled: true
+  threshold: 0.8
+  on_detect: transform          # D3
+
+# G3 — outbound response (future curator JudgeSignal). D4 taxonomy split.
+output:
+  enabled: true
+  enforce: [violent_crimes, sex_crimes, child_exploitation, self_harm, privacy, indiscriminate_weapons]
+  log_only: [hate, defamation, specialized_advice, elections, intellectual_property]
+
+# The user turn screened for the same hazards, at PRE_TURN, before anything answers it —
+# deterministic handlers included. OPT-IN: installed only when IRIS_GOVERNANCE_INPUT_SAFETY
+# is truthy. Reuses the output guard's model; enforce/log_only default to the output lists
+# above (self_harm is enforced). Follows `mode:` — shadow logs and audits, never blocks.
+# A slow or missing model lets the turn through.
+input_safety:
+  enabled: true
+
+# closed: degraded guard denies (inbound/retrieved) / holds output with banner.
+fail_mode: closed

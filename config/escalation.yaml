@@ -1,0 +1,74 @@
+# Tier-escalation judge (ADR-0068, docs/architecture/escalation-judge.md).
+#
+# A Response Curator head that, after a cheap Tier-1 answer, DIAGNOSES why the
+# answer fell short and decides the next course — escalate to a stronger tier,
+# clarify with the user, or reroute to a tool. YAML-first: thresholds and
+# budgets are policy, not code.
+#
+# Rollout discipline mirrors the governance enforce flips: ship in `shadow`
+# (decide + log + record the counterfactual, never act), validate that the
+# decision tracks real outcomes, only then flip to `enforce`.
+#
+# enforce mode acts on all three diagnoses: escalate (capability_gap -> re-run at
+# a stronger LOCAL tier), reroute (grounding_gap -> re-run same tier with a
+# grounding/tool directive), clarify (ambiguity -> ask the user, gated by
+# clarify_confidence_floor). Bounded by max_escalations + resource-governor veto,
+# egress-safe (local tiers only). Default mode keeps all acting off until an
+# operator flips it after reviewing shadow precision.
+version: 1
+
+# Master opt-in. The env flag IRIS_CURATOR_ESCALATION overrides this (matching
+# the IRIS_CURATOR_* judge family). Default off so normal chat is unaffected.
+enabled: false
+
+# shadow = decide + log + record, never act.
+# enforce = act on escalate, reroute and clarify (live, L3), each confidence-gated.
+mode: shadow
+
+# Hops above the start tier allowed per turn when acting. Bounded retry, never an
+# unbounded "judge says escalate" loop.
+max_escalations: 1
+
+# The judge model tier — must be >= the generator tier (judge a Tier-1 output
+# with a Tier-2 judge); the judge never both generates and promotes its output.
+# The judge is built from this tier; if it is missing from llm_tiers.yaml the
+# judge is off rather than falling back to a weaker model.
+judge_tier: tier2
+
+# Fraction of judged turns the shadow judge evaluates (cost control for the
+# shadow data-collection pass). 1.0 = every judged turn.
+sample_rate: 1.0
+
+# clarify fires only above this confidence; asking too often is worse than a
+# mediocre answer, so prefer escalate/reroute when the answer is knowable.
+clarify_confidence_floor: 0.7
+
+# escalate / reroute act only at or above this confidence. Both re-run the plan and
+# replace the answer, so a verdict the judge itself is unsure of must not act.
+action_confidence_floor: 0.7
+
+# Defer to the governance cost cap + resource-governor veto when acting (L3+).
+cost_aware: true
+
+# L5 predictive start-tier priors. The escalation-priors tick mines
+# escalation_shadow history per intent; an intent that reliably escalates gets
+# its START tier raised so routing is predictive, not reactive. Env override:
+# IRIS_CURATOR_ESCALATION_PRIORS. When disabled the recommendations are computed
+# and logged (shadow) but NOT applied to the router — same shadow -> validate ->
+# enforce discipline.
+priors:
+  enabled: false
+  min_samples: 20          # per-intent turns before a prior is trusted
+  window_hours: 168        # history window mined for the rate (1 week)
+  escalate_rate: 0.4       # bump start tier when escalate-rate clears this
+
+# Cloud escalation (ADR-0068 D4). OFF by default: escalation targets local tiers
+# only, so personal/secret content can never leave the box. When enabled,
+# escalation MAY target a cloud tier — but only when the content being sent
+# classifies into `classifications` (the data classifier runs on the prompt +
+# answer + memory context). `secret` is NEVER eligible, even if listed. The
+# governance kernel's egress gate remains the final backstop. Env override:
+# IRIS_CURATOR_ESCALATION_CLOUD.
+cloud:
+  allow: false
+  classifications: [public]   # widen to [public, internal] only after review; secret never

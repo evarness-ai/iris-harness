@@ -1,0 +1,227 @@
+# IRIS - Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+
+# Trace run artefacts (HTML viewers and JSONL event logs)
+docs/coding-agent/runs/LATEST_TRACE_VIEWER.html
+docs/coding-agent/runs/**/*.html
+docs/coding-agent/runs/**/*.jsonl
+
+# Generated coding-agent artifacts
+docs/coding-agent/handoffs/
+docs/coding-agent/reports/
+docs/coding-agent/runs/
+
+# Generated story artifacts (temporary)
+docs/stories/*.story.md
+docs/stories/index.md
+
+# Keep root markdown limited to README + contributor docs + the agent instructions
+/*.md
+!/README.md
+!/readme.md
+!/CONTRIBUTING.md
+!/CLAUDE.md
+# The open-source project files, and the public README and agent files the export renames
+# to README.md, AGENTS.md and CLAUDE.md
+!/README.public.md
+!/AGENTS.public.md
+!/CLAUDE.public.md
+!/SECURITY.md
+!/CODE_OF_CONDUCT.md
+!/CHANGELOG.md
+
+# Local user profile snapshots
+USER_PROFILE.md
+user_profile.md
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Environments
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+.venv/
+.venv312/
+env/
+venv/
+ENV/
+
+# Secret files and local credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+*.csr
+*.jks
+*.keystore
+*.secret
+*.secrets
+secrets/
+secret/
+secrets*.json
+secrets*.yaml
+secrets*.yml
+credentials*.json
+token*.json
+oauth*.json
+service-account*.json
+
+# IDE
+.vscode/
+.vscode-test/
+.idea/
+*.code-workspace
+.cursor/
+.history/
+.ropeproject/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Data files (contain user data)
+# Everything under data/ is runtime state written by the services (uploads, stores,
+# caches). Ignore it all by default so a new store (data/rag_uploads/ once held a demo
+# upload, untracked) cannot slip into a commit; only the folder's guide is tracked.
+# The specific rules below predate this and stay as documentation of what lives here.
+data/*
+!data/CLAUDE.md
+data/*.db
+data/brief_prefs.json
+# SQLite WAL/SHM sidecars (WAL journal mode) — local runtime cache, never commit
+*.db-wal
+*.db-shm
+*.db-journal
+# Research engine result cache — local, regenerable
+data/research_cache.db*
+# local DB backups (e.g. memory.db.bak-YYYYMMDD) — same user data, never commit
+data/*.db.bak*
+# memris fact migration (ADR-0115): its automatic backup of memory.db and its reports
+# (they list the user's facts) — same user data, never commit
+data/backups/
+data/memris-migration/
+data/vault/
+data/wiki/
+data/chroma/
+# RAG/document Chroma store — indexed user content, never commit
+data/chroma_docs/
+data/chroma_watermark
+# Semantic email index (ADR-0071) — vectors over the user's mail, never commit
+data/email_semantic/
+# downloaded statement PDFs — sensitive financial data, never commit
+data/finance/
+# generated calendar .ics artifacts — event details, never commit
+data/calendar/
+data/calendar_ics/
+*.ics
+# FileManager allowed-roots config + trash (paths to the user's private files)
+data/filemanager.json
+data/filemanager_trash/
+# FileManager custody store — files IRIS holds on behalf of agents, never commit
+data/filemanager/
+
+# Local-only compose override (audit host) — not part of the committed stack
+docker-compose.audithost.yml
+
+# Logs
+*.log
+logs/
+
+# Node.js (web frontend)
+web/node_modules/
+web/dist/
+web/coverage/
+web/.benchmarks/
+# The web console build the release wheel carries (OSS plan R6): scripts/bundle_webui.py
+# copies webui/dist here at release time and pyproject's `include` ships it.
+src/iris_harness/server/iris_api/webui_dist/
+
+
+# mypy
+.mypy_cache/
+
+# ruff
+.ruff_cache/
+
+# Pre-commit
+.pre-commit-cache/
+
+# Phoenix observability data
+.phoenix/
+
+# graphify knowledge-graph output (a local tool; the repo keeps none of it).
+graphify-out/
+*.graphify_python
+.graphify_*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Phase 1 spike artifacts (real email data, never commit)
+data/spike/
+
+# Per-agent settings overrides (local, user-edited via UI/CLI) — ADR-0074
+config/agent_settings.local.yaml
+
+# Crystallizer skill proposals (ADR-0068): machine-generated, quarantined, and
+# human-promoted — runtime learning artifacts, regenerated from signals. Never commit.
+config/skills/auto/
+
+.phase2-baselines/
+
+# memris PR 2: the dry-run report and triage file hold personal fact values
+data/memris-migration/
+
+# Playwright (webui viewport smoke) — reports and per-run artifacts.
+webui/playwright-report/
+webui/test-results/

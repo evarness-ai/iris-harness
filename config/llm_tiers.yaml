@@ -1,0 +1,230 @@
+# Sizing invariant (applies to every local tier with a num_ctx):
+#
+#     num_ctx >= 4 * max_tokens
+#
+# `num_ctx` is the WHOLE window — prompt plus generation — and
+# `budget_for(num_ctx, fraction=0.75)` (llm/budget.py, applied in bootstrap.py)
+# lets the prompt take 75% of it. So only a quarter of the window is guaranteed
+# to the answer. A tier that promises more `max_tokens` than that quarter gets
+# cut off mid-sentence once the prompt actually fills its budget.
+#
+# code_exec violated this (4096 ctx promising 2048 output, guaranteeing 1024) and
+# that is how a planner ran out of room mid-JSON, leaving a `run_shell` tool call
+# that never closed. `tests/unit/test_llm/test_tier_config.py` now pins the rule.
+# Per tier, for Ollama reasoning models (qwen3.x, ...):
+#   think: false   turn thinking off -- measured ~10x faster per call for
+#                  qwen3.5:4b-q4_K_M; true turns it on; leave unset for the model's default.
+#   Editable in the app (PATCH /models/tiers/{name} {"think": false}); other providers ignore it.
+
+# Where each provider's models run. The egress gate governs a model call by this, never
+# by a tier's name: `runs: cloud` is tier_3 (the prompt leaves the owner's machines), a
+# `runs: local` tier is tier_1 or tier_2 by size (llm/tier_router.governance_tier_for).
+# So `tier3` below, a local LM Studio model, governs as local. A provider not listed here
+# governs as cloud: an unknown destination fails closed (llm/locality.py).
+providers:
+  ollama:
+    runs: local
+  lmstudio:
+    runs: local
+  copilot:
+    runs: cloud
+  github:
+    runs: cloud
+  openrouter:
+    runs: cloud
+  anthropic:
+    runs: cloud
+  # The scripted fake model (llm/fake.py): answers from a script, in-process, so it never
+  # leaves the machine. IRIS_LLM_PROVIDER=fake puts every tier on it (tests, the email
+  # demo); nothing below uses it.
+  fake:
+    runs: local
+
+tiers:
+  # Router tier — intent classification only. Label-picking is a small,
+  # structured task: short prompt + low temperature + tiny model = fast
+  # + cheap + accurate. Decoupled from Tier 1 (executor) on 2026-05-20
+  # so swapping Tier 1 for a stronger reader doesn't slow the per-turn
+  # routing call.
+  router:
+    name: "Router"
+    provider: "ollama"
+    model: "llama3.2:3b"
+    max_tokens: 256          # JSON label output is short
+    # System prompt (~700 tok) + hard-capped conversation context (issue 0002,
+    # _format_recent_context, ~150 tok) + user message. 2048 leaves headroom so a
+    # busy multi-turn chat never overflows and silently truncates the system
+    # instructions; cheap for a 3B model.
+    num_ctx: 2048
+    keep_alive: "10m"        # constantly used, stay hot
+    temperature: 0.1         # near-deterministic for label picking
+    timeout_seconds: 15
+    use_for:
+      - intent_classification
+
+  tier1:
+    name: "Fast"
+    provider: "ollama"
+    # Tier 1 evaluation log:
+    #   2026-05-19  llama3.2:3b       → drifted on identity-aware prompts
+    #   2026-05-19  qwen3.5:4b q4_K_M  → better fact recall, regressed tool calls
+    #   2026-05-19  phi4-mini:latest   → balance — kept as committed default
+    #   2026-05-19  granite4:latest    → strongest identity recall
+    #   2026-09-28  granite4.2:3b      → owner's pick (current); think off: it is a
+    #               reasoning model and thinks by default (general 0.8 s, a 40-turn
+    #               memory_compaction summary 1.7 s on the Mac)
+    # As of 2026-05-20 Tier 1 handles general / help / simple_query /
+    # voice_command — pure execution, no routing. intent_classification
+    # moved to its own `router` tier above.
+    model: "granite4.2:3b"
+    think: false
+    max_tokens: 1024
+    num_ctx: 16384          # ReAct prompt + tool catalog + iterations, and >= 4x max_tokens
+    keep_alive: "10m"       # hot — used for general execution turns
+    temperature: 0.3
+    timeout_seconds: 30
+    use_for:
+      - voice_command
+      - simple_query
+      - general
+      - help
+      - system          # system/agentic turns — keep off the weak fallback model
+      - memory_compaction   # rolling session summary (config/memory/summary.yaml)
+
+  # Sandboxed code execution — still lighter than the coding tier. The planner
+  # runs many short tool calls, so this must not pull the 30B in for every
+  # file/script request; a 7B coder is the middle that works.
+  #
+  # Was llama3.2:3b, which is a general 3B and not built for this: asked to write
+  # a heredoc it fell into a repeated-import loop and burned the whole output
+  # budget without closing its JSON tool call. A code-tuned model holds the
+  # structure. 16384 also satisfies the 4x invariant at the top of this file —
+  # at 4096 the planner was only ever guaranteed half the output it was promised.
+  code_exec:
+    name: "CodeExec"
+    provider: "ollama"
+    model: "qwen2.5-coder:7b"
+    max_tokens: 4096
+    num_ctx: 16384
+    keep_alive: "5m"
+    temperature: 0.2
+    timeout_seconds: 45
+    use_for:
+      - code_exec
+
+  tier2:
+    name: "Advanced"
+    provider: "ollama"
+    # Tier 2 evaluation log:
+    #   prev   qwen2.5-coder:7b  -> code-specialist, leaked few-shot
+    #                              examples on profile_query prompts
+    #                              and biased toward JavaScript stack
+    #   2026-05-19 qwen2.5:7b-instruct (this commit) — general-purpose
+    #     instruct variant, better at prose / chat / prompt fidelity
+    #     for identity questions. Same size, comparable VRAM footprint.
+    model: "qwen2.5:7b-instruct"
+    max_tokens: 4096
+    num_ctx: 16384          # ReAct prompt + tool catalog + iterations, and >= 4x max_tokens
+    keep_alive: "60s"       # warm but evicts quickly between tool calls
+    temperature: 0.7
+    timeout_seconds: 90
+    use_for:
+      - email_summary
+      - code_gen
+      - rag_query
+      - medium_task
+      - task_planning
+      - coding
+      - communication
+      - calendar
+      - files
+      - weather
+      - search
+      - finance         # finance is now an agentic ReAct turn (finance_lookup + email tools); a tool-heavy loop needs the instruct model, not the tier-1 fallback
+      - planner         # ADR-0077 P4: when planner runs on the unified loop (IRIS_AGENTIC_CORE_P4), the tool-heavy turn needs the instruct model (the deterministic-lane narrator uses intent=general, unaffected)
+      - profile_query   # user identity / "what do you know about me" — Tier 1 priors override USER.md
+      - action          # ADR-0103: imperative actions run on the instruct tier (reasoning). NB tool-call RELIABILITY is a separate problem — measured 25% (7B) / 0% (35B) for configure_brief; a bigger model does NOT fix "the model chose not to call the tool". The reliable fix is a deterministic intercept, not the tier.
+
+  tier3:
+    # Model + budgets per exp-004 spike 4 (agentic-evals): the 35B-A3B MoE
+    # decodes 4x faster than the dense 27b on this same daemon (75 vs 19
+    # tok/s). Thinking-by-default model: budgets sized for think + answer
+    # (exp-003 recommendations); harness strips <think> blocks from content.
+    name: "Cloud"           # name retained; still local, and governed as local (providers:)
+    # MLX serving via LM Studio per exp-004 spike 4: +39% decode and ~4 GB
+    # less resident than the same MoE on Ollama (104 vs 75 tok/s). Context
+    # length + TTL are managed server-side:
+    #   lms load qwen/qwen3.6-35b-a3b --context-length 16384 --ttl 600
+    # (JIT-reloads on demand; TTL is the keep_alive analog.) Ollama fallback:
+    # provider "ollama", model "qwen3.6:35b-a3b" — still 4x the old dense 27b.
+    provider: "lmstudio"
+    model: "qwen/qwen3.6-35b-a3b"
+    max_tokens: 10240
+    temperature: 0.7
+    timeout_seconds: 240
+    use_for:
+      - complex_task
+      - skill_writing
+
+  # Gemma via LM Studio (Apple Silicon: MLX backend is ~2-3x faster than GGUF).
+  # Pull the model in LM Studio's Discover tab, start the server, then set
+  # `model` below to whatever id is returned by `curl http://localhost:1234/v1/models`.
+  gemma:
+    name: "Gemma"
+    provider: "lmstudio"
+    model: "google/gemma-4-e4b"
+    max_tokens: 4096
+    temperature: 0.7
+    timeout_seconds: 90
+    use_for:
+      - gemma_test
+
+  # Local vision-language tier (FMX7 image intelligence). Pixels never leave the
+  # machine: provider must stay local (ollama/lmstudio). Pull with:
+  #   ollama pull qwen2.5vl:7b
+  # The vision heartbeat SKIPs gracefully when the model is not available.
+  vision:
+    name: "Vision"
+    provider: "ollama"
+    model: "qwen2.5vl:7b"
+    max_tokens: 1024
+    num_ctx: 4096
+    keep_alive: "60s"
+    temperature: 0.2        # classification/captioning wants determinism, not flair
+    timeout_seconds: 120    # image prefill is slow; budget generously per image
+    use_for:
+      - vision
+
+  # The email judge (loop-proof PR 5): sorts each new non-promo email into one bucket
+  # with a JSON-schema reply (CodingLLMClient.invoke_json: governed, think=false), one
+  # governed call per email. Always the Mac's Ollama and always this model: `pinned` stops the resource governor's downshift and any
+  # learned prior from moving it, because the judge's accuracy is only comparable run
+  # to run on one model. A 4B reasoning model — the call turns thinking off. The reply
+  # is one small JSON object, so 512 tokens is plenty; 8192 holds the prompt plus a
+  # 4000-character body.
+  email_judge:
+    name: "Email judge"
+    provider: "ollama"
+    model: "qwen3.5:4b-q4_K_M"
+    max_tokens: 512
+    num_ctx: 8192
+    keep_alive: "10m"
+    temperature: 0.1
+    timeout_seconds: 60
+    pinned: true
+    use_for:
+      - email_judge
+
+  fallback:
+    name: "Fallback"
+    provider: "ollama"
+    # Any intent not explicitly mapped lands here. Kept at the capable tier-1
+    # model (was llama3.2:3b) so an unmapped/agentic intent never silently
+    # degrades to the weakest model on a real reasoning/tool task.
+    model: "granite4:latest"
+    max_tokens: 2048
+    num_ctx: 16384          # ReAct prompt + tool catalog + iterations, and >= 4x max_tokens
+    keep_alive: "5m"
+    temperature: 0.5
+    timeout_seconds: 30
+    use_for: []

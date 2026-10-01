@@ -1,0 +1,25 @@
+# The harness with its reference plugins, and nothing that knows anything about the
+# user's own life. This is what `iris` runs when IRIS_PROFILE is unset, and it is the
+# only profile the public tree can satisfy: the six domain plugins moved to
+# src/iris_personal at M6.1b (OSS plan M6, decisions 2 and 10) and ship separately.
+#
+# Running the full personal assistant on this machine? Set
+#   IRIS_PROFILE=personal-assistant
+# in your .env -- that profile lists these six plus the six domains.
+#
+# With no IRIS_PROFILE set, a profile below runs instead when the plugins it needs are
+# installed and loadable here: an install that carries the email slice comes up as the
+# email assistant (profiles/email.yaml: email_workflows plus Gmail and/or IMAP), a tree
+# without it stays on this one. IRIS_PROFILE, when set, always wins -- set
+# IRIS_PROFILE=default to pin this profile regardless.
+name: default
+description: Governed core + reference plugins.
+prefer_when_installed:
+  - email
+plugins:
+  - name: system
+  - name: telegram_channel
+  - name: web_channel
+  - name: web_push_channel  # digest headline + approval nudges to the phone (loop-proof PR 2)
+  - name: research
+  - name: code_exec

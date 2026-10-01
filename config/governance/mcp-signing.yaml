@@ -1,0 +1,11 @@
+# MCP server signing policy (Governance Phase 6 supply-chain workstream).
+# See docs/architecture/mcp-server-signing.md.
+# Sub-phase 6b.1 ships the loader; the bridge gate + enforcement land in 6b.2+.
+version: 1
+enabled: true
+# shadow = verify + audit but never block; flip to enforce once your servers are
+# signed and the audit is clean (see the doc's enforce-flip runbook).
+mode: shadow
+# Action under enforce for an unsigned / untrusted / invalid server.
+unsigned_policy: warn
+trust_store: config/governance/mcp-trust.yaml

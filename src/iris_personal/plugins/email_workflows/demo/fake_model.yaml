@@ -1,0 +1,112 @@
+# The scripted fake model `iris email demo` runs on (provider `fake`, iris_harness/llm/fake.py).
+#
+# It stands in for the two model calls the demo makes: the email judge (one governed
+# JSON call per email, judge.yaml's prompt and schema) and the digest's narration. Each
+# rule is a regex match on the request and the reply the model would give; the first
+# match answers. It keys on what the demo corpus (corpus.py) writes, so a real model's
+# behaviour is imitated, never invented: a figure or date is copied from the email only
+# when a regex captured it there.
+#
+# Order matters: the specific rules come before the catch-all FYI.
+
+rules:
+  # Too little text to judge: the judge's own words for this are "unsure", and a low
+  # confidence (below judge.yaml's unsure_below) is how the judge says it.
+  - name: judge / too little text
+    match:
+      system: You sort ONE email
+      user: '\n\nSent from my phone\s*\Z'
+    reply:
+      json:
+        bucket: fyi
+        confidence: 0.45
+        reason: Too little text to tell what this email is about.
+
+  - name: judge / card statement
+    match:
+      system: You sort ONE email
+      user: '(?s)Statement balance: \$(?P<balance>\d+\.\d{2}).*?Minimum payment: \$(?P<minimum>\d+\.\d{2}).*?Payment due: (?P<due>\d{4}-\d{2}-\d{2})'
+    reply:
+      json:
+        bucket: bill
+        confidence: 0.96
+        reason: A card statement with a balance, a minimum payment and a due date.
+        statement_balance: "{balance}"
+        min_due: "{minimum}"
+        due_date: "{due}"
+
+  - name: judge / bill due
+    match:
+      system: You sort ONE email
+      user: '(?s)Amount due: \$(?P<amount>\d+\.\d{2}).*?Due date: (?P<due>\d{4}-\d{2}-\d{2})'
+    reply:
+      json:
+        bucket: bill
+        confidence: 0.94
+        reason: A bill with an amount due and a due date.
+        min_due: "{amount}"
+        due_date: "{due}"
+
+  - name: judge / payment confirmation
+    match:
+      system: You sort ONE email
+      user: 'Payment received: \$\d+\.\d{2}'
+    reply:
+      json:
+        bucket: bill
+        confidence: 0.88
+        reason: A payment confirmation for a bill the owner just paid.
+
+  - name: judge / booked or invited
+    match:
+      system: You sort ONE email
+      user: 'When: (?P<when>\d{4}-\d{2}-\d{2}T\d{2}:\d{2})'
+    reply:
+      json:
+        bucket: event
+        confidence: 0.93
+        reason: The owner is booked or invited somewhere at a set date and time.
+        event_start: "{when}"
+
+  - name: judge / asked for an answer, with a deadline
+    match:
+      system: You sort ONE email
+      user: '(?is)\b(?:could you|can you|would you)\b.*?\bby (?P<by>\d{4}-\d{2}-\d{2})'
+    reply:
+      json:
+        bucket: needs_reply
+        confidence: 0.9
+        reason: Someone asked the owner for something by a date.
+        reply_by: "{by}"
+
+  # System mail that asks "could you..." lands here too; judge.yaml's person-only rule
+  # then files it as FYI (the model says needs_reply, the harness knows better).
+  - name: judge / asked for an answer
+    match:
+      system: You sort ONE email
+      user: "(?i)\\b(?:could you|can you|would you|are you free|what do you think|let me know if)\\b"
+    reply:
+      json:
+        bucket: needs_reply
+        confidence: 0.87
+        reason: Someone asked the owner a question and is waiting for the answer.
+
+  - name: judge / nothing to do
+    match:
+      system: You sort ONE email
+    reply:
+      json:
+        bucket: fyi
+        confidence: 0.86
+        reason: Informational; nothing is needed from the owner.
+
+  # The digest's narration (email/digest.py): a short read on top of the grounded list,
+  # built only from the numbers in the digest it is shown.
+  - name: digest narration
+    match:
+      user: 'quick read on their inbox'
+      prompt: '(?P<today>\d+) new today across \d+ accounts? \((?P<total>\d+) total stored\)'
+    reply:
+      content: >-
+        {today} emails came in today and {total} are in the demo mailbox. Start with the
+        people waiting on a reply, then the bills below; the rest is sorted and can wait.

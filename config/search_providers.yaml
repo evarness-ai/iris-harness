@@ -1,0 +1,22 @@
+# The `research` tool's search-provider chain (docs/architecture/research-engine.md).
+#
+# A research call tries the providers in priority order -- lower first -- and the first
+# that returns hits answers. A provider that is not configured (no key, no URL) is
+# skipped. Every provider joins through one seam, PluginAPI.register_search_provider:
+# the research plugin's five below and any other plugin's, which runs at the priority it
+# registered with, else `default_priority` -- after the built-ins, before DuckDuckGo --
+# unless it is named here. `enabled: false` takes a provider out of the chain.
+#
+# Read on every research call: an edit applies to the next query.
+default_priority: 500
+providers:
+  searxng:
+    priority: 100   # IRIS_SEARXNG_URL: self-hosted, no key -- the privacy-first primary
+  tavily:
+    priority: 200   # TAVILY_API_KEY
+  exa:
+    priority: 300   # EXA_API_KEY
+  brave:
+    priority: 400   # BRAVE_API_KEY
+  ddg:
+    priority: 1000  # keyless floor, always available: keep it last

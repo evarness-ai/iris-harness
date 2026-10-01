@@ -1,0 +1,211 @@
+# The web console's navigation: its groups and the core's own screens (OSS plan R17).
+#
+# The console draws its sidebar, its phone bar and its More page from
+# GET /api/v1/webui/nav, which is this file plus the `webui.screens` of every MOUNTED
+# plugin (runtime/plugin_host/nav.py). A plugin's screen names one of these groups and
+# an `order` inside it; an unknown group lands in `default_group`. A screen whose owner
+# is not mounted is not in the nav, and a direct link to it says the plugin is not
+# installed.
+#
+# Screen fields: id, label, route (one path segment; sub-routes belong to it), title
+# (header; label when unset), subtitle, icon (a lucide name the console bundles),
+# group, order, nav (false: owned and gated, no menu entry). Core screens only:
+# mobile_tab {label, order} pins the screen to the phone's bottom bar.
+#
+# Orders step by 10 so a plugin can slot between core entries (email's Inbox is 30 in
+# operations).
+
+default_group: apps
+
+groups:
+  - id: chat          # the pinned top entry, rendered without a header
+    order: 0
+  - id: harness
+    label: Harness
+    order: 10
+  - id: operations
+    label: Operations
+    order: 20
+  - id: knowledge
+    label: Memory & Knowledge
+    order: 30
+  - id: learning
+    label: Learning
+    order: 40
+  - id: apps
+    label: Apps
+    order: 50
+  - id: system
+    label: System
+    order: 60
+
+screens:
+  - id: chat
+    label: Chat
+    route: /chat
+    subtitle: Talk to IRIS — streaming, local-first
+    icon: message-square
+    group: chat
+    order: 10
+    mobile_tab: {label: Chat, order: 1}
+
+  - id: overview
+    label: Overview
+    route: /overview
+    title: Control Overview
+    subtitle: LLM mode, self-learning, routines & heartbeats at a glance
+    icon: layout-dashboard
+    group: harness
+    order: 10
+    mobile_tab: {label: Control, order: 4}
+  - id: agents
+    label: Agents
+    route: /agents
+    subtitle: Agents and the plugins that provide them — tools, registrations & YAML (read-only)
+    icon: bot
+    group: harness
+    order: 20
+  - id: routines
+    label: Routines
+    route: /routines
+    subtitle: Scheduled invocations + reflection-loop proposals
+    icon: calendar-clock
+    group: harness
+    order: 30
+  - id: heartbeats
+    label: Heartbeats
+    route: /heartbeats
+    subtitle: Background autonomy ticks and their recent runs
+    icon: heart-pulse
+    group: harness
+    order: 40
+  - id: playground
+    label: Playground
+    route: /playground
+    subtitle: Run YAML scenarios against the harness + config↔runtime drift
+    icon: flask-conical
+    group: harness
+    order: 50
+
+  # The phone pins /actions as "Activity" (plan decision 27): it is where the owner acts.
+  - id: actions
+    label: Action Center
+    route: /actions
+    subtitle: Pending actions from background agents + Health — resolve blockers here
+    icon: inbox
+    group: operations
+    order: 10
+    mobile_tab: {label: Activity, order: 3}
+  # Where the digest push lands (/digest/<id>): the one full, stored copy.
+  - id: digest
+    label: Digest
+    route: /digest
+    subtitle: The full morning digest, as delivered — stored and re-readable
+    icon: newspaper
+    group: operations
+    order: 20
+  - id: activity
+    label: System Jobs
+    route: /activity
+    subtitle: Background system jobs — what IRIS is doing and has done (read-only)
+    icon: activity
+    group: operations
+    order: 40
+  - id: sessions
+    label: Sessions
+    route: /sessions
+    subtitle: Recent conversation sessions and their turns
+    icon: history
+    group: operations
+    order: 50
+  - id: calltrace
+    label: Call Trace
+    route: /calltrace
+    title: Agent Call Trace
+    subtitle: End-to-end graph trace of an IRIS request, reconstructed from logs
+    icon: waypoints
+    group: operations
+    order: 60
+
+  - id: memory
+    label: Memory
+    route: /memory
+    subtitle: What IRIS knows about you, what is waiting for your yes, and what it keeps
+    icon: brain
+    group: knowledge
+    order: 10
+  # Off the sidebar: it renders the auto-built wiki, whose ingest is off by default.
+  # The screen and GET /knowledge/graph stay reachable by URL.
+  - id: knowledge
+    label: Context Map
+    route: /knowledge
+    subtitle: The auto-built wiki as a graph
+    icon: waypoints
+    group: knowledge
+    order: 90
+    nav: false
+
+  - id: learning
+    label: Self-Learning
+    route: /learning
+    subtitle: Signal health + the experiments ledger (read-only)
+    icon: sparkles
+    group: learning
+    order: 10
+  - id: twin
+    label: Digital Twin
+    route: /twin
+    subtitle: What IRIS has learned about you — habits, steering & goals (HITL review)
+    icon: user-round
+    group: learning
+    order: 20
+
+  - id: health
+    label: Health
+    route: /health
+    title: System Health
+    subtitle: Services, credentials & hardware — live diagnostics (read-only)
+    icon: stethoscope
+    group: system
+    order: 10
+    mobile_tab: {label: Pulse, order: 2}
+  - id: governance
+    label: Governance
+    route: /governance
+    subtitle: Policy posture & audit ledger (read-only)
+    icon: shield-check
+    group: system
+    order: 20
+  - id: devices
+    label: Devices
+    route: /devices
+    subtitle: Phones and browsers paired with this IRIS — pair a new one, revoke a lost one
+    icon: monitor-smartphone
+    group: system
+    order: 30
+  - id: settings
+    label: Settings
+    route: /settings
+    subtitle: Agents, plugins, features, guards and history — changes are saved and survive deploys
+    icon: settings
+    group: system
+    order: 40
+
+  # The phone's page list: the bar's More tab, not a menu entry of its own.
+  - id: more
+    label: More
+    route: /more
+    subtitle: Every screen, grouped as on the desktop
+    icon: menu
+    group: system
+    order: 90
+    nav: false
+  # Pairing renders outside the shell (an unpaired browser lands here after a 401).
+  - id: pair
+    label: Pair
+    route: /pair
+    title: Pair this browser
+    icon: monitor-smartphone
+    group: system
+    order: 91
+    nav: false

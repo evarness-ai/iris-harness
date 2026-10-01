@@ -1,0 +1,27 @@
+# How Graphiti's node labels read in the core ontology (config/memory/ontology.yaml).
+#
+# Graphiti gives every entity node the label "Entity" plus, when a custom entity type
+# was used, that type's name. The first label listed here wins; a node none of whose
+# labels is listed is imported only if it is plain "Entity" (then as the core class
+# Entity), and statements it takes part in may still be skipped for being outside a
+# property's domain or range — the report says so.
+#
+# ASSUMPTION: label names follow Graphiti's custom entity types (Person, Organization …).
+# Adjust to the types your Graphiti graph was built with.
+classes:
+  Person: Person
+  User: Person
+  Organization: Organization
+  Company: Organization
+  Team: Team
+  Place: Place
+  Location: Place
+  City: City
+  Country: Country
+  Project: Project
+  Topic: Topic
+  Entity: Entity
+
+# The core class an episode (Graphiti's EpisodicNode) becomes when its MENTIONS edges
+# are imported. Must be a concrete subclass of the ontology's episode class.
+episode_class: Conversation

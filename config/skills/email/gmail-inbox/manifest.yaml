@@ -1,0 +1,43 @@
+name: gmail-inbox
+version: 0.1.0
+description: |
+  Read access to Gmail. Fetches new messages since the last sync cursor
+  (or cold-starts with the last 30 days if no cursor exists), parses
+  envelope + snippet, and persists to data/email.db. Used by the
+  email-sweep heartbeat and by the harness on demand.
+
+  Body content is NOT cached (per canonical doc §3.1) — fetch on
+  demand via a future fetch_message_body tool.
+author: iris-personal-assistant
+license: Apache-2.0
+default_enabled: true
+trust_level: first-party
+homepage: https://github.com/evarness-ai/iris-harness
+tools:
+  - name: fetch_new_emails
+    description: |
+      Sync new Gmail messages for one connected account since the last
+      cursor. Returns a brief summary line including the count fetched
+      and the new sync cursor. Idempotent — re-running is a no-op when
+      no new mail has arrived.
+    governor_route: email/read
+    args:
+      - name: account_id
+        type: string
+        required: true
+        description: The email_accounts.id slug, e.g. 'gmail:user.in@example.com'.
+        examples:
+          - "gmail:user.in@example.com"
+      - name: max_messages
+        type: int
+        required: false
+        default: 100
+        description: Cap on messages fetched in this single call.
+        min: 1
+        max: 1000
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

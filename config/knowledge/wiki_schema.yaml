@@ -1,0 +1,35 @@
+page_types:
+  entity:
+    directory: "entities"
+    frontmatter_required: ["entity_type", "tags", "source_count", "last_updated"]
+    naming: "kebab-case"
+  concept:
+    directory: "concepts"
+    frontmatter_required: ["tags", "last_updated"]
+    naming: "kebab-case"
+  source:
+    directory: "sources"
+    frontmatter_required: ["source_type", "agent", "last_updated"]
+    naming: "date-prefix"
+  synthesis:
+    directory: "synthesis"
+    frontmatter_required: ["tags", "sources", "last_updated"]
+    naming: "kebab-case"
+
+entity_types:
+  - person
+  - institution
+  - concept
+  - event
+  - topic
+
+ingest_rules:
+  min_content_length: 50
+  max_pages_per_ingest: 15
+  auto_create_threshold: 3
+
+lint:
+  staleness_threshold_days: 30
+  orphan_detection: true
+  contradiction_check: false
+  schedule: "cron(hour=2, minute=0)"

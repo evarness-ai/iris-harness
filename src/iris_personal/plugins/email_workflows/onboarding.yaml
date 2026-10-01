@@ -1,0 +1,65 @@
+# Email setup (OSS plan R4): the onboarding state machine's numbers and words. The code
+# (onboarding.py) is mechanism only. Override from <config_dir>/email/onboarding.yaml
+# (a top-level key there replaces the shipped one).
+
+# The steps, in order, as `iris email setup` and /api/v1/email/onboarding name them.
+# Nothing touches the mailbox before `label_approval` is approved.
+steps:
+  connect: Connect the mailbox
+  fetch: Fetch recent mail
+  discover: Discover categories
+  review_categories: Review the categories
+  classify: Classify (the judge, then kNN)
+  label_approval: Label preview and approval
+  first_digest: First digest
+  review_queue: Review queue
+  enable_sweep: Keep it current
+  summary: What IRIS just did
+
+# How an account of each provider is connected. Setup never asks for a password or runs
+# an OAuth flow itself: each provider plugin owns its login, and setup resumes after it.
+providers:
+  gmail:
+    connect: iris auth gmail login --user {address}
+  imap:
+    connect: iris auth imap login --user {address}
+  # The synthetic mailbox (`iris email demo`); only inside a demo home, never the
+  # owner's own profile.
+  demo:
+    connect: ""
+
+fetch:
+  # The first fetch: the newest this-many messages, from at most this many days back.
+  # The scheduled sweep takes it from there.
+  max_messages: 500
+  cold_start_days: 90
+
+discover:
+  # Fewer emails than this and discovery is skipped (clusters would be noise); the
+  # owner can run `iris email bootstrap-categories` once more mail has arrived.
+  min_corpus: 40
+  # Subjects shown per proposed category in the review.
+  samples: 3
+
+classify:
+  # Emails the judge reads in setup (null: IRIS_EMAIL_JUDGE_MAX). The rest wait for the
+  # scheduled judge runs, hidden until judged.
+  judge_limit: null
+  # Released emails the kNN classifier files in setup.
+  knn_limit: 500
+
+label_approval:
+  # Sample subjects per label in the preview.
+  samples: 3
+  # The approval-queue row: its signal, and how long it waits for the owner before it
+  # lapses (setup then asks again).
+  signal: email.mailbox_writes
+  timeout_minutes: 10080
+  # Shown on the approval card and in the preview; {account} is the account id.
+  title: "Let IRIS label mail in {account}"
+  never: IRIS never archives, never marks read and never deletes on its own.
+  revoke: "Take it back any time: iris email writes revoke --account {account}"
+
+review_queue:
+  # Unsure emails listed in the review step.
+  samples: 5

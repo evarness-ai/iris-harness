@@ -1,0 +1,17 @@
+{
+  "name": "IRIS Console",
+  "short_name": "IRIS",
+  "description": "Talk to IRIS, approve what it is waiting on, and see how the harness is doing.",
+  "id": "/",
+  "scope": "/",
+  "start_url": "/chat",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c0f14",
+  "theme_color": "#0c0f14",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

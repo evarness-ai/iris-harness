@@ -1,0 +1,11 @@
+name: unit_converter
+version: 0.1.0
+description: A convert_units tool for lengths and temperatures.
+entrypoint: unit_converter:setup
+flavor: python
+trust: in-process
+provides:
+  - tool
+tools:
+  convert_units:
+    effect: read

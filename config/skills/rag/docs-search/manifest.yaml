@@ -1,0 +1,35 @@
+name: docs-search
+version: 0.1.0
+description: |
+  Document RAG (R0) — search the user's own indexed documents (markdown
+  notes, an Obsidian vault, etc.) and return matching passages WITH citations
+  back to the source file. IRIS indexes the user's existing files; it does not
+  own or duplicate them (connector model). Distinct from the auto-synthesised
+  knowledge wiki: these are user-provided source documents.
+author: iris-personal-assistant
+license: Apache-2.0
+default_enabled: true
+trust_level: first-party
+homepage: https://github.com/evarness-ai/iris-harness
+tools:
+  - name: search_documents
+    description: |
+      Search indexed user documents; returns passages with citations
+      (source file + section). Ground answers in the user's knowledge base.
+    governor_route: rag/read
+    args:
+      - name: query
+        type: string
+        required: true
+        description: What to look for in the user's documents.
+      - name: limit
+        type: int
+        required: false
+        default: 5
+        description: Max chunks to return.
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

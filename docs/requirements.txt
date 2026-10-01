@@ -1,0 +1,37 @@
+# The docs site's build dependencies (OSS plan R7): MkDocs with the Material theme.
+# A pip file, not part of the Poetry project: the site builds in its own venv
+# (.github/workflows/ci.yml `docs`; locally `uvx --with-requirements docs/requirements.txt
+# mkdocs build --strict`). Every package is pinned, the transitive ones too, so the
+# strict build means the same thing on every run; Dependabot bumps them.
+#
+# Regenerate after changing the top two lines:
+#   uv pip compile --python-version 3.12 --no-annotate --no-header <(printf 'mkdocs\nmkdocs-material\n')
+mkdocs==1.6.1
+mkdocs-material==9.7.7
+babel==2.18.0
+backrefs==8.0
+certifi==2026.7.22
+charset-normalizer==3.5.2
+click==8.5.0
+colorama==0.4.6
+ghp-import==2.1.0
+idna==3.20
+jinja2==3.1.6
+markdown==3.11
+markupsafe==3.0.3
+mergedeep==1.3.4
+mkdocs-get-deps==0.2.2
+mkdocs-material-extensions==1.3.1
+packaging==26.3
+paginate==0.5.7
+pathspec==1.1.1
+platformdirs==4.12.2
+pygments==2.21.0
+pymdown-extensions==12.1
+python-dateutil==2.9.0.post0
+pyyaml==6.0.3
+pyyaml-env-tag==1.1
+requests==2.34.2
+six==1.17.0
+urllib3==2.8.0
+watchdog==6.0.0

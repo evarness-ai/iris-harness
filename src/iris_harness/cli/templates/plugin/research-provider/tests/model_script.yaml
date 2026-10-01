@@ -1,0 +1,13 @@
+# The scripted model the test runs on: ordered rules, the first that matches answers
+# (see iris_harness.testing.use_fake_model). No model server, no network.
+rules:
+  - name: answer from the results
+    match:
+      user: '(?s)Observation:.*provider: __tmpl_tool.*About tide tables'
+    reply:
+      content: "Thought: I have results.\nFinal Answer: The first result is About tide tables."
+  - name: search
+    match:
+      user: "User: Search the web for tide tables"
+    reply:
+      content: "Thought: Search for it.\nAction: research\nAction Input: {\"query\": \"tide tables\", \"fetch_content\": false, \"max_results\": 2}"

@@ -1,0 +1,106 @@
+name: email-triage
+version: 0.1.0
+description: |
+  Classify locally-stored emails against the accepted categories for
+  the account. Per ADR-0021, the pipeline is embed → kNN top-3 →
+  Tier-3-local picks. Writes the result to
+  emails.classified_category + classified_confidence + classified_at
+  and emits the email.classified event.
+
+  Tracks 1H (tier_router wiring) and 1I (Chroma kNN over labeled
+  examples) extend the classifier without changing this skill's
+  external surface.
+author: iris-personal-assistant
+license: Apache-2.0
+default_enabled: true
+trust_level: first-party
+homepage: https://github.com/evarness-ai/iris-harness
+tools:
+  - name: classify_email_by_id
+    description: |
+      Classify a single email already persisted in data/email.db.
+      Looks the message up by id, runs the hybrid kNN+LLM pipeline,
+      writes the result back to the row, and fires email.classified.
+      Soft-fails per ADR-0021 §7 — never raises on per-email errors;
+      returns a status string describing what happened.
+    governor_route: email/classify
+    args:
+      - name: message_id
+        type: string
+        required: true
+        description: The provider-native message id, e.g. Gmail's payload.id.
+        examples:
+          - "18f3c2a1bc4d5e6f"
+  - name: run_email_triage
+    description: |
+      Process the backlog of unclassified emails for one account.
+      Returns a brief summary including the number processed, succeeded,
+      and soft-failed. Idempotent — already-classified rows are not
+      revisited.
+    governor_route: email/classify
+    args:
+      - name: account_id
+        type: string
+        required: true
+        description: The email_accounts.id slug, e.g. 'gmail:user.in@example.com'.
+        examples:
+          - "gmail:user.in@example.com"
+      - name: limit
+        type: int
+        required: false
+        default: 20
+        description: Cap on unclassified emails processed in this single call.
+        min: 1
+        max: 500
+  - name: email_inbox_summary
+    description: |
+      Summarise the inbox. view=triage (default): a single row of triage
+      state across email.db — counts of classified vs pending_review vs
+      unclassified mail. view=last_24h: one row per mailbox with its last
+      24 hours of mail grouped by triage category, largest first (the
+      morning digest's Inbox summary).
+    governor_route: email/read
+    args:
+      - name: account_id
+        type: string
+        required: false
+        description: |
+          email_accounts.id slug; when omitted, totals span all
+          accounts present in email.db.
+        examples:
+          - "gmail:user@gmail.com"
+      - name: view
+        type: enum
+        required: false
+        default: triage
+        options: ["triage", "last_24h"]
+        description: |
+          triage = classification bookkeeping; last_24h = per-mailbox
+          category mix of the last 24 hours.
+        examples: ["triage", "last_24h"]
+  - name: email_focus
+    description: |
+      The morning digest's Focus section — the last 24 hours of mail in the
+      owner's focus categories (Settings → Digest), newest first, minus
+      senders marked not useful; each line carries a not-useful link.
+    governor_route: email/read
+    args: []
+  - name: email_needs_reply
+    description: |
+      The morning digest's Needs reply section — emails the email judge put
+      in Needs reply that the owner has not answered, newest first, as
+      "## Needs reply (N)" then "Sender: subject" lines.
+    governor_route: email/read
+    args: []
+  - name: email_judged_yesterday
+    description: |
+      One line for the morning digest — how many emails the judge sorted
+      yesterday, by bucket, the Unsure ones and the ones still waiting.
+    governor_route: email/read
+    args: []
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

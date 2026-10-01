@@ -1,0 +1,6 @@
+# One CODEOWNER review is required on every PR (OSS plan R11). The last matching rule wins.
+
+*                                       @sathishksomasundaram
+
+# The governance kernel is always owned: a change here never merges without this review.
+/src/iris_harness/kernel/governance/    @sathishksomasundaram

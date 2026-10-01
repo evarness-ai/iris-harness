@@ -1,0 +1,24 @@
+# The scripted model the test runs on. Each rule: `match` (regexes over the call) and
+# `reply`; the first rule that matches answers. No `default:`, so a call nobody
+# scripted fails the test instead of being answered by something no one looked at.
+rules:
+  # The router picks the turn's intent from a JSON reply.
+  - name: route
+    match: {system: "request router"}
+    reply:
+      json: {intent: general}
+
+  # Second loop step: the tool's result is in the transcript, so answer from it.
+  - name: answer from the tool
+    match: {user: '(?s)Observation: (?P<line>10 km = [0-9.]+ mi)'}
+    reply:
+      content: "Thought: I have it.\nFinal Answer: {line}."
+
+  # First loop step: call the tool.
+  - name: call convert_units
+    match: {user: 'User: How many miles is 10 km'}
+    reply:
+      content: |-
+        Thought: Convert it.
+        Action: convert_units
+        Action Input: {"value": 10, "from_unit": "km", "to_unit": "mi"}

@@ -1,0 +1,16 @@
+# Gmail's own inbox tabs, mapped to IRIS topic paths (promo-classification grill,
+# decision 3). The gmail plugin applies this table when it parses a message: the
+# first `CATEGORY_*` label found here becomes `EmailMessage.vendor_category`, which
+# EmailStore stores as a `vendor` classification until IRIS triage classifies the row.
+#
+# Keys are Gmail label ids; a value is an ADR-0017 topic path, or null for "no
+# vendor path" (Primary mail is left for triage alone). Order matters when a message
+# carries more than one tab label: the first listed wins. The generic store never
+# sees these label names; this file and `vendor_categories.py` are their only home.
+
+tabs:
+  CATEGORY_PROMOTIONS: email/promotions
+  CATEGORY_SOCIAL: email/social
+  CATEGORY_UPDATES: email/updates
+  CATEGORY_FORUMS: email/forums
+  CATEGORY_PERSONAL: null

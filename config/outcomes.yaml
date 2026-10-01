@@ -1,0 +1,21 @@
+# Measured outcome signals (learning-observability.md §4.2).
+#
+# Two deterministic signals are ALWAYS recorded and need no config:
+#   - task_completed : the turn ran cleanly (no errors) — a real observable.
+#   - turn_tokens    : tokens spent, tagged with the resolved tier (per-tier cost).
+#
+# user_correction is the strongest negative signal but it is a SEMANTIC judgment
+# ("did the next turn correct the prior answer?"), so per the measure-don't-guess
+# principle it is model-driven, not a heuristic — and opt-in, because it costs an
+# LLM call on turns that look like corrections. When disabled, NO user_correction
+# signal is emitted (we never silently substitute a heuristic for a measurement).
+# It is recorded in shadow first so its precision can be measured before any
+# strategy trusts it.
+version: 1
+
+user_correction:
+  # Master opt-in for the model-driven correction judge. Env override:
+  # IRIS_LEARNING_CORRECTION_JUDGE (truthy). Default off.
+  enabled: false
+  # Only emit user_correction = 1 when the judge's confidence clears this floor.
+  confidence_floor: 0.6

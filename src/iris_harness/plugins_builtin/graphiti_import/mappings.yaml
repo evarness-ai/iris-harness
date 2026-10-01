@@ -1,0 +1,38 @@
+# Graphiti relations → core properties (ADR-0115 decision 11: an importer is a reader
+# plus a mappings file). Same DSL as config/memory/mappings.yaml, compiled against the
+# core ontology; `$subject` / `$object` are the edge's source and target nodes.
+#
+# A relation with no mapping here is REPORTED, never dropped. (PR 7, the learned layer,
+# will turn recurring unmapped relations into `graphiti:*` learned terms.)
+#
+# ASSUMPTION: edge names follow Graphiti's convention of SCREAMING_SNAKE_CASE relation
+# names chosen by its extraction prompt. The ones below are examples of common ones.
+
+mappings:
+  - id: graphiti_works_at
+    when: { source_type: graphiti_edge, key: [WORKS_AT, WORKS_FOR, EMPLOYED_BY] }
+    emit: { subject: $subject, predicate: works_at, object: { from: $object, class: Organization } }
+  - id: graphiti_works_on
+    when: { source_type: graphiti_edge, key: [WORKS_ON] }
+    emit: { subject: $subject, predicate: works_on, object: { from: $object, class: Project } }
+  - id: graphiti_lives_in
+    when: { source_type: graphiti_edge, key: [LIVES_IN, RESIDES_IN] }
+    emit: { subject: $subject, predicate: lives_in, object: { from: $object, class: Place } }
+  - id: graphiti_from
+    when: { source_type: graphiti_edge, key: [IS_FROM, BORN_IN, GREW_UP_IN] }
+    emit: { subject: $subject, predicate: hometown, object: { from: $object, class: City } }
+  - id: graphiti_citizen_of
+    when: { source_type: graphiti_edge, key: [CITIZEN_OF] }
+    emit: { subject: $subject, predicate: citizen_of, object: { from: $object, class: Country } }
+  - id: graphiti_spouse
+    when: { source_type: graphiti_edge, key: [MARRIED_TO, SPOUSE_OF] }
+    emit: { subject: $subject, predicate: spouse, object: { from: $object, class: Person } }
+  - id: graphiti_parent
+    when: { source_type: graphiti_edge, key: [PARENT_OF] }
+    emit: { subject: $subject, predicate: has_child, object: { from: $object, class: Person } }
+  - id: graphiti_researches
+    when: { source_type: graphiti_edge, key: [RESEARCHES, STUDIES] }
+    emit: { subject: $subject, predicate: researches, object: { from: $object, class: Topic } }
+  - id: graphiti_mentions
+    when: { source_type: graphiti_mention }
+    emit: { subject: $subject, predicate: mentions, object: { from: $object, class: Entity } }

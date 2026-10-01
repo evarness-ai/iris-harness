@@ -1,0 +1,85 @@
+name: iris-tasks
+version: 0.1.0
+description: |
+  Read-only views over data/tasks.db for the morning brief and harness
+  context. Mutations go through `iris task` / `iris goal` CLIs (see
+  ADR-0005), the app's /tasks routes, the planner plugin's add_task /
+  complete_task chat tools, and producer skills (email-followup,
+  finance-bills, ...) via TaskStore directly.
+author: iris
+license: Apache-2.0
+tools:
+  - name: list_open_tasks
+    description: |
+      Return open tasks ordered by priority desc, due_at asc. Excludes
+      followup-shaped tasks (those with wait_for set) so the brief can
+      surface "things I need to do" separately from "things I'm waiting on".
+      Expired tasks are never listed.
+    governor_route: task/read
+    args:
+      - name: limit
+        type: int
+        required: false
+        default: 10
+        description: Cap on rows returned.
+        min: 1
+        max: 100
+      - name: skip_due_by_today
+        type: bool
+        required: false
+        default: false
+        description: Leave out tasks due today or earlier (listed as due today / overdue).
+  - name: list_due_today
+    description: |
+      Return open or doing tasks whose due_at falls before the end of
+      today (local timezone). Sorted by due_at ascending. Expired tasks are
+      never listed; include_overdue=false lists only tasks due today.
+    governor_route: task/read
+    args:
+      - name: limit
+        type: int
+        required: false
+        default: 10
+        description: Cap on rows returned.
+        min: 1
+        max: 100
+      - name: include_overdue
+        type: bool
+        required: false
+        default: true
+        description: Also list tasks due before today.
+  - name: list_overdue
+    description: |
+      The open or doing tasks due before today (local timezone) that have not
+      expired, as one headed line: "## Overdue (2)" then
+      "- Renew registration · Call bank". Empty when nothing is overdue.
+    governor_route: task/read
+    args:
+      - name: limit
+        type: int
+        required: false
+        default: 10
+        description: Most titles named on the line.
+        min: 1
+        max: 100
+  - name: list_resolved_followups
+    description: |
+      Return open followup tasks whose wait_for_resolved_at is set but
+      status is still open or doing — the user has not yet acknowledged
+      them. Surfaced in the brief so the user can decide whether to
+      mark done or re-open the conversation.
+    governor_route: task/read
+    args:
+      - name: limit
+        type: int
+        required: false
+        default: 10
+        description: Cap on rows returned.
+        min: 1
+        max: 100
+requires:
+  python: ">=3.12"
+  packages: []
+  env_vars: []
+  config_files: []
+  agents: []

@@ -1,0 +1,186 @@
+name: email_workflows
+version: 0.1.0
+description: >-
+  Email WORKFLOWS, on top of the mailbox access the harness provides itself:
+  kNN-then-LLM triage of new mail, dynamic category discovery and acceptance,
+  kNN-gate measurement against a labelled holdout, followup detection and
+  auto-resolution, and the email -> wiki translator. Reading the mailbox is core --
+  the store, the inbox digest, search, the read tools and the sweep that keeps
+  email.db current all stay in the harness.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+cli: cli:register
+provides:
+  - tool
+# ADR-0110: the loop's email tools (built by the core email library, registered here).
+# Answers to these must come from a read tool, never from the model's memory.
+read_first_intents:
+  - email
+  - communication
+# Every read tool returns text the senders wrote (subjects, snippets, bodies, attachment
+# names), so each declares `content: external`: the retrieved-content injection guard
+# scans its result before the model sees it.
+tools:
+  search_inbox:
+    effect: read
+    content: external
+    pinned: true   # finance's guidance sends the model here on a miss; keep it on the menu
+  read_email:
+    effect: read
+    content: external
+  find_attachment:
+    effect: read
+    content: external
+  inbox_digest:
+    effect: read
+    content: external
+    # Returns the digest already narrated for the user, so a turn that is only "what's
+    # in my inbox" ends on it — no second model call to restate it, and no repeat.
+    answers_directly: true
+  list_by_category:
+    effect: read
+    content: external
+  analyze_inbox:
+    effect: read
+    content: external
+  # ADR-0118 step 5: the first destructive tool. Every call waits for the owner's
+  # itemised approval; the card lists each email by subject and sender.
+  trash_email:
+    effect: destructive
+    undo: restore_email
+    undo_window_days: 30   # Gmail keeps Trash for 30 days
+  # ADR-0118 amendment (2026-09-22): "delete my promo emails this week". Code picks the
+  # emails from the category and window the owner named (newest 200), nothing is guessed,
+  # and Trash is reversible, so the owner chose no card: it runs at once and its reply
+  # says how to undo it (restore_email with no ids restores the whole batch).
+  trash_category:
+    effect: write
+    confirm: never
+    # Its reply is the account: how many moved, a sample, how many are left, how to
+    # undo. Retold by qwen2.5 it lost the count and the remainder and said "deleted".
+    answers_directly: true
+  restore_email:
+    effect: write
+    confirm: never         # "undo that" is its own authorisation
+    # Its reply is the account (how many came back, a sample). Restated by qwen2.5 it
+    # became a 3,659-token list of all 200 restored emails: 79 s (2026-09-22).
+    answers_directly: true
+  # ADR-0118 amendment: sending is not data loss, so it stays a write, but it cannot be
+  # taken back, so every call waits for the owner's approval on the pinned card (the
+  # whole message: to, cc, subject, body). Approve sends exactly that; reject sends nothing.
+  send_email:
+    effect: write
+    approval: pinned
+
+# The kinds of dated item this plugin ages out (core/SDK boundary plan PR 5). The owner
+# tunes them in config/digest.yaml `expiry:` by the same key; read with
+# iris_harness.sdk.digest.expiry_days(key). Local days (IRIS_TZ) after the item's date.
+expiry:
+  needs_reply_days:
+    default: 3
+    description: Days a judged "needs reply" email stays in the digest (unless the owner
+      replies in its thread or re-buckets it).
+  unsure_card_days:
+    default: 7
+    description: Days an unanswered "What is this email?" card (the email judge's Unsure)
+      stays in the Action Center.
+
+# ADR-0120: every IRIS_* setting this plugin reads, for the settings catalog.
+settings:
+  IRIS_DEMO_HOME:
+    kind: path
+    default: null
+    applies: now
+    label: Email demo home
+    description: Where `iris email demo` keeps its own isolated IRIS home (default ~/.iris-demo);
+      never the owner's profile.
+    tab: none
+    editable: false
+    not_editable_reason: directory path
+  IRIS_EMAIL_DEFAULT_SENDER:
+    kind: str
+    default: null
+    applies: now
+    label: Default sending account
+    description: Names the connected mail account (address or account id) a new email is sent from
+      when no sender is given; if it names an unconnected account the send is refused, and when
+      unset the first account in sorted order is used.
+    tab: agents
+  IRIS_EMAIL_SEMANTIC_SEARCH:
+    kind: bool
+    default: true
+    applies: restart
+    label: Semantic email search
+    description: When on (default), the email tools search by meaning as well as by words, the
+      index follows new mail, and a heartbeat fills in older mail in small batches; 0 turns it
+      off.
+    tab: agents
+    agent: email
+  IRIS_EMAIL_JUDGE:
+    kind: bool
+    default: true
+    applies: next_run
+    label: Judge new email
+    description: When on (default), the email judge sorts each new non-promo email into Bill,
+      Event, Needs reply, FYI or Unsure three times a day, on a local model only. New email
+      stays hidden until it is judged, so off means new email waits and stays hidden.
+    tab: agents
+    agent: email
+  IRIS_EMAIL_JUDGE_LABELS:
+    kind: bool
+    default: true
+    applies: next_run
+    label: Label judged email in Gmail
+    description: When on (default), each judged email gets one IRIS/* label in Gmail (never
+      archived, never marked read); off keeps the judgments in IRIS only.
+    tab: agents
+    agent: email
+  IRIS_EMAIL_JUDGE_MAX:
+    kind: int
+    default: 100
+    applies: next_run
+    label: Emails judged per run
+    description: The most emails the judge reads in one run; the rest wait, hidden, and are
+      judged first next run.
+    tab: agents
+    agent: email
+  IRIS_EMAIL_JUDGE_UNSURE_BELOW:
+    kind: float
+    default: 0.7
+    applies: next_run
+    label: Unsure below this confidence
+    description: A judgment less sure than this is filed as Unsure and asked on an Action Center
+      card.
+    tab: agents
+    agent: email
+  IRIS_FOLLOWUP_ACTIONABLE_ROOTS:
+    kind: list
+    default: null
+    applies: now
+    label: Follow-up actionable categories
+    description: Comma-separated email category roots that may create follow-up tasks; unset uses
+      personal, work, finance, jobs, travel, community.
+    tab: agents
+# OSS plan R17: the console screens this plugin owns; gone from the nav when it is not mounted.
+webui:
+  screens:
+    # Inbox -> Judged (loop-proof PR 5): every email the judge sorted, and where the owner
+    # changes one (the same correction as the Action Center card). /api/v1/email/judgments.
+    - id: inbox
+      label: Inbox
+      route: /inbox
+      subtitle: What IRIS sorted each email into — change any of them
+      icon: mail
+      group: operations
+      order: 30
+    # Setup (OSS plan R4 + R17): the same onboarding steps as `iris email setup`, over
+    # /api/v1/email/onboarding. First in System: it is where a new install starts.
+    - id: setup
+      label: Setup
+      route: /setup
+      title: Email setup
+      subtitle: Connect a mailbox and walk the setup steps — nothing is written to it before you approve
+      icon: list-checks
+      group: system
+      order: 5

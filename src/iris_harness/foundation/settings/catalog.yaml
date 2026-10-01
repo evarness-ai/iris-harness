@@ -1,0 +1,1652 @@
+# The harness core's settings catalog (ADR-0120): every IRIS_* setting the core reads.
+#
+# A plugin's settings are NOT listed here; each plugin declares its own under
+# `settings:` in its manifest.yaml. The completeness test
+# (tests/unit/iris_harness/foundation/test_settings_store/test_catalog.py) fails when
+# the code reads an IRIS_* name that no catalog declares, or a catalog declares a name
+# nothing reads any more.
+#
+# applies: now (next call) | next_run (next heartbeat run) | restart (read at start or
+# cached). guarded: changing it needs the owner's confirm. editable: false for secrets,
+# paths, URLs, and settings with no production effect (their reason says so).
+
+settings:
+  IRIS_ACTIVITY_WORKERS:
+    kind: int
+    default: 1
+    applies: restart
+    label: Background activity workers
+    description: Sets how many worker threads the background ActivityRunner uses (minimum 1).
+    tab: advanced
+  IRIS_ADAPTIVE_TIERS:
+    kind: bool
+    default: false
+    applies: restart
+    label: Adaptive tier downshift
+    description: When on, the tier router's ResourceGovernor downshifts large local model tiers
+      under host pressure (RAM, CPU load, thermal throttling); skipped entirely if IRIS_DISABLE_ARBITER
+      is set.
+    tab: models
+  IRIS_AGENTIC_CORE_ENABLED:
+    kind: enum
+    default: '1'
+    applies: restart
+    label: AgenticCore rollout mode
+    description: 'Selects the AgenticCore governed loop rollout: 0/false/no/off turns it off, ''shadow''
+      runs it in shadow, anything else (default) turns it on.'
+    tab: features
+  IRIS_AGENTIC_CORE_P4:
+    kind: bool
+    default: false
+    applies: restart
+    label: Calendar/planner via agent loop
+    description: When on, routes the calendar and planner intents through the one governed agentic
+      loop (requires the base loop rollout on/shadow).
+    tab: features
+  IRIS_AGENT_SELF_MANAGEMENT:
+    kind: bool
+    default: false
+    applies: now
+    label: Agent self-management tools
+    description: Adds the ADR-0086 self-management ReAct tools (introspect the agent's own brain,
+      one of which compacts the conversation) to each turn's tool loop.
+    tab: agents
+  IRIS_ALLOWED_HOSTS:
+    kind: list
+    default: null
+    applies: restart
+    label: Extra allowed Host names
+    description: Comma-separated host names (host, host:port or a URL) the HTTP services answer to
+      besides the built-in ones (loopback, testserver, the compose service names, this machine's
+      hostname, the host of IRIS_PUBLIC_URL and their short names); any other Host is refused
+      with 400 (DNS rebinding). An IP literal is always accepted. '*' turns the check off.
+    tab: none
+    guarded: true
+    guard_reason: It widens which Host names the services answer to, the DNS-rebinding defense.
+    editable: false
+    not_editable_reason: URL/host setting
+  IRIS_API_HOST:
+    kind: url
+    default: 127.0.0.1
+    applies: now
+    label: Local services host
+    description: Host `iris serve` binds the IRIS API to (as scripts/start_iris.sh binds every
+      service), and the host health checks probe the local services on and the model inventory
+      queries Ollama's /api/tags on.
+    tab: none
+    editable: false
+    not_editable_reason: host address
+  IRIS_API_PORT:
+    kind: url
+    default: 8003
+    applies: restart
+    label: IRIS API port
+    description: Port `iris serve` binds the IRIS API to, and the port the health watch probes for
+      its /healthz endpoint (default 8003).
+    tab: none
+    editable: false
+    not_editable_reason: port
+  IRIS_API_URL:
+    kind: url
+    default: http://localhost:8003
+    applies: restart
+    label: IRIS API base URL
+    description: Base URL the CLI commands and the channel gateway use to reach the IRIS API (CLI
+      defaults vary between http://localhost:8003 and http://127.0.0.1:8003).
+    tab: none
+    editable: false
+    not_editable_reason: URL/host setting
+  IRIS_AUTH_SECRET:
+    kind: secret
+    default: null
+    applies: now
+    label: Shared auth secret
+    description: Shared bearer secret every request to the IRIS API, the governor and the channel
+      gateway must present, except their liveness probes (a paired device presents its own token
+      instead); unset or blank, those services refuse every such request rather than run open. The
+      learning eval sandbox forwards it (default 'eval-sandbox') into its container.
+    tab: none
+    guarded: true
+    guard_reason: It is the credential that decides who can authenticate to the API and channel
+      gateway.
+    editable: false
+    not_editable_reason: secret
+  IRIS_BEHAVIOR_BROAD_INTENTS:
+    kind: list
+    default: general,system,chat,other
+    applies: restart
+    label: Broad behavior intents
+    description: Comma-separated intents treated as catch-all when matching behavior files, so they
+      get the lower broad-intent weight instead of the full intent weight.
+    tab: advanced
+  IRIS_BEHAVIOR_BROAD_INTENT_WEIGHT:
+    kind: float
+    default: 0.5
+    applies: restart
+    label: Broad-intent behavior weight
+    description: Sets the relevance weight a catch-all intent (general, system, chat, other) contributes
+      when matching stored behaviors to a turn.
+    tab: advanced
+  IRIS_BEHAVIOR_INTENT_WEIGHT:
+    kind: float
+    default: 2.0
+    applies: restart
+    label: Behavior intent match weight
+    description: Sets the relevance weight a behavior file earns when one of its specific match_intents
+      matches the turn's intent.
+    tab: advanced
+  IRIS_BEHAVIOR_KEYWORD_WEIGHT:
+    kind: float
+    default: 1.0
+    applies: restart
+    label: Behavior keyword weight
+    description: Sets the relevance weight a keyword match contributes when deciding which behavior
+      files to inject into a turn.
+    tab: advanced
+  IRIS_BEHAVIOR_MATCH_THRESHOLD:
+    kind: float
+    default: 2.0
+    applies: restart
+    label: Behavior match threshold
+    description: Minimum relevance score the best-matching behavior must reach in match_behavior
+      before it is used for a turn; below it no behavior is selected.
+    tab: features
+  IRIS_BEHAVIOR_MINER:
+    kind: bool
+    default: false
+    applies: restart
+    label: Behavior pattern miner
+    description: Turns on the local-tier behavior-pattern miner (digital-twin layer 1) that proposes
+      behaviors for user approval; this env value is the default the learning console reverts to
+      on restart.
+    tab: agents
+  IRIS_CHANNEL_GATEWAY_PORT:
+    kind: url
+    default: 8006
+    applies: restart
+    label: Channel gateway port
+    description: Port the channel gateway listens on (launcher) and that the health check probes;
+      default 8006.
+    tab: none
+    editable: false
+    not_editable_reason: port
+  IRIS_CHANNEL_GATEWAY_TELEGRAM_ENABLED:
+    kind: bool
+    default: true
+    applies: restart
+    label: Gateway Telegram poller
+    description: When on, the channel gateway runs the Telegram long-poller; when off (and IRIS_RUNTIME_TELEGRAM_POLLER_ENABLED
+      unset) the runtime's own Telegram poller starts instead.
+    tab: guards
+    guarded: true
+    guard_reason: Changes which process polls the Telegram channel; both polling the same bot causes
+      409 conflicts.
+  IRIS_CHANNEL_GATEWAY_TRACING_ENABLED:
+    kind: bool
+    default: false
+    applies: restart
+    label: Channel gateway tracing
+    description: Sets up Phoenix/OTEL tracing for the channel gateway service at startup.
+    tab: advanced
+  IRIS_COMPACTION_KEEP_RECENT:
+    kind: int
+    default: 10
+    applies: restart
+    label: Compaction keeps recent turns
+    description: Sets how many of the most recent conversation turns are kept verbatim when the
+      conversation is compacted.
+    tab: advanced
+  IRIS_COMPACTION_RATIO:
+    kind: float
+    default: 0.8
+    applies: restart
+    label: Conversation compaction ratio
+    description: Fraction of the compactor's token budget the running history must reach before
+      it is compacted (values outside 0-1 fall back to 0.8); also sizes the kept-verbatim window.
+    tab: features
+  IRIS_COMPACTION_THRESHOLD:
+    kind: int
+    default: 20
+    applies: restart
+    label: Conversation compaction threshold
+    description: Turn-count floor at which a conversation is compacted into a summary (with the
+      token budget also able to trigger compaction).
+    tab: advanced
+  IRIS_COMPACTION_TOKEN_BUDGET:
+    kind: int
+    default: null
+    applies: restart
+    label: Compaction token budget
+    description: Sets the token budget at which the conversation compactor summarises older turns;
+      unset uses a budget derived from the communication tier's context window.
+    tab: models
+  IRIS_CONFIG_DIR:
+    kind: path
+    default: null
+    applies: restart
+    label: Config directory
+    description: Points the harness at the directory holding its YAML config (memory, skills, profiles,
+      governance, finance categories, plugin dump); cached after first read. Unset resolves, in order,
+      to the checkout's config/ when running from a checkout, else the defaults shipped inside the
+      installed package (foundation/paths.py config_dir).
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_CRYSTALLIZE_PREFLIGHT:
+    kind: bool
+    default: false
+    applies: restart
+    label: Crystallize replay preflight
+    description: When on, each newly crystallized skill proposal is replayed through an isolated
+      eval runtime and quarantined as preflight_failed if it fails quality.
+    tab: agents
+  IRIS_CURATOR_ESCALATION:
+    kind: bool
+    default: false
+    applies: restart
+    label: Tier escalation judge
+    description: When truthy, builds the escalation judge that grades answers and (in enforce mode)
+      re-runs capability gaps at a stronger tier; the env can only turn it on, config/escalation.yaml
+      enabled:true also turns it on.
+    tab: models
+  IRIS_CURATOR_ESCALATION_CLOUD:
+    kind: bool
+    default: false
+    applies: restart
+    label: Cloud escalation allowed
+    description: When on (or cloud.allow in escalation.yaml), the escalation judge may escalate
+      a turn to a cloud tier for content classified as eligible (default only 'public'; 'secret'
+      never).
+    tab: guards
+    guarded: true
+    guard_reason: Turning it on lets turn content be sent to a cloud model on escalation.
+  IRIS_CURATOR_ESCALATION_MODE:
+    kind: enum
+    default: shadow
+    applies: restart
+    label: Escalation judge mode
+    description: 'Overrides the escalation judge mode from config/escalation.yaml: ''shadow'' only
+      diagnoses and records, ''enforce'' lets the judge act (escalate) when it is enabled; other
+      values are ignored.'
+    tab: models
+    guarded: true
+    guard_reason: Enforce mode lets the judge escalate answers to other (possibly cloud) tiers,
+      raising spend and egress.
+  IRIS_CURATOR_ESCALATION_PRIORS:
+    kind: bool
+    default: false
+    applies: restart
+    label: Learned start-tier priors
+    description: When on (or escalation.yaml priors.enabled), applies start-tier priors mined from
+      escalation history to the router instead of running them in shadow.
+    tab: models
+    guarded: true
+    guard_reason: Applying learned priors can start turns on a higher model tier, which may raise
+      spend or use a cloud model.
+  IRIS_CURATOR_FAITHFULNESS_LLM:
+    kind: bool
+    default: false
+    applies: restart
+    label: Faithfulness judge
+    description: Builds an LLM faithfulness judge for the ResponseCurator's strict mode so answers
+      are checked against their sources.
+    tab: features
+  IRIS_CURATOR_GROUNDING_LLM:
+    kind: bool
+    default: false
+    applies: restart
+    label: Grounding judge
+    description: When on, an LLM grounding judge client is built for the curator to check responses
+      that carry retrieved context.
+    tab: features
+  IRIS_CURATOR_LEAK_JUDGE:
+    kind: bool
+    default: true
+    applies: restart
+    label: Leak judge
+    description: When not set to 0/false/no/off, builds an LLM leak judge that may clear responses
+      the deterministic dump-phrase guard flagged; when off, that guard's halt stands.
+    tab: guards
+    guarded: true
+    guard_reason: turning it off weakens the check that stops private data leaking into answers
+  IRIS_CURATOR_OUTPUT_SAFETY:
+    kind: bool
+    default: false
+    applies: restart
+    label: Output safety guard
+    description: When on, builds the Llama Guard 3 output-safety judge the curator uses to check
+      responses (shadow/warn-only unless enforce categories are configured).
+    tab: guards
+    guarded: true
+    guard_reason: It is an output safety guard; turning it off removes that check.
+  IRIS_CURATOR_OUTPUT_SAFETY_TIMEOUT_S:
+    kind: float
+    default: 12.0
+    applies: restart
+    label: Output safety guard timeout
+    description: Per-call time budget in seconds (clamped 1-60) for the output-safety guard, which
+      fails open on timeout.
+    tab: guards
+    guarded: true
+    guard_reason: The guard fails open on timeout, so a smaller budget makes unsafe output easier
+      to let through.
+  IRIS_DATA_DIR:
+    kind: path
+    default: data
+    applies: restart
+    label: Data directory
+    description: Relocates every local data store (memory.db, chroma, tasks.db, finance and email
+      stores, etc.).
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_DEPLOYMENT_LABEL:
+    kind: str
+    default: ''
+    applies: now
+    label: Deployment label
+    description: Sets the deployment name returned to the web console, which shows it as a badge;
+      empty when unset.
+    tab: advanced
+  IRIS_DISABLE_ARBITER:
+    kind: bool
+    default: false
+    applies: restart
+    label: Disable resource arbiter
+    description: Any non-empty value (even 0) skips attaching the Ollama arbiter ResourceGovernor
+      to the tier router.
+    tab: models
+  IRIS_DISABLE_WARMUP:
+    kind: bool
+    default: false
+    applies: restart
+    label: Disable model warm-up
+    description: When set to any non-empty value, skips the background warm-up calls that pre-load
+      the router and executor models at startup (the playground and eval harness also set it for
+      their own runtimes).
+    tab: advanced
+  IRIS_EMBED_BACKEND:
+    kind: enum
+    default: onnx
+    applies: now
+    label: Corpus embedding backend
+    description: 'Chooses the embedding backend for corpus embeddings: ''onnx'' (the shared ONNX
+      MiniLM, default model only) or ''sentence-transformers'' (needs the optional ML extra); any
+      other value raises an error.'
+    tab: none
+    editable: false
+    not_editable_reason: switching it makes the stored vectors unusable until a reindex
+  IRIS_ENABLE_COPILOT_BACKEND:
+    kind: bool
+    default: false
+    applies: restart
+    label: GitHub Copilot backend
+    description: Opts in to the GitHub Copilot cloud LLM provider (providers report available when
+      set; copilot_auth requires exactly '1' before any network call); errors.py:20 only matches
+      it in an error message.
+    tab: models
+    guarded: true
+    guard_reason: Enables a cloud LLM provider, so prompts can leave the machine and usage is billed.
+  IRIS_EVALUATOR_PORT:
+    kind: url
+    default: 8090
+    applies: restart
+    label: Evaluator port
+    description: Port where the remote governance evaluator sidecar is probed for /healthz.
+    tab: none
+    editable: false
+    not_editable_reason: port
+  IRIS_EVAL_SANDBOX:
+    kind: enum
+    default: effect
+    applies: restart
+    label: Eval sandbox mode
+    description: 'Chooses how skill-proposal pre-flight replays are contained: effect (neutralize
+      side effects), docker (full container), or off (no containment).'
+    tab: guards
+    guarded: true
+    guard_reason: Setting it to off removes side-effect containment from pre-flight eval replays.
+  IRIS_FACT_EXTRACTION_MODE:
+    kind: enum
+    default: llm
+    applies: now
+    label: Fact extraction mode
+    description: Set to regex to extract user facts with regex patterns instead of the LLM extractor;
+      any other value uses the LLM.
+    tab: features
+  IRIS_FACT_HISTORY_RETENTION_DAYS:
+    kind: int
+    default: 180
+    applies: now
+    label: Fact history retention days
+    description: Sets the default age in days used by the `iris facts retention` command when no
+      --older-than value is given.
+    tab: advanced
+  IRIS_FAKE_MODEL_SCRIPT:
+    kind: path
+    default: null
+    applies: now
+    label: Fake model script
+    description: The YAML script the scripted fake model (provider `fake`) answers from when no
+      script was installed in-process (iris_harness.testing does that).
+    tab: none
+    editable: false
+    not_editable_reason: file path
+  IRIS_FEEDBACK_CAPTURE:
+    kind: bool
+    default: false
+    applies: now
+    label: Answer feedback (thumbs)
+    description: When on, the API reports feedback_capture=true so the web UI shows the thumbs up/down
+      answer-feedback control.
+    tab: features
+  IRIS_FEEDBACK_CLARIFY:
+    kind: bool
+    default: false
+    applies: now
+    label: Judge-gated clarify nudge
+    description: When exactly '1', appends one gentle invitation to refine to an answer when the
+      judge or router signals uncertainty (never on a confident answer).
+    tab: features
+  IRIS_FILEMANAGER_AGENT:
+    kind: bool
+    default: false
+    applies: restart
+    label: FileManager agent loop
+    description: When on, registers a first-class filemanager agent to answer the files intent (requires
+      the base loop rollout on/shadow).
+    tab: agents
+    agent: filemanager
+  IRIS_GENERAL_TOOL_MAX_TURNS:
+    kind: int
+    default: 4
+    applies: now
+    label: General tool loop budget
+    description: Base number of tool turns (bounded 1-128) the general agent loop may take before
+      stopping; the cap var lifts it for continuation/auth-related queries.
+    tab: advanced
+  IRIS_GENERAL_TOOL_MAX_TURNS_CAP:
+    kind: int
+    default: 8
+    applies: now
+    label: General tool-loop turn cap
+    description: Upper bound (clamped 1-128) on tool-call turns in the general tool loop, including
+      the adaptive bump.
+    tab: models
+  IRIS_GOVERNANCE_ALLOWED_TOOLS:
+    kind: list
+    default: null
+    applies: restart
+    label: Governance tool allowlist
+    description: Comma-separated exact tool names the governance kernel allows; unset means no allowlist
+      (all tools).
+    tab: guards
+    guarded: true
+    guard_reason: Changes which tools the governance kernel lets run.
+  IRIS_GOVERNANCE_APPROVALS_ENABLED:
+    kind: bool
+    default: true
+    applies: restart
+    label: Governance approval queue
+    description: When on, require_approval verdicts enqueue an approval and notify channels; when
+      off, halts are advisory only.
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off makes governance halts advisory with no approval queued.
+  IRIS_GOVERNANCE_AUDIT_DB_PATH:
+    kind: path
+    default: null
+    applies: restart
+    label: Governance audit DB path
+    description: 'Overrides where the governance audit ledger database is stored (default: governance
+      data dir/audit.db).'
+    tab: none
+    editable: false
+    not_editable_reason: file path
+  IRIS_GOVERNANCE_BLOCKED_TOOLS:
+    kind: list
+    default: null
+    applies: restart
+    label: Blocked tools
+    description: Comma-separated tool names the governance kernel blocks.
+    tab: guards
+    guarded: true
+    guard_reason: Removing names from the list lets previously blocked tools run.
+  IRIS_GOVERNANCE_COMMAND_SANDBOX:
+    kind: bool
+    default: true
+    applies: restart
+    label: Command sandbox
+    description: Registers the governance CommandSandbox (on by default); 0/false/no/off disables
+      it without dropping the rest of the kernel.
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off removes the sandbox on shell commands the agent runs.
+  IRIS_GOVERNANCE_CONFIRM_ONCE_TOOLS:
+    kind: list
+    default: null
+    applies: restart
+    label: Extra ask-first tools
+    description: Comma-separated tool names that must ask for confirmation once, added on top of
+      each tool's own declaration; unset or 'none' adds nothing.
+    tab: guards
+    guarded: true
+    guard_reason: 'Governance setting: removing names drops confirmation prompts an operator added.'
+  IRIS_GOVERNANCE_COST_ENFORCE:
+    kind: bool
+    default: true
+    applies: restart
+    label: Enforce daily cost cap
+    description: When on, a call that would pass the daily cost cap is refused; off only records
+      spend.
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off lets LLM spend exceed the daily cap.
+  IRIS_GOVERNANCE_COST_LEDGER_DB_PATH:
+    kind: path
+    default: null
+    applies: restart
+    label: Cost ledger database
+    description: Path of the SQLite cost ledger the cost limiter writes and the cost summary reads;
+      unset uses CostStore's default location.
+    tab: none
+    editable: false
+    not_editable_reason: file path
+  IRIS_GOVERNANCE_COST_LIMITER_ENABLED:
+    kind: bool
+    default: false
+    applies: restart
+    label: Cost limiter
+    description: When truthy, registers the cost limiter, which records LLM spend and (with cost
+      enforce on) refuses calls past the daily cap.
+    tab: guards
+    guarded: true
+    guard_reason: Controls the daily LLM spend ledger and cap.
+  IRIS_GOVERNANCE_DAILY_COST_CAP_USD:
+    kind: float
+    default: 5.0
+    applies: restart
+    label: Daily cost cap (USD)
+    description: Daily spend cap in USD the cost limiter enforces when IRIS_GOVERNANCE_COST_LIMITER_ENABLED
+      is on (unparseable values fall back to $5.00).
+    tab: guards
+    guarded: true
+    guard_reason: Raising it raises the allowed daily spend.
+  IRIS_GOVERNANCE_DISPLAY_MASK:
+    kind: bool
+    default: true
+    applies: now
+    label: Email display masking
+    description: Masks email addresses in displayed text and streams (on unless explicitly turned
+      off); the audit ledger keeps originals.
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off shows full email addresses in displayed output.
+  IRIS_GOVERNANCE_DRIFT_EXEMPTIONS_DB_PATH:
+    kind: path
+    default: null
+    applies: restart
+    label: Drift exemptions DB path
+    description: Overrides where approved goal-drift exemptions are stored; unset uses the governance
+      data dir drift_exemptions.db.
+    tab: none
+    guarded: true
+    guard_reason: Pointing at another file changes which goal-drift exemptions are honoured.
+    editable: false
+    not_editable_reason: path
+  IRIS_GOVERNANCE_ENABLED:
+    kind: bool
+    default: true
+    applies: restart
+    label: Governance kernel
+    description: Enables the governance kernel (secure by default; only an explicit 0/false/no/off
+      disables it).
+    tab: guards
+    guarded: true
+    guard_reason: Disabling it removes the whole governance kernel.
+  IRIS_GOVERNANCE_EVALUATOR_MODE:
+    kind: enum
+    default: local
+    applies: restart
+    label: Governance evaluator mode
+    description: Set to remote to have the kernel use the remote evaluator sidecar (IRIS_GOVERNANCE_EVALUATOR_URL)
+      instead of the in-process evaluator registry; health checks then also probe the sidecar.
+    tab: guards
+    guarded: true
+    guard_reason: Moves governance evaluation to an external sidecar service.
+  IRIS_GOVERNANCE_EVALUATOR_TIMEOUT_S:
+    kind: float
+    default: 5.0
+    applies: restart
+    label: Remote evaluator timeout
+    description: Sets the timeout in seconds for calls to the remote governance evaluator; on failure
+      local-tier runs fail open and cloud-tier runs fail closed.
+    tab: guards
+    guarded: true
+    guard_reason: A shorter timeout makes local-tier governance checks fail open more often.
+  IRIS_GOVERNANCE_EVALUATOR_URL:
+    kind: url
+    default: http://127.0.0.1:8090
+    applies: restart
+    label: Remote evaluator URL
+    description: Base URL of the remote governance evaluator used when evaluator mode is 'remote';
+      the CLI evaluator commands also use it.
+    tab: none
+    guarded: true
+    guard_reason: It changes which service makes governance evaluation decisions.
+    editable: false
+    not_editable_reason: URL/host setting
+  IRIS_GOVERNANCE_FS_JAIL:
+    kind: bool
+    default: true
+    applies: restart
+    label: Filesystem jail
+    description: Registers the governance FSJail (on by default); 0/false/no/off disables it without
+      dropping the rest of the kernel.
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off removes the filesystem jail on agent file access.
+  IRIS_GOVERNANCE_GOAL_DRIFT_MAX_DISTANCE:
+    kind: float
+    default: null
+    applies: restart
+    label: Goal drift max distance
+    description: Sets the goal_drift signal's max distance (0.0-2.0) before a turn is flagged; unset
+      keeps the signal default of 0.90.
+    tab: guards
+    guarded: true
+    guard_reason: Raising the threshold lets more off-goal turns pass the drift guard.
+  IRIS_GOVERNANCE_JUDGE_CLOUD_OPT_IN:
+    kind: bool
+    default: false
+    applies: restart
+    label: Cloud safety judge opt-in (old)
+    description: Let judge_from_env's judge use tier_3 (cloud); production does not build that judge.
+    tab: none
+    editable: false
+    not_editable_reason: superseded by IRIS_GOVERNANCE_JUDGE_TIER, which the wired judge reads
+  IRIS_GOVERNANCE_JUDGE_ENABLED:
+    kind: bool
+    default: false
+    applies: now
+    label: Governance safety judge
+    description: After every agent run that used tools, a background judge scores the trace and the
+      answer for hallucination, goal alignment, tool misuse and danger, on the model IRIS_GOVERNANCE_JUDGE_TIER
+      picks; a halt recommendation alerts your channels, the rest go to the audit log.
+    tab: guards
+    guarded: true
+    guard_reason: turning it off stops the post-run safety review of every tool-using run
+  IRIS_GOVERNANCE_JUDGE_MODEL_TIER:
+    kind: enum
+    default: tier_2
+    applies: restart
+    label: Governance judge tier (old)
+    description: Picked a governance tier label for the judge built by judge_from_env, which production
+      does not use.
+    tab: none
+    editable: false
+    not_editable_reason: superseded by IRIS_GOVERNANCE_JUDGE_TIER, which the wired judge reads
+  IRIS_GOVERNANCE_JUDGE_TIMEOUT_S:
+    kind: float
+    default: 30.0
+    applies: now
+    label: Safety judge timeout (s)
+    description: How long one post-run review may take before it is recorded as a judge failure (non-positive
+      or invalid values fall back to 30).
+    tab: guards
+  IRIS_GOVERNANCE_JUDGE_TIER:
+    kind: str
+    default: run
+    applies: now
+    label: Safety judge model
+    description: 'Which model reviews a run: ''run'' judges each run on the same route the run used
+      (a run that stayed on local models is judged on local models); any tier name from llm_tiers.yaml (e.g. tier2, private, tier3),
+      local or cloud, judges every run on that tier. An unknown name falls back to ''run''.'
+    tab: guards
+    guarded: true
+    guard_reason: a tier other than 'run' sends every run's trace, tool results included, to that
+      model, which may be a cloud model
+  IRIS_GOVERNANCE_LOOP_DETECT_ENABLED:
+    kind: bool
+    default: false
+    applies: restart
+    label: Loop detection
+    description: When truthy, builds an embedder and registers the governance loop-detection signal;
+      off by default.
+    tab: guards
+    guarded: true
+    guard_reason: It is a governance signal; turning it off removes loop detection.
+  IRIS_GOVERNANCE_MCP_ALLOWLIST:
+    kind: bool
+    default: true
+    applies: restart
+    label: MCP allowlist
+    description: When on, the MCP allowlist hook enforces mcp-servers.yaml governance; 0 disables
+      the hook entirely.
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off disables the MCP server allowlist guard.
+  IRIS_GOVERNANCE_NETWORK_EGRESS:
+    kind: bool
+    default: true
+    applies: restart
+    label: Network egress control
+    description: Enables the governance NetworkEgress control; 0/false/no/off disables it.
+    tab: guards
+    guarded: true
+    guard_reason: Disabling it removes network egress control.
+  IRIS_GOVERNANCE_OWNER_PII:
+    kind: enum
+    default: 'off'
+    applies: restart
+    label: Owner-PII guards
+    description: 'Owner-PII masking across the guards (ADR-0125): off (default) or shadow, which audits
+      what each guard would do with the owner''s name, email, phone, address and handles and
+      changes nothing (read it with iris governance pii-shadow). Any other value, enforce included,
+      runs shadow with a startup warning; enforce arrives kind by kind in PR 5.'
+    tab: guards
+    guarded: true
+    guard_reason: Changes what the governance kernel records about the owner's identity.
+  IRIS_GOVERNANCE_PROMPT_GUARD:
+    kind: bool
+    default: false
+    applies: restart
+    label: Prompt / threat guard
+    description: When truthy, installs the inbound and retrieved-content prompt-injection guard
+      hooks using config/governance/threat-detection.yaml.
+    tab: guards
+    guarded: true
+    guard_reason: Toggles the prompt-injection guard on inbound and retrieved content.
+  IRIS_GOVERNANCE_INPUT_SAFETY:
+    kind: bool
+    default: false
+    applies: restart
+    label: Input safety screen
+    description: When truthy, screens every user turn for hazards (self-harm, violence, ...)
+      with the output guard's Llama Guard model before anything answers it, deterministic
+      handlers included. Follows config/governance/threat-detection.yaml mode (shadow logs,
+      enforce refuses).
+    tab: guards
+    guarded: true
+    guard_reason: Toggles the hazard screen on every user turn.
+  IRIS_GOVERNANCE_REDACTION_ENABLED:
+    kind: bool
+    default: false
+    applies: restart
+    label: Secret redaction
+    description: When truthy, builds the vault store the governance kernel uses to redact stored
+      secrets from content.
+    tab: guards
+    guarded: true
+    guard_reason: Turns the secret-redaction guard on or off.
+  IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER:
+    kind: bool
+    default: false
+    applies: restart
+    label: Side-effect ledger
+    description: When on, the governance kernel records tool side effects in a SideEffectLedger
+      database (default ~/.local/share/iris/side_effects.db).
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off stops governance recording of side effects.
+  IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH:
+    kind: path
+    default: null
+    applies: restart
+    label: Side-effect ledger DB path
+    description: SQLite path for the governance side-effect ledger when IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER
+      is on; unset uses the ledger's default (~/.local/share/iris/side_effects.db per docstring).
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_GOVERNANCE_TRUSTED_CLOUD_FOR:
+    kind: list
+    default: null
+    applies: restart
+    label: Trusted cloud data classes
+    description: Comma-separated data classes ('personal', 'internal') the egress gate lets reach
+      cloud models; other values are dropped.
+    tab: guards
+    guarded: true
+    guard_reason: Lets personal/internal data reach a cloud model.
+  IRIS_GOVERNANCE_VAULT_DB_PATH:
+    kind: path
+    default: null
+    applies: restart
+    label: Redaction vault DB path
+    description: Overrides the database path of the vault used for secret redaction.
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_GOVERNOR_AUDIT_DB:
+    kind: path
+    default: null
+    applies: restart
+    label: Governor audit database
+    description: Path of the governor service's audit database; unset uses the service's repo default.
+    tab: none
+    editable: false
+    not_editable_reason: file path
+  IRIS_GOVERNOR_POLICY_PATH:
+    kind: path
+    default: null
+    applies: restart
+    label: Governor policy file
+    description: Path to the policy file the standalone governor service loads instead of the repository
+      default.
+    tab: none
+    guarded: true
+    guard_reason: A different policy file changes what the governor allows.
+    editable: false
+    not_editable_reason: File path
+  IRIS_GOVERNOR_PORT:
+    kind: url
+    default: 8080
+    applies: restart
+    label: Governor port
+    description: Port the governor service listens on (launcher) and that the health check probes;
+      default 8080.
+    tab: none
+    editable: false
+    not_editable_reason: port
+  IRIS_HEALTH_ENABLED:
+    kind: bool
+    default: true
+    applies: next_run
+    label: Health watch
+    description: Master switch for the health subsystem; off makes the health heartbeat skip.
+    tab: health
+  IRIS_HEALTH_NET_PROBE:
+    kind: bool
+    default: false
+    applies: next_run
+    label: Live credential probes
+    description: When on, credential health checks make live network probes outside a manual refresh.
+    tab: health
+  IRIS_HEALTH_WATCH_ENABLED:
+    kind: bool
+    default: null
+    applies: restart
+    label: Health watch
+    description: Overrides the enabled flag from config/health_watch.yaml (which defaults to true);
+      a falsy value turns the connector health watcher off.
+    tab: health
+  IRIS_HOME:
+    kind: path
+    default: ~/.iris
+    applies: restart
+    label: IRIS home directory
+    description: Relocates the identity tree, plugin home, session logs and (when set) the governance
+      data/config dirs.
+    tab: none
+    editable: false
+    not_editable_reason: directory path
+  IRIS_INTENTION_ROLLUP:
+    kind: bool
+    default: false
+    applies: restart
+    label: Intention rollup analyst
+    description: Turns on the local-tier intention-rollup analyst (digital-twin layer 3) that proposes
+      rolled-up goals for approval; this env value is the default the learning console reverts to
+      on restart.
+    tab: agents
+  IRIS_INTENT_ROUTER_SEMANTIC:
+    kind: bool
+    default: false
+    applies: restart
+    label: Semantic intent routing
+    description: When on, an embedding classifier becomes the primary intent router (deferring to
+      keyword/LLM when unsure) and calendar create-intent uses it.
+    tab: features
+  IRIS_INTENT_ROUTER_SEMANTIC_MARGIN:
+    kind: float
+    default: 0.05
+    applies: restart
+    label: Semantic router margin
+    description: How far the winning intent must beat the runner-up for the semantic intent classifier
+      to decide instead of deferring.
+    tab: models
+  IRIS_INTENT_ROUTER_SEMANTIC_THRESHOLD:
+    kind: float
+    default: 0.42
+    applies: restart
+    label: Semantic intent threshold
+    description: Sets the minimum similarity the semantic intent classifier needs to decide an intent
+      itself (only used when IRIS_INTENT_ROUTER_SEMANTIC=1).
+    tab: models
+  IRIS_INTERACTIVE_SESSION:
+    kind: bool
+    default: true
+    applies: now
+    label: Interactive CLI approvals
+    description: When set to 0, approval requests are not prompted on the terminal even when stdin
+      is a TTY.
+    tab: none
+    editable: false
+    not_editable_reason: CLI/terminal-only switch; the server process has no TTY
+  IRIS_INTERCEPTS_CONFIG:
+    kind: path
+    default: null
+    applies: restart
+    label: Intercepts config file
+    description: Path to the intercept chain YAML; when unset uses intercepts.yaml in the
+      resolved config directory (IRIS_CONFIG_DIR, else the checkout's config/, else the packaged defaults).
+    tab: none
+    editable: false
+    not_editable_reason: File path
+  IRIS_LEARNING_ANALYST:
+    kind: bool
+    default: false
+    applies: restart
+    label: Learning analyst
+    description: Turns on the local-tier agentic learning analyst that interprets learning telemetry
+      into a report (never acts); this env value is the default the learning console reverts to
+      on restart.
+    tab: agents
+  IRIS_LEARNING_CORRECTION_JUDGE:
+    kind: bool
+    default: false
+    applies: restart
+    label: User-correction judge
+    description: When on (or outcomes.yaml user_correction.enabled), spends a governed LLM call
+      on turns that look like corrections to judge whether the prior answer was corrected.
+    tab: agents
+  IRIS_LESSON_CAPTURE_ENABLED:
+    kind: bool
+    default: true
+    applies: restart
+    label: Lesson capture
+    description: Enables capturing lessons into memory; 0/false/False disables it.
+    tab: features
+  IRIS_LESSON_DOMAIN_ALLOW:
+    kind: list
+    default: null
+    applies: restart
+    label: Lesson domain allowlist
+    description: Comma-separated domains; when set, only lessons whose domain is in the list are
+      captured/recalled.
+    tab: agents
+  IRIS_LESSON_DOMAIN_BLOCK:
+    kind: list
+    default: null
+    applies: restart
+    label: Blocked lesson domains
+    description: Comma-separated lesson domains excluded when retrieving lessons for a turn.
+    tab: agents
+  IRIS_LESSON_TOP_K:
+    kind: int
+    default: 3
+    applies: restart
+    label: Lessons per turn
+    description: Default number of lessons LessonCapture retrieves (negative values clamp to 0;
+      invalid falls back to 3).
+    tab: agents
+  IRIS_LLM_PROVIDER:
+    kind: str
+    default: null
+    applies: restart
+    label: Run every tier on one provider
+    description: Puts every model tier on this provider, which must be declared in the providers
+      block of llm_tiers.yaml; `fake` runs everything on the scripted fake model (tests and `iris
+      email demo`), offline and deterministic.
+    tab: none
+    editable: false
+    not_editable_reason: test and demo runs only; a real deployment chooses providers per tier
+  IRIS_LOG_LEVEL:
+    kind: enum
+    default: INFO
+    applies: restart
+    label: Log level
+    description: Sets the root logging level (e.g. DEBUG, INFO, WARNING); unknown names fall back
+      to INFO.
+    tab: advanced
+  IRIS_LOG_PROMPT_CAP:
+    kind: int
+    default: 8192
+    applies: now
+    label: Logged prompt cap
+    description: Most characters of each LLM prompt message written to the session log (the
+      middle is cut beyond it). Raise it to capture whole ReAct prompts for a model bake-off;
+      values below 8192 are ignored.
+    tab: advanced
+  IRIS_MCP_KEYS_DIR:
+    kind: path
+    default: ~/.config/iris/mcp-keys
+    applies: now
+    label: MCP keys directory
+    description: Directory where the mcp CLI keeps its signing keys.
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_MCP_SERVERS_CONFIG_PATH:
+    kind: path
+    default: config/coding-agent/mcp-servers.yaml
+    applies: restart
+    label: MCP servers config
+    description: Path of the mcp-servers.yaml governance map used by the MCP allowlist hook; missing
+      file runs the hook in degraded allow+warn mode.
+    tab: none
+    guarded: true
+    guard_reason: It points the MCP allowlist at a different governance map.
+    editable: false
+    not_editable_reason: file path
+  IRIS_MEMORY_MAX_PROFILE_CHARS:
+    kind: int
+    default: 8000
+    applies: restart
+    label: Profile context char cap
+    description: Maximum characters of the curated USER.md profile injected into the memory context.
+    tab: advanced
+  IRIS_MEMORY_MIN_FACT_CONFIDENCE:
+    kind: float
+    default: 0.35
+    applies: restart
+    label: Min fact confidence
+    description: Facts below this confidence are dropped from memory recall; 0.0 stops dropping.
+    tab: features
+  IRIS_MEMORY_RECALL_MAX_DISTANCE:
+    kind: float
+    default: 1.45
+    applies: restart
+    label: Memory recall max distance
+    description: Relevance cutoff for cross-session recall and memory_search fact results; results
+      farther than this distance are dropped.
+    tab: advanced
+  IRIS_MEMORY_RECALL_MODE:
+    kind: enum
+    default: push
+    applies: now
+    label: Memory recall mode
+    description: How turns from OTHER conversations reach a prompt. push (default) puts up to 4
+      related turns in every prompt; pointer puts a one-line note naming up to 2 related
+      conversations that recall_conversation can read on demand, and pushes the nearest 2 turns
+      only when the message clearly refers back (config/memory/recall.yaml). Anything else is
+      push. Switch back at any time.
+    tab: features
+  IRIS_MEMORY_UNCERTAIN_BELOW:
+    kind: float
+    default: 0.6
+    applies: restart
+    label: Uncertain fact threshold
+    description: Facts recalled with confidence below this value are kept but marked uncertain ('unconfirmed')
+      in the prompt.
+    tab: features
+  IRIS_MISSION_AUTOCREATE:
+    kind: bool
+    default: false
+    applies: now
+    label: Auto-propose missions
+    description: When truthy, successful multi-step turns and recurring episodic patterns are proposed
+      as pending missions awaiting approval.
+    tab: features
+  IRIS_OBSERVABILITY_METRICS_ENABLED:
+    kind: bool
+    default: false
+    applies: now
+    label: LLM metrics endpoint
+    description: When on, the /observability/llm-metrics endpoint returns an LLM metrics summary;
+      when off it returns 404.
+    tab: features
+  IRIS_OLLAMA_BREAKER:
+    kind: bool
+    default: true
+    applies: now
+    label: Local model circuit breaker
+    description: When on, the circuit breaker applies to local-provider LLM calls; 0/false/no/off
+      disables it.
+    tab: models
+  IRIS_OLLAMA_PORT:
+    kind: url
+    default: 11434
+    applies: next_run
+    label: Ollama port
+    description: Port used to reach Ollama for its health probe and the local model inventory.
+    tab: none
+    editable: false
+    not_editable_reason: port
+  IRIS_OTEL_ENABLED:
+    kind: bool
+    default: true
+    applies: restart
+    label: OTEL instrumentation
+    description: Would gate OTEL instrumentation of LangChain and httpx, but the only production
+      caller passes enabled=True, so the env value is never consulted in production.
+    tab: none
+    editable: false
+    not_editable_reason: 'no production effect: the only production caller passes enabled=True'
+  IRIS_OTEL_HTTPX_ENABLED:
+    kind: bool
+    default: true
+    applies: restart
+    label: HTTPX tracing
+    description: When on, instruments httpx calls for OpenTelemetry tracing.
+    tab: advanced
+  IRIS_OTEL_LANGCHAIN_ENABLED:
+    kind: bool
+    default: true
+    applies: restart
+    label: LangChain OTEL instrumentation
+    description: Enables OpenTelemetry instrumentation of LangChain when tracing is on.
+    tab: advanced
+  IRIS_PHOENIX_ENABLED:
+    kind: bool
+    default: false
+    applies: restart
+    label: Phoenix tracing
+    description: When on, sets up Arize Phoenix OpenTelemetry tracing (embedded mode by default).
+    tab: advanced
+  IRIS_PHOENIX_ENDPOINT:
+    kind: url
+    default: null
+    applies: restart
+    label: Phoenix traces endpoint
+    description: Base URL or full /v1/traces endpoint of a Phoenix collector that traces are exported
+      to; unset means no external endpoint.
+    tab: none
+    guarded: true
+    guard_reason: Traces sent to an external endpoint can carry private prompt data off the machine.
+    editable: false
+    not_editable_reason: URL
+  IRIS_PHOENIX_LAUNCH_SLEEP_MS:
+    kind: int
+    default: 1000
+    applies: restart
+    label: Phoenix launch wait (ms)
+    description: Milliseconds to wait after launching Phoenix during tracing setup.
+    tab: advanced
+  IRIS_PHOENIX_MODE:
+    kind: enum
+    default: embedded
+    applies: restart
+    label: Phoenix mode
+    description: Chooses whether Phoenix tracing runs embedded in-process or exports to an external
+      Phoenix (embedded/external).
+    tab: advanced
+  IRIS_PHOENIX_PORT:
+    kind: url
+    default: 6006
+    applies: restart
+    label: Phoenix tracing port
+    description: Port for the Phoenix tracing endpoint, but setup_tracing_state overrides it with
+      its phoenix_port argument (default 6006) in the API and gateway servers.
+    tab: none
+    editable: false
+    not_editable_reason: 'no production effect: production callers pass their own phoenix_port'
+  IRIS_PHOENIX_PROJECT:
+    kind: str
+    default: iris
+    applies: restart
+    label: Phoenix project name
+    description: Sets the Phoenix tracing project name traces are sent under.
+    tab: advanced
+  IRIS_PHOENIX_WORKING_DIR:
+    kind: path
+    default: ~/.iris/phoenix
+    applies: restart
+    label: Phoenix working directory
+    description: Directory Phoenix persists traces to; an empty value disables persistence.
+    tab: none
+    editable: false
+    not_editable_reason: Directory path
+  IRIS_PLAYGROUND_DIR:
+    kind: path
+    default: null
+    applies: now
+    label: Playground scenarios dir
+    description: Directory holding playground scenario suites; unset uses playground/ in the
+      resolved config directory (IRIS_CONFIG_DIR, else the checkout's config/, else the packaged defaults).
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_PLUGINS_DISABLE:
+    kind: list
+    default: null
+    applies: restart
+    label: Disabled plugins
+    description: Comma-separated plugin names removed from the active profile.
+    tab: agents
+    guarded: true
+    guard_reason: it can turn off the channel you are using to reach the harness
+  IRIS_PLUGINS_ENABLE:
+    kind: list
+    default: null
+    applies: restart
+    label: Force-enable plugins
+    description: Comma-separated plugin names forced on over the profile.
+    tab: agents
+    guarded: true
+    guard_reason: Enabling a channel plugin changes which harness polls that channel.
+  IRIS_PROFILE:
+    kind: str
+    default: default
+    applies: restart
+    label: Plugin profile
+    description: Selects which shipped profile (config/profiles/<name>.yaml) decides which plugins
+      mount, in what order and with what trust. Unset, IRIS runs `default`, or `email` when the
+      email plugins are installed.
+    tab: agents
+    guarded: true
+    guard_reason: Changes which plugins mount, including channel plugins.
+  IRIS_PROVIDERS_CONFIG:
+    kind: path
+    default: ~/.iris/providers.json
+    applies: restart
+    label: Providers config file
+    description: Path to the LLM providers JSON; in iris_code an empty value disables the global
+      provider override.
+    tab: none
+    editable: false
+    not_editable_reason: File path
+  IRIS_PROXY_PORT:
+    kind: url
+    default: 4000
+    applies: restart
+    label: LLM proxy port
+    description: Port an LLM failover proxy listens on, when the deployment runs one; the health
+      checks also use it to tell the proxy from LM Studio.
+    tab: none
+    editable: false
+    not_editable_reason: port
+  IRIS_PUBLIC_URL:
+    kind: url
+    default: ''
+    applies: now
+    label: Public web console URL
+    description: Absolute base URL the web console is reached at (https://<host>). Its host is
+      one the HTTP services answer to (the Host-header guard), and it is the base of the links
+      IRIS sends out (an OAuth callback, the morning digest's Telegram buttons); empty answers to
+      the built-in names only and sends no such links.
+    tab: none
+    editable: false
+    not_editable_reason: URL
+  IRIS_RAG_UPLOAD_DIR:
+    kind: path
+    default: <repo>/data/rag_uploads
+    applies: restart
+    label: RAG upload directory
+    description: Directory where uploaded RAG documents are stored.
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_REACT_ASK_USER:
+    kind: bool
+    default: true
+    applies: restart
+    label: ReAct ask-user
+    description: Lets the conversational ReAct loop pause and ask the user a question; 0/false/no/off
+      disables the ask tool.
+    tab: features
+  IRIS_REACT_HISTORY_TOKEN_BUDGET:
+    kind: int
+    default: null
+    applies: restart
+    label: ReAct transcript budget
+    description: Overrides the token budget for the running ReAct transcript; unset, the harness
+      loop derives it from the tier-2 context window and the email agent uses 3000.
+    tab: models
+  IRIS_REACT_MAX_ITERATIONS:
+    kind: int
+    default: 10
+    applies: restart
+    label: ReAct max iterations
+    description: Caps how many tool-use iterations the ReAct loops (general and email) run per turn.
+    tab: models
+  IRIS_REACT_MEMORY_TOKEN_BUDGET:
+    kind: int
+    default: null
+    applies: restart
+    label: ReAct memory token budget
+    description: Overrides the token budget for the memory block admitted into the ReAct loop; unset
+      uses the context controller's window-derived budget.
+    tab: models
+  IRIS_REACT_TIER_BUMP_TOOL_COUNT:
+    kind: int
+    default: 6
+    applies: now
+    label: ReAct tier-bump tool count
+    description: When a tier-1 intent faces more tools than this number (and governance is on),
+      the ReAct loop borrows the multi-step (tier-2) routing intent.
+    tab: models
+  IRIS_REACT_TIMEOUT_SECONDS:
+    kind: int
+    default: 120
+    applies: restart
+    label: ReAct loop timeout (s)
+    description: Timeout in seconds for the ReAct agentic loop (general and email agents).
+    tab: models
+  IRIS_REACT_TOOL_CAP:
+    kind: int
+    default: 12
+    applies: now
+    label: ReAct tool menu cap
+    description: Maximum number of tools shortlisted into the ReAct tool menu each turn.
+    tab: advanced
+  IRIS_RECENT_TURNS_BUDGET_SHARE:
+    kind: float
+    default: 0.45
+    applies: restart
+    label: Recent turns budget share
+    description: Sets the share of the memory token budget the live conversation transcript may
+      fill.
+    tab: models
+  IRIS_RESEARCH_AGENT:
+    kind: bool
+    default: false
+    applies: restart
+    label: Research agent
+    description: Registers the dedicated research persona and remaps the 'search' intent to it;
+      off by default.
+    tab: agents
+    agent: research
+  IRIS_ROUTINE_REFLECTION:
+    kind: bool
+    default: false
+    applies: next_run
+    label: Routine reflection proposals
+    description: When on, each routine-reflection heartbeat run posts approval requests proposing
+      changes to failing/stale routines (never mutates a routine).
+    tab: agents
+  IRIS_RUNTIME_TELEGRAM_POLLER_ENABLED:
+    kind: bool
+    default: false
+    applies: restart
+    label: Runtime Telegram poller
+    description: When set, explicitly decides whether the runtime's own Telegram poller starts;
+      unset defers to the inverse of IRIS_CHANNEL_GATEWAY_TELEGRAM_ENABLED.
+    tab: guards
+    guarded: true
+    guard_reason: Changes which process polls the Telegram channel; both polling the same bot causes
+      409 conflicts.
+  IRIS_SANDBOX_EGRESS_ALLOWLIST:
+    kind: list
+    default: null
+    applies: now
+    label: Sandbox egress allowlist
+    description: Comma-separated hosts the code sandbox may reach; unset uses the built-in default
+      list (PyPI, GitHub, Yahoo quotes).
+    tab: guards
+    guarded: true
+    guard_reason: Adding hosts widens where sandboxed code can send data.
+  IRIS_SANDBOX_PREFLIGHT:
+    kind: bool
+    default: false
+    applies: next_run
+    label: Sandbox experiment preflight
+    description: When on, promoted experiments are replayed through an isolated eval runtime under
+      baseline vs variant and the verdict is stamped; the change is never applied.
+    tab: agents
+  IRIS_SANDBOX_RUNTIME:
+    kind: enum
+    default: null
+    applies: restart
+    label: Sandbox runtime
+    description: Overrides the code sandbox runtime with docker, gvisor or firecracker (otherwise
+      config/governance/sandbox.yaml, default docker).
+    tab: guards
+    guarded: true
+    guard_reason: Changes the isolation technology used for sandboxed code execution.
+  IRIS_SEARCH_SYNTHESIS_MODEL:
+    kind: str
+    default: gpt-5-mini
+    applies: restart
+    label: Search synthesis model
+    description: Copilot model used for cloud search synthesis when IRIS_SEARCH_SYNTHESIS_PROVIDER=copilot
+      and IRIS_ENABLE_COPILOT_BACKEND is set.
+    tab: models
+    guarded: true
+    guard_reason: It picks the cloud model search synthesis calls; a pricier model raises spend.
+  IRIS_SEARCH_SYNTHESIS_PROVIDER:
+    kind: enum
+    default: null
+    applies: restart
+    label: Cloud search synthesis
+    description: Set to 'copilot' (with IRIS_ENABLE_COPILOT_BACKEND) to synthesize search results
+      with a GitHub Copilot cloud model (default gpt-5-mini) instead of the local search tier.
+    tab: models
+    guarded: true
+    guard_reason: Sends web-search synthesis to a cloud model, adding egress and spend.
+  IRIS_SECRET_BACKEND:
+    kind: enum
+    default: keyring
+    applies: now
+    label: Secret store backend
+    description: 'Chooses where secrets are stored: the OS keyring or the Fernet-encrypted vault.'
+    tab: none
+    guarded: true
+    guard_reason: Changes the storage and protection of stored secrets.
+    editable: false
+    not_editable_reason: switching it leaves already-stored secrets unreachable
+  IRIS_SESSION_LOG_DIR:
+    kind: path
+    default: $IRIS_HOME/logs (~/.iris/logs)
+    applies: restart
+    label: Session log directory
+    description: Directory where session logs are written.
+    tab: none
+    editable: false
+    not_editable_reason: directory path
+  IRIS_SESSION_MEMORY_MAX_SESSIONS:
+    kind: int
+    default: 256
+    applies: restart
+    label: Sessions kept in memory
+    description: How many conversations keep their live window in the server's memory; the least
+      recently used beyond this are dropped and reload from the memory store on their next turn.
+    tab: advanced
+  IRIS_SETTINGS_SIDECAR_CATALOGS:
+    kind: path
+    default: null
+    applies: restart
+    label: Sidecar settings catalogs
+    description: Settings catalogs (YAML files separated by the path separator, each naming its
+      owner) of processes the deployment runs beside the harness, such as an LLM proxy; the app
+      lists their settings and leaves changing them to that process's environment.
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_SKILL_HOTRELOAD:
+    kind: bool
+    default: false
+    applies: restart
+    label: Skill hot reload
+    description: When truthy, watches the skills directory and reloads skills when their files change.
+    tab: none
+    editable: false
+    not_editable_reason: dev-only switch
+  IRIS_SKILL_ROUTER_SEMANTIC:
+    kind: bool
+    default: true
+    applies: restart
+    label: Semantic skill router
+    description: When on, routine authoring and briefing-section extraction use an embedding-based
+      SemanticSkillRouter; off forces the legacy keyword scorer.
+    tab: features
+  IRIS_SKILL_ROUTER_THRESHOLD:
+    kind: float
+    default: 0.45
+    applies: restart
+    label: Skill router similarity threshold
+    description: Embedding-similarity threshold the semantic skill router uses to match a request
+      to a skill (default 0.45 from semantic_router.py:29).
+    tab: advanced
+  IRIS_SKILL_SYNTHESIS:
+    kind: bool
+    default: false
+    applies: restart
+    label: Skill synthesis
+    description: When on, the crystallizer uses a local-tier LLM to synthesize skills instead of
+      falling back to a scaffold.
+    tab: agents
+  IRIS_STANDING_INSTRUCTIONS:
+    kind: bool
+    default: true
+    applies: now
+    label: Standing instructions capture
+    description: When on, a chat message that teaches a rule is saved as a behavior and honored
+      on later matching turns.
+    tab: features
+  IRIS_SYNC_MEMORY_BLOCKING:
+    kind: bool
+    default: false
+    applies: restart
+    label: Blocking memory sync
+    description: When on, the startup memory-to-index sync runs inline before build_runtime returns
+      instead of on a background thread.
+    tab: advanced
+  IRIS_SYNC_WIKI_BLOCKING:
+    kind: bool
+    default: false
+    applies: restart
+    label: Blocking wiki re-index
+    description: When on (and wiki ingest is enabled), re-indexes wiki pages synchronously at startup
+      instead of in a background thread.
+    tab: advanced
+  IRIS_THREAT_DETECTION_CONFIG:
+    kind: path
+    default: config/governance/threat-detection.yaml
+    applies: restart
+    label: Threat detection config path
+    description: Overrides the path of the threat-detection (prompt guard) YAML config.
+    tab: none
+    guarded: true
+    guard_reason: Pointing at another file can disable or weaken the prompt guard.
+    editable: false
+    not_editable_reason: path
+  IRIS_TZ:
+    kind: str
+    default: UTC
+    applies: restart
+    label: Owner's time zone
+    description: The owner's IANA time zone (e.g. America/Chicago). The morning digest's time, reminders
+      and schedules are read in it; the Docker Compose files also set the container clock (TZ) from
+      it. Unset or not a zone name means UTC.
+    tab: none
+    editable: false
+    not_editable_reason: compose sets the container clock from it at start; set it in .env (the deploy
+      copies it to server.env)
+  IRIS_USER_ID:
+    kind: str
+    default: local
+    applies: restart
+    label: Cost ledger user id
+    description: User id under which LLM spend is recorded and summed against the daily cost cap.
+    tab: none
+    guarded: true
+    guard_reason: Changing it starts a fresh spend total, so the daily cost cap is counted from
+      zero.
+    editable: false
+    not_editable_reason: it names whose data and cost ledger this is; not a switch
+  IRIS_VAULT_MASTER_KEY:
+    kind: secret
+    default: null
+    applies: restart
+    label: Vault master key
+    description: Fernet master key for the credential vault and the file vault, used instead of
+      the OS keyring.
+    tab: none
+    guarded: true
+    guard_reason: Key material for encrypted vaults.
+    editable: false
+    not_editable_reason: secret
+  IRIS_VAULT_PASSPHRASE:
+    kind: secret
+    default: null
+    applies: now
+    label: Vault passphrase
+    description: Passphrase from which the encrypted-file vault key is derived (scrypt) when IRIS_SECRET_BACKEND=vault;
+      unset uses a keychain-held key.
+    tab: none
+    guarded: true
+    guard_reason: It is key material protecting stored secrets.
+    editable: false
+    not_editable_reason: Secret
+  IRIS_WEBUI_ALLOW_WRITES:
+    kind: bool
+    default: false
+    applies: now
+    label: Web UI control writes
+    description: Allows gated control writes from callers without a paired device (shared secret
+      or no credentials); paired devices are judged by their own scope regardless.
+    tab: guards
+    guarded: true
+    guard_reason: Changes who may perform control writes through the API.
+  IRIS_WEBUI_DIST:
+    kind: path
+    default: /app/webui/dist
+    applies: restart
+    label: Web UI build directory
+    description: Directory the API serves the built web UI from; without an index.html there the
+      UI is not served.
+    tab: none
+    editable: false
+    not_editable_reason: path
+  IRIS_WEB_PUSH_SUBJECT:
+    kind: url
+    default: https://github.com/evarness-ai/iris-harness
+    applies: now
+    label: Web push VAPID subject
+    description: Contact subject (URL or mailto) sent in Web Push VAPID claims.
+    tab: none
+    editable: false
+    not_editable_reason: URL
+  IRIS_WEB_PUSH_VAPID_PRIVATE_KEY:
+    kind: secret
+    default: null
+    applies: now
+    label: Web push VAPID key
+    description: PEM EC private key used to sign web push requests instead of the generated key
+      file; changing it breaks existing subscriptions.
+    tab: none
+    guarded: true
+    guard_reason: It is signing key material.
+    editable: false
+    not_editable_reason: secret
+  IRIS_WIKI_INGEST:
+    kind: bool
+    default: false
+    applies: restart
+    label: Automatic wiki ingest
+    description: When on, chat turns and classified emails are automatically ingested into wiki
+      pages and pages are re-embedded at startup.
+    tab: features
+  IRIS_DISABLE_EXTERNAL_WRITES:
+    kind: bool
+    default: false
+    applies: now
+    label: Disable external writes
+    description: When set to 1, calendar writes stay local (no Apple or Google Calendar providers
+      are registered); the playground and learning preflight set it for their sandboxes.
+    tab: none
+    editable: false
+    not_editable_reason: harness sets it for eval/playground sandboxes
+  IRIS_SUPERVISED:
+    kind: bool
+    default: false
+    applies: restart
+    label: Supervised restarts
+    description: Set by a deployment whose supervisor restarts every server that exits (a compose file
+      with restart policies, for example); only then may the app's Restart harness ask the servers
+      to exit.
+    tab: none
+    editable: false
+    not_editable_reason: the deploy says whether a supervisor exists; the app cannot
+
+  IRIS_RESTART_ON_REQUEST:
+    kind: bool
+    default: true
+    applies: restart
+    label: Exit on the app's restart request
+    description: Under a supervisor, whether this server exits when the app's Restart harness asks.
+      A deployment whose governor owns the network namespace the other services share sets it off
+      on the governor.
+    tab: none
+    editable: false
+    not_editable_reason: the deploy decides which process owns the shared network; the app cannot
+
+# IRIS_* literals in the code that are not settings, and why.
+not_settings:
+  IRIS_EGRESS_ALLOWLIST: set by harness for its child container
+  IRIS_EGRESS_PORT: set by the harness for its own sidecar
+  IRIS_GOOGLE_OAUTH_TEST_BASE: test and demo only (points a plugin's OAuth calls at a loopback fake)
+  IRIS_QUOTE_EOF: not an env setting (heredoc marker)
+  IRIS_TEST_NULL_EMBEDDINGS: test-only switch

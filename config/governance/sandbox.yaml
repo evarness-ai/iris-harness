@@ -1,0 +1,13 @@
+# Sandbox runtime selection (Governance Phase 6 hardening workstream).
+# See docs/architecture/sandbox-hardening.md.
+# Default runtime: docker → today's behavior unchanged. gVisor lands in 6c.2;
+# Firecracker is evaluated/deferred. gVisor/Firecracker are Linux-only — on
+# macOS the runtime check fails and falls back to docker.
+version: 1
+runtime: docker            # docker | gvisor | firecracker (IRIS_SANDBOX_RUNTIME overrides)
+on_unavailable: fallback   # fallback (→ docker, logged) | disable (no code_exec)
+limits:
+  memory: 1g
+  cpus: "2"
+  pids_limit: 256
+  timeout_seconds: 30

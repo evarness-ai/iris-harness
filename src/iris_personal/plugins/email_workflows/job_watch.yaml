@@ -1,0 +1,46 @@
+# Hidden mail (loop-proof PR 5, D13). A `waiting` email is invisible to IRIS until the
+# judge runs on the Mac, so the owner is told when it did not: the `judge_reachable`
+# health check (paged by the health watch) and the digest footer's "Email jobs" line.
+# Every word both say is here. Override from <config_dir>/email/job_watch.yaml (a
+# top-level key there replaces the shipped one).
+
+# The heartbeat that judges waiting mail, and the tier whose endpoint is probed.
+judge_job: email_judge
+tier: email_judge
+
+# The probe: GET <tier's Ollama root><probe_path>, one try. Only made while mail waits.
+probe_path: /api/version
+probe_timeout_seconds: 3
+
+# A failed probe is red once the oldest waiting email is this old (its judge slot came
+# and went); before that it is yellow — mail waiting 15 min for the next judge is normal.
+probe_red_after_minutes: 30
+
+# Reachable, yet the oldest waiting email is older than one judge cycle: yellow.
+stale_waiting_hours: 7
+
+# The check's words. {waiting} {oldest} {unreachable} {last_run} are filled in.
+words:
+  unreachable: Mac unreachable
+  red: "{unreachable} · {waiting} emails waiting (hidden) · oldest since {oldest}"
+  red_last_run: "judge could not reach the Mac at {last_run} · {waiting} emails waiting (hidden) · oldest since {oldest}"
+  young: "{unreachable} · {waiting} emails waiting for the next judge run"
+  stale: "{waiting} emails waiting (hidden) · oldest since {oldest} — the judge has not drained them"
+  green: "judge reachable · {waiting} waiting"
+  idle: nothing waiting
+
+# The digest footer line, over the digest's day window (yesterday, local):
+#   Email jobs: sweep 3/3 · judge 3/3 · 0 waiting
+#   Email jobs: sweep 2/3 (12:15 missed) · judge 2/3 · 12 waiting (Mac unreachable)
+# A slot counts as run when a successful run served it; "missed" lists the slots with
+# no run at all (a run that skipped because the Mac was away is not a miss).
+footer:
+  prefix: "Email jobs: "
+  jobs:
+    email_sweep: sweep
+    email_judge: judge
+  job: "{label} {ran}/{expected}"
+  missed: " ({times} missed)"
+  waiting: "{waiting} waiting"
+  unreachable: " ({unreachable})"
+  separator: " · "

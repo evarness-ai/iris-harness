@@ -1,0 +1,98 @@
+# What IRIS keeps, for how long, and what it never deletes on its own.
+#
+# Nothing here deletes a summary, a confirmed fact, or anything the owner wrote.
+# Automatic housekeeping only moves conversations from "hot" (full text) to "cold"
+# (the session's summary), sweeps vectors whose row is gone, compacts the database,
+# and rotates logs. Deleting a session, a summary or a fact is an owner action.
+
+conversations:
+  # Full text + turn vectors are kept this long. After that the text and its vectors
+  # go and the session's final summary stands in for it — which is also better recall
+  # than raw turns from months ago.
+  hot_days: 90
+  # A session idle this long gets a closing summary roll, so cooling never throws away
+  # a span that was never summarized.
+  close_after_idle_days: 1
+  # Each closing summary is a model call, so one pass writes at most this many; a
+  # backlog is worked off at the next hourly check rather than all at once.
+  close_max_per_pass: 20
+
+# Sessions that are not the user's memory. Runs from the playground, the eval harness
+# and test fixtures used to land in the same store and come back as "your past
+# conversations" through cross-session recall: 1,420 of 3,730 rows on this box.
+ephemeral_session_prefixes:
+  - playground
+  - playground-
+  - eval
+  - eval:
+  - exp0
+  - test
+  - verify
+  - smoke
+  # `accept`, not `accept-`: the acceptance runs were accept4-qwen, accept5-gpt4o …
+  - accept
+  - leakjudge
+  - dbg-
+  - ob-
+  - clean-
+  - __eval
+  # Manual probes from the wiki-switch work (2026-09-17): probe, probe2, probe3-0,
+  # proof-on, proof-off-0 … — they listed as the owner's chats in the chat history.
+  - probe
+  - proof-
+  - wiki-switch-proof
+  # Mutation-check runs (mut, mut1-…) from the memris PRs.
+  - mut
+
+# The one-time "Looks like a test session" review (Memory page → Review; `iris memory
+# test-sessions`; Map cleanup plan decision 7, ADR-0119). Old test runs were named by
+# hand (cal6-verify, cascade, clr-probe …) and match no prefix above, so they sat in the
+# Map, recall and the chat list as the owner's conversations. Rather than guess their
+# names, this says what a REAL conversation's id looks like; any other id is offered
+# for removal. Nothing is removed without the owner ticking it, and every removal is
+# restorable from the Removed tab.
+test_session_review:
+  # A session whose id matches one of these is a real conversation and never flagged.
+  real_session_patterns:
+    - pattern: '^[0-9a-f]{12}$'
+      what: "a chat started from the web UI or the API"
+    - pattern: '^web-[0-9a-f]{8}$'
+      what: "a web console chat"
+    - pattern: '^telegram:\d+$'
+      what: "a Telegram chat"
+    - pattern: '^default$'
+      what: "the session a client gets when it sends no id (cli/modes.py)"
+  # An extra reason shown beside a flag: a conversation this short is rarely one to keep.
+  few_turns: 4
+
+logs:
+  # ~/.iris/logs holds full prompts, so this is a privacy setting as much as a disk one.
+  # Only log files are touched (*.log, *.jsonl and their .gz archives), never .pid files.
+  #
+  # Session logs (session-*.jsonl) are your conversations: the chat history the Sessions
+  # view replays, read uncompressed. They stay here for delete_after_days, then move to
+  # the encrypted archive below (a playground/test run's log is deleted instead).
+  delete_after_days: 30
+  # Service logs (iris_api.log, governor.log …) are request/debug noise: compressed
+  # after compress_after_days, deleted after service_logs_keep_days.
+  compress_after_days: 7
+  service_logs_keep_days: 90
+  max_total_mb: 200
+  # A live service log (<service>.log) never ages — its writer keeps it fresh — so it
+  # is rotated by size instead: copied to <name>.<UTC stamp>.gz and emptied in place.
+  rotate_over_mb: 20
+  # Cold storage (owner decision 2026-09-19: archive, don't delete). One file per month
+  # in ~/.iris/archive/logs/YYYY-MM.tar.gz.enc, compressed and encrypted; the key is in
+  # the macOS keychain (iris-log-archive) — lose it and the archive is unreadable.
+  # Nothing is uploaded: back the folder up with the rest of your Mac. Restore with
+  # `iris logs restore`; `iris memory forget` scrubs the archive too.
+  archive:
+    enabled: true
+    # 0 = keep forever. Otherwise the oldest months go first once it is bigger.
+    max_mb: 0
+
+housekeeping:
+  # The daily pass. Each run is recorded in data/housekeeping_runs.jsonl (last 50) and
+  # readable through GET /memory/housekeeping and the CLI.
+  enabled: true
+  vacuum: true

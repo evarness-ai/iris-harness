@@ -1,0 +1,76 @@
+/* Design tokens — the runtime realization of webui/design.md.
+ *
+ * design.md is the documented source of truth (and the WCAG-AA contrast gate via
+ * `npm run tokens:lint`). This file expresses the same semantic tokens as CSS
+ * variables for both themes. Values are RGB CHANNEL triplets ("r g b") so Tailwind
+ * opacity modifiers work (e.g. bg-primary/90, bg-danger/10) — required by the
+ * shadcn/Radix component layer. Keep in sync with design.md § Colors.
+ *
+ * Tailwind maps token names -> rgb(var(--x) / <alpha-value>) (tailwind.config.ts),
+ * so components use bg-surface / text-fg-muted / border-border, never raw hex.
+ *
+ * :root = light (default class absent); .dark = dark (default on <html>). */
+
+:root {
+  /* Surfaces */
+  --bg: 246 248 251;
+  --sidebar: 238 242 247;
+  --surface: 255 255 255;
+  --surface-raised: 255 255 255;
+  --border: 221 227 236;
+  --border-strong: 195 204 217;
+  /* Foreground */
+  --fg: 26 34 48;
+  --fg-muted: 81 96 114;
+  --fg-subtle: 122 135 152;
+  /* Brand + interaction */
+  --primary: 31 158 120; /* darkened teal for AA on light surfaces */
+  --primary-fg: 255 255 255;
+  --ring: 31 158 120;
+  /* Status (theme-invariant hues, tuned per theme for contrast) */
+  --success: 47 163 127;
+  --warning: 185 117 42;
+  --danger: 216 63 103;
+  --info: 47 116 192;
+  /* Trace-node palette (shared across themes) */
+  --node-perception: 111 180 240;
+  --node-cognition: 224 164 88;
+  --node-runtime: 127 119 221;
+  --node-action: 93 202 165;
+  --node-llm: 201 139 219;
+  --node-governance: 237 106 139;
+
+  /* Scrim (full color, used directly — no alpha modifier) */
+  --overlay: rgb(15 23 32 / 0.45);
+
+  /* Shape + elevation */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.08);
+  --shadow-e2: 0 4px 12px rgb(0 0 0 / 0.12);
+  --shadow-e3: 0 12px 32px rgb(0 0 0 / 0.18);
+}
+
+.dark {
+  --bg: 12 15 20;
+  --sidebar: 10 13 18;
+  --surface: 20 25 35;
+  --surface-raised: 27 34 48;
+  --border: 35 43 57;
+  --border-strong: 51 64 82;
+  --fg: 233 238 245;
+  --fg-muted: 178 190 205; /* brighter — less "everything is gray" */
+  --fg-subtle: 138 151 168;
+  --primary: 93 202 165;
+  --primary-fg: 6 36 27;
+  --ring: 93 202 165;
+  --success: 93 202 165;
+  --warning: 224 164 88;
+  --danger: 237 106 139;
+  --info: 111 180 240;
+  --overlay: rgb(0 0 0 / 0.55);
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.30);
+  --shadow-e2: 0 4px 12px rgb(0 0 0 / 0.35);
+  --shadow-e3: 0 12px 32px rgb(0 0 0 / 0.45);
+}

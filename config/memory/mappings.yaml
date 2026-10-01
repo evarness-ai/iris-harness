@@ -1,0 +1,149 @@
+# How existing records BECOME statements (ADR-0115 decisions 3 and 11).
+#
+# Kept apart from the ontology: the ontology says what can exist, a mapping says where a
+# statement comes from. An importer for another system is the same thing: a reader plus
+# a file like this one.
+#
+# `when` matches a source record: `source_type` is the kind of record, and `key` (one
+# name or a list) matches its key. For facts this IS the allowlist (memris PR 3 retired
+# fact_keys.yaml): a mapping's first key is the canonical fact key, the rest fold to it,
+# and a key no mapping lists is never a fact. The extractor's prompt lists these keys.
+#
+# `emit` builds the statement. `$owner` is the reserved owner entity, `$value` the
+# record's value, `$episode` the conversation it came from, `$item` one entry of a
+# list-valued record. A relation takes `object` (an entity of the given class); an
+# attribute takes `value` (a literal of the attribute's datatype).
+#
+# Two keys map to one single-valued property: `employer` and `company` (works_at). Today
+# they can hold different values; the PR 2 dry run must report any owner who has both.
+
+mappings:
+  # --- who they are ---
+  - id: fact_name
+    when: { source_type: fact, key: name }
+    emit: { subject: $owner, predicate: name, value: $value }
+  - id: fact_nickname
+    when: { source_type: fact, key: nickname }
+    emit: { subject: $owner, predicate: nickname, value: $value }
+  - id: fact_pronouns
+    when: { source_type: fact, key: pronouns }
+    emit: { subject: $owner, predicate: pronouns, value: $value }
+  - id: fact_birthday
+    when: { source_type: fact, key: birthday }
+    emit: { subject: $owner, predicate: birthday, value: $value }
+  # Today's `city` and `country` mean residence ("i live in India" → country=India).
+  - id: fact_country
+    when: { source_type: fact, key: country }
+    emit: { subject: $owner, predicate: resides_in_country, object: { from: $value, class: Country } }
+  - id: fact_city
+    when: { source_type: fact, key: city }
+    emit: { subject: $owner, predicate: resides_in_city, object: { from: $value, class: City } }
+  # Origin, not residence: never folded into city/country.
+  - id: fact_hometown
+    when: { source_type: fact, key: [hometown, home_town] }
+    emit: { subject: $owner, predicate: hometown, object: { from: $value, class: City } }
+  - id: fact_nationality
+    when: { source_type: fact, key: [nationality, citizenship] }
+    emit: { subject: $owner, predicate: citizen_of, object: { from: $value, class: Country } }
+  - id: fact_location
+    when: { source_type: fact, key: [location, place] }
+    emit: { subject: $owner, predicate: lives_in, object: { from: $value, class: Place } }
+  - id: fact_timezone
+    when: { source_type: fact, key: [timezone, tz] }
+    emit: { subject: $owner, predicate: timezone, value: $value }
+  - id: fact_languages
+    when: { source_type: fact, key: [languages, language] }
+    emit: { subject: $owner, predicate: languages, value: $value }
+
+  # --- work ---
+  - id: fact_profession
+    when: { source_type: fact, key: [profession, job, occupation] }
+    emit: { subject: $owner, predicate: profession, value: $value }
+  - id: fact_employer
+    when: { source_type: fact, key: [employer, organization, org, company] }
+    emit: { subject: $owner, predicate: works_at, object: { from: $value, class: Organization } }
+  - id: fact_role
+    when: { source_type: fact, key: [role, job_title] }
+    emit: { subject: $owner, predicate: role, value: $value }
+  - id: fact_industry
+    when: { source_type: fact, key: industry }
+    emit: { subject: $owner, predicate: industry, value: $value }
+  - id: fact_team
+    when: { source_type: fact, key: team }
+    emit: { subject: $owner, predicate: works_in, object: { from: $value, class: Team } }
+
+  # --- contact + presence ---
+  - id: fact_email
+    when: { source_type: fact, key: [email, mail, e_mail] }
+    emit: { subject: $owner, predicate: email, value: $value }
+  - id: fact_phone
+    when: { source_type: fact, key: phone }
+    emit: { subject: $owner, predicate: phone, value: $value }
+  - id: fact_blog
+    when: { source_type: fact, key: blog }
+    emit: { subject: $owner, predicate: blog, value: $value }
+  - id: fact_website
+    when: { source_type: fact, key: website }
+    emit: { subject: $owner, predicate: website, value: $value }
+  - id: fact_github
+    when: { source_type: fact, key: github }
+    emit: { subject: $owner, predicate: github, value: $value }
+  - id: fact_linkedin
+    when: { source_type: fact, key: linkedin }
+    emit: { subject: $owner, predicate: linkedin, value: $value }
+
+  # --- relationships ---
+  - id: fact_spouse
+    when: { source_type: fact, key: spouse }
+    emit: { subject: $owner, predicate: spouse, object: { from: $value, class: Person } }
+  - id: fact_children
+    when: { source_type: fact, key: children }
+    emit: { subject: $owner, predicate: has_child, object: { from: $value, class: Person } }
+  - id: fact_family
+    when: { source_type: fact, key: family }
+    emit: { subject: $owner, predicate: family_member, object: { from: $value, class: Person } }
+  - id: fact_pets
+    when: { source_type: fact, key: pets }
+    emit: { subject: $owner, predicate: has_pet, object: { from: $value, class: Animal } }
+
+  # --- preferences that change how IRIS behaves ---
+  - id: fact_communication_preference
+    when: { source_type: fact, key: communication_preference }
+    emit: { subject: $owner, predicate: communication_preference, value: $value }
+  - id: fact_preferred_language
+    when: { source_type: fact, key: preferred_language }
+    emit: { subject: $owner, predicate: preferred_language, value: $value }
+  - id: fact_dietary_preference
+    when: { source_type: fact, key: dietary_preference }
+    emit: { subject: $owner, predicate: dietary_preference, value: $value }
+  - id: fact_work_hours
+    when: { source_type: fact, key: work_hours }
+    emit: { subject: $owner, predicate: work_hours, value: $value }
+
+  # --- durable interests ---
+  - id: fact_interest
+    when: { source_type: fact, key: interest }
+    emit: { subject: $owner, predicate: interest, value: $value }
+  - id: fact_hobby
+    when: { source_type: fact, key: [hobby, instrument, sport] }
+    emit: { subject: $owner, predicate: hobby, value: $value }
+  - id: fact_project
+    when: { source_type: fact, key: project }
+    emit: { subject: $owner, predicate: works_on, object: { from: $value, class: Project } }
+  - id: fact_research_area
+    when: { source_type: fact, key: research_area }
+    emit: { subject: $owner, predicate: researches, object: { from: $value, class: Topic } }
+
+  # --- what the Map draws today besides facts (memory/graph.py) ---
+  - id: session_participation
+    when: { source_type: session }
+    emit: { subject: $owner, predicate: participated_in, object: { from: $episode, class: Conversation } }
+  - id: summary_referenced
+    when: { source_type: summary_section, key: referenced }
+    emit: { subject: $episode, predicate: mentions, object: { from: $item, class: Entity } }
+  - id: behavior_learned
+    when: { source_type: behavior }
+    emit: { subject: $owner, predicate: learned, object: { from: $value, class: Lesson } }
+  - id: pattern_observed
+    when: { source_type: pattern }
+    emit: { subject: $owner, predicate: tends_to, object: { from: $value, class: Pattern } }

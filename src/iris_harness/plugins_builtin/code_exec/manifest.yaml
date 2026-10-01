@@ -1,0 +1,43 @@
+name: code_exec
+version: 0.1.0
+description: >-
+  The sandboxed code-execution agent: a bounded LLM <-> sandbox loop that runs
+  shell commands in a container to calculate, scrape a page, transform data, or
+  generate a file, and hands the artifact back. Registers a `code_exec` tool on
+  the governed loop and the `code_exec` agent for turns routed to it. Mounts only
+  when the Docker daemon is reachable -- with no sandbox there is nothing to
+  execute in, and a tool that always answered "unavailable" would be worse than
+  an absent one. The sandbox runtime itself is core.
+entrypoint: plugin:setup
+flavor: python
+trust: in-process
+provides:
+  - tool
+  - intent_handler
+# ADR-0110: read — the sandbox is isolated and its artifacts are outputs, nothing of
+# the user's changes. Recorded as a judgment call in the ADR.
+tools:
+  code_exec:
+    effect: read
+    # It runs shell commands the model wrote, in the sandbox: `iris mcp serve` serves it
+    # only when named with --tool.
+    executes_code: true
+
+# ADR-0120: every IRIS_* setting this plugin reads, for the settings catalog.
+settings:
+  IRIS_CODE_EXEC_MAX_ITERATIONS:
+    kind: int
+    default: 8
+    applies: now
+    label: Code-exec iteration budget
+    description: Sets the base number of loop iterations a code_exec task gets (bounded 1-128; the
+      cap env is raised to match if lower).
+    tab: advanced
+  IRIS_CODE_EXEC_MAX_ITERATIONS_CAP:
+    kind: int
+    default: 14
+    applies: now
+    label: Code exec iteration cap
+    description: Sets the maximum iteration budget for a code_exec loop (clamped 1-128, never below
+      IRIS_CODE_EXEC_MAX_ITERATIONS).
+    tab: advanced

@@ -1,0 +1,50 @@
+# 06 · Testing your plugin
+
+How to test a plugin with `iris_harness.testing`, on a small `convert_units` tool. The
+test file is the example; read it top to bottom.
+
+| Layer | What the test does | Tools |
+|---|---|---|
+| 1. Logic | The conversion as plain functions, no IRIS. Fast, and where most of your cases belong. | plain pytest |
+| 2. In IRIS | A real governed IRIS in a throwaway home, the plugin mounted in-process, one chat turn on a scripted model: the tool is called, the answer comes from its result, both `chat` and `chat_stream`. An undeclared tool is refused and the plugin shows `degraded`. | `harness`, `plugin`, `Script` |
+| 3. Guarantees | Every model call and every answer has its audit row; nothing reached the network; the plugin imports only the stable API. | `audit_gaps`, `audit_rows`, `no_network`, `check_stable_imports` |
+
+| File | What it is |
+|---|---|
+| `unit_converter.py` | The plugin: `convert` (pure) and the `convert_units` tool. |
+| `manifest.yaml` | Declares the tool (`effect: read`). |
+| `fake_model.yaml` | The scripted model: an ordered list of `match` -> `reply` rules. |
+| `test_unit_converter.py` | The tests, in the three layers above. |
+
+## Run it
+
+```bash
+pytest examples/06-testing-your-plugin -q
+```
+
+Expected output: `11 passed` in about fifteen seconds.
+
+## The pieces
+
+- **`harness(plugins=[...], fake_model=...)`** builds the same runtime `iris` runs --
+  routing, the governed loop, the curator, the audit ledger -- in a temporary
+  `IRIS_HOME`, with your `IRIS_*` settings and credentials out of the environment, a
+  throwaway vault key, a keyring that refuses every call and no network. On exit it puts
+  back every piece of process-wide state the run touched.
+- **`plugin(setup, manifest=...)`** mounts your plugin without packaging it, through the
+  same loader and manifest checks as an installed one.
+- **The scripted model** (`fake_model.yaml`) is data: rules matched in order against the
+  call's `system` / `user` text (regexes), answering with `content`, `json` or
+  `tool_calls`. `{name}` in a reply is a named group from the match. Leave out
+  `default:` so an unscripted call fails loudly. `h.model_calls()` lists which rule
+  answered each call.
+- **`TurnResult`** -- `text`, `agent`, `intent`, `answered`, `error`, `session_id`,
+  `audit_refs`, and for `chat_stream` the `events`.
+- **`h.audit_rows(hook_point=..., session_id=...)`** returns `TurnAuditRow`s:
+  `hook_point`, `plugin` (the check), `decision`, `reason`, `run_id`, `step_id`,
+  `classification`, `tier`, `session_id`, `tool`, `deterministic`, `handler`.
+- **`h.audit_gaps()`** is empty when every model call and every answer was audited.
+- **`h.respond_to_approval(id, approve=...)`** answers an approval as the owner (see
+  example 02).
+- **`check_stable_imports([...])`** lists every import outside the stable API
+  (`docs/reference/stable-api.md`); hold your plugin to it in CI.

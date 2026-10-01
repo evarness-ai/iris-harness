@@ -1,0 +1,19 @@
+name: todo_agent
+version: 0.1.0
+description: A to-do agent on the harness's governed loop, with its own tools.
+entrypoint: todo_agent:setup
+flavor: python
+trust: in-process
+provides:
+  - tool
+  - intent_handler
+tools:
+  list_todos:
+    effect: read
+  add_todo:
+    effect: write
+    # The owner asked for it in this turn; nothing to confirm a second time.
+    confirm: never
+# The loop must read the list before it answers a planner turn.
+read_first_intents:
+  - planner

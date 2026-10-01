@@ -1,0 +1,95 @@
+# The IRIS docs site (OSS plan R7): MkDocs + Material, published to GitHub Pages.
+#
+#   uvx --with-requirements docs/requirements.txt mkdocs serve           # preview
+#   uvx --with-requirements docs/requirements.txt mkdocs build --strict  # what CI runs
+#
+# The site is the curated public set only: docs/index.md and docs/{getting-started,
+# guides,concepts,reference}. Everything else under docs/ (design notes, and in the
+# maintainers' tree the ADRs and plans) is excluded below, so a page outside the set
+# can never appear on the site by accident, and the strict build checks only the
+# curated pages' links. The reference pages cli.md and environment-variables.md are
+# generated (scripts/gen_reference_docs.py); every getting-started page is run in CI
+# (scripts/ci_quickstart.sh, scripts/getting_started.py).
+site_name: IRIS
+site_description: The governed agent harness for small local models.
+site_url: https://evarness-ai.github.io/iris-harness/
+repo_url: https://github.com/evarness-ai/iris-harness
+repo_name: evarness-ai/iris-harness
+edit_uri: edit/main/docs/
+copyright: IRIS is licensed under the Apache License 2.0.
+
+docs_dir: docs
+exclude_docs: |
+  /*
+  !/index.md
+  !/getting-started/
+  !/guides/
+  !/concepts/
+  !/reference/
+  !/assets/
+  !/stylesheets/
+
+strict: true
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install: getting-started/install.md
+      - Try the demo: getting-started/demo.md
+      - Connect your mailbox: getting-started/connect-your-mailbox.md
+  - Guides:
+      - Write a plugin: guides/write-a-plugin.md
+      - Test your plugin: guides/test-your-plugin.md
+      - Write a skill: guides/writing-a-skill.md
+      - The email assistant: guides/email.md
+      - Run with Docker: guides/docker.md
+      - Examples: guides/examples.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - Governance: concepts/governance.md
+      - Deterministic handlers: concepts/deterministic-handlers.md
+      - Plugins and profiles: concepts/plugins.md
+  - Reference:
+      - Stable API: reference/stable-api.md
+      - CLI: reference/cli.md
+      - Environment variables: reference/environment-variables.md
+      - Proof bundle: reference/proof-bundle.md

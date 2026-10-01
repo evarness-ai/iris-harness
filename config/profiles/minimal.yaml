@@ -1,0 +1,7 @@
+# The smallest IRIS that answers: the governed core plus the `system` reference
+# plugin (time/date intercept, system_health tool, health_tick heartbeat).
+# Nothing else mounts. Use it to prove the core boots on a bare machine.
+name: minimal
+description: Governed core + the system reference plugin only.
+plugins:
+  - name: system

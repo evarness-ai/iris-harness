@@ -1,0 +1,18 @@
+# What this plugin tells the memory Map to leave out (ADR-0119, cleanup plan decision 9).
+#
+# A "check my email" chat lists the senders it read out, so a shop that mails daily
+# recurs in every such summary and the Map drew it beside the people you know.
+promotional_senders:
+  # Category names, resolved the way the email tools resolve them ("promotions" also
+  # matches a promotion triage refiled under a path of its own, via the provider's labels).
+  # `news` (owner, 2026-09-22): newsletters and news outlets, e.g. Economic Times. Not
+  # `updates`: Gmail files bank and brokerage notices there too.
+  categories:
+    - promotions
+    - news
+  # Left off when at least this share of the sender's stored mail is in those categories.
+  share: 0.8
+  # ...and it has sent at least this many: one promotion from a friend is not a pattern.
+  min_messages: 3
+  # The Map is drawn per request; the answer only changes when mail is classified.
+  cache_seconds: 600

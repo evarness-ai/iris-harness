@@ -1,0 +1,18 @@
+# The test vocabulary's fact keys: the first key of each mapping is canonical, the rest
+# fold to it (the same rule as config/memory/mappings.yaml).
+mappings:
+  - id: fact_bank
+    when: { source_type: fact, key: [bank, primary_bank, bank_name] }
+    emit: { subject: $owner, predicate: tv:banks_with, object: { from: $value, class: tv:Institution } }
+  - id: fact_broker
+    when: { source_type: fact, key: broker }
+    emit: { subject: $owner, predicate: tv:invests_with, object: { from: $value, class: tv:Institution } }
+  - id: fact_insurer
+    when: { source_type: fact, key: insurer }
+    emit: { subject: $owner, predicate: tv:insured_by, object: { from: $value, class: tv:Institution } }
+  - id: fact_credit_card
+    when: { source_type: fact, key: [credit_card, card, cards] }
+    emit: { subject: $owner, predicate: tv:holds_card, object: { from: $value, class: tv:Card } }
+  - id: fact_currency
+    when: { source_type: fact, key: currency }
+    emit: { subject: $owner, predicate: tv:currency, value: $value }

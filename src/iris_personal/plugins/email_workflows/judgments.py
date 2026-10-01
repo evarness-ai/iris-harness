@@ -269,6 +269,17 @@ class JudgmentStore:
         with self._connect() as conn:
             return [Judgment.from_row(r) for r in conn.execute(sql + " ORDER BY judged_at", params)]
 
+    def judged_in_run(self, run_id: str) -> list[Judgment]:
+        """Rows the judge wrote under ``run_id`` (``run_judge(run_id=...)``), oldest
+        first: the durable record of what one run judged, however often it resumed."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM email_judgments WHERE status = ? AND run_id = ? "
+                "ORDER BY judged_at, message_id",
+                (JUDGED, run_id),
+            )
+            return [Judgment.from_row(r) for r in rows]
+
     def judged_between(self, start: datetime, end: datetime) -> list[Judgment]:
         with self._connect() as conn:
             rows = conn.execute(

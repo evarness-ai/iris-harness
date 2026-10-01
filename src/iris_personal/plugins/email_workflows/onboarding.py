@@ -9,9 +9,20 @@ and only render what it returns. The steps, in order (``STEPS``)::
 
 **State** is one row per account in ``email_onboarding`` (``email.db``, beside the mail,
 under ``sdk.persistence.data_dir()``): the run id, the current step, each finished step's
-result, and what the flow is waiting for. A finished step never runs again, so setup
-resumes where it stopped; each step is also safe to re-run after a crash (the fetch has
-its cursor, acceptance is upsert-if-new, the judge reads only what is waiting). Restart
+result, and what the flow is waiting for. A step is done when its result is saved, and
+only then gets its one ledger row (``_audit_finished`` writes any a crash left out). A
+finished step never runs again, so setup resumes where it stopped.
+
+**A step that dies before it is saved runs again**, so each is safe to re-run and reports
+the run's true counts, not the last attempt's. What a step does is recorded as it
+happens, one row per item in ``email_onboarding_effects`` (``fetch``: each stored and
+each released email; ``review_categories``: each category it adds; ``classify``: each
+email kNN filed and each judged one released; ``label_approval``: each label written),
+and the judge's verdicts carry the setup's run id. The re-run finishes what the dead
+attempt left half done (mail stored but never queued for the judge, judged mail never
+released, a granted approval whose labels were never written) and asks no approval
+twice. Discovery is the exception that just repeats: it writes nothing outside its
+proposals file, so a re-run costs its naming calls again and nothing else. Restart
 drops the row only: fetched mail, judgments, accepted categories and any mailbox-write
 approval stay.
 
@@ -48,7 +59,7 @@ import sqlite3
 import threading
 import uuid
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -229,6 +240,16 @@ CREATE TABLE IF NOT EXISTS email_onboarding (
     updated_at   TEXT NOT NULL,
     completed_at TEXT
 );
+
+-- What a run's steps did, recorded as it happens (one row per item, so recording it
+-- again is a no-op): a step re-run after a crash reports the run's true counts.
+CREATE TABLE IF NOT EXISTS email_onboarding_effects (
+    run_id TEXT NOT NULL,
+    step   TEXT NOT NULL,
+    kind   TEXT NOT NULL,
+    item   TEXT NOT NULL,
+    PRIMARY KEY (run_id, step, kind, item)
+);
 """
 
 
@@ -287,8 +308,44 @@ class OnboardingStore:
 
     def delete(self, account_id: str) -> bool:
         with self._conn() as conn:
+            conn.execute(
+                "DELETE FROM email_onboarding_effects WHERE run_id IN "
+                "(SELECT run_id FROM email_onboarding WHERE account_id = ?)",
+                (account_id,),
+            )
             cur = conn.execute("DELETE FROM email_onboarding WHERE account_id = ?", (account_id,))
         return cur.rowcount > 0
+
+    def record_effects(self, run_id: str, step: str, kind: str, items: Iterable[str]) -> None:
+        """Record that ``step`` of ``run_id`` did ``kind`` to each of ``items``."""
+        rows = [(run_id, step, kind, str(item)) for item in items]
+        if not rows:
+            return
+        with self._conn() as conn:
+            conn.executemany(
+                "INSERT OR IGNORE INTO email_onboarding_effects (run_id, step, kind, item) "
+                "VALUES (?, ?, ?, ?)",
+                rows,
+            )
+
+    def effect_items(self, run_id: str, step: str, kind: str) -> set[str]:
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT item FROM email_onboarding_effects WHERE run_id = ? AND step = ? "
+                "AND kind = ?",
+                (run_id, step, kind),
+            ).fetchall()
+        return {str(r[0]) for r in rows}
+
+    def effect_counts(self, run_id: str, step: str) -> Counter[str]:
+        """Items per kind that ``step`` of ``run_id`` recorded."""
+        with self._conn() as conn:
+            rows = conn.execute(
+                "SELECT kind, COUNT(*) FROM email_onboarding_effects WHERE run_id = ? "
+                "AND step = ? GROUP BY kind",
+                (run_id, step),
+            ).fetchall()
+        return Counter({str(kind): int(n) for kind, n in rows})
 
 
 def _from_row(row: sqlite3.Row) -> OnboardingState:
@@ -405,6 +462,25 @@ class OnboardingDeps:
         store = EmailAccountStore(db_path=self.iris_db)
         store.ensure_schema()
         return store
+
+
+@dataclass
+class _RecordingSyncStore:
+    """The mail store a provider fetches into, telling ``record`` the ids of every batch
+    it stored. Providers store a batch before they move their cursor, so a fetch that
+    dies after storing re-fetches whatever was stored but not recorded."""
+
+    inner: Any
+    record: Callable[[list[str]], None]
+
+    def upsert_many(self, messages: Iterable[Any]) -> int:
+        batch = list(messages)
+        stored = int(self.inner.upsert_many(batch))
+        self.record([m.id for m in batch])
+        return stored
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
 
 
 # -- a step's answer ----------------------------------------------------------------
@@ -625,6 +701,8 @@ class Onboarding:
         inputs = inputs or Inputs()
         with _lock:
             state = self.start(account_id)
+            # A process that died between saving a step and its ledger row: write it now.
+            self._audit_finished(state)
             if state.complete:
                 return state
             step = state.step
@@ -636,7 +714,10 @@ class Onboarding:
                 logger.exception("email setup: %s failed for %s", step, account_id)
                 outcome = StepOutcome.blocked(f"{step} failed: {type(exc).__name__}: {exc}")
             state = self._apply(state, step, outcome)
+            # The result first, then its ledger row: a step is done when it is saved, and
+            # a step that is not saved re-runs on resume -- it must not be on the ledger.
             self.store.save(state)
+            self._audit_finished(state)
         return replace(state, notice=outcome.notice)
 
     def run(self, account_id: str, inputs: Inputs | None = None) -> OnboardingState:
@@ -663,7 +744,6 @@ class Onboarding:
         results = {**state.results, step: outcome.result}
         index = STEPS.index(step)
         following = STEPS[index + 1] if index + 1 < len(STEPS) else COMPLETE
-        self._audit(state, step, outcome.result)
         return replace(
             state,
             step=following,
@@ -675,6 +755,25 @@ class Onboarding:
             updated_at=now,
             completed_at=now if following == COMPLETE else None,
         )
+
+    def _audit_finished(self, state: OnboardingState) -> None:
+        """One ledger row per saved step, written once: the steps of ``state`` that are
+        finished and have no row yet get theirs. A ledger hiccup leaves the row for the
+        next advance; it never strands the owner mid-setup."""
+        if not state.results:
+            return
+        try:
+            recorded = {
+                r.step_id
+                for r in self.deps.audit_log().query(run_id=state.run_id, plugin=PLUGIN)
+                if r.hook_point == HOOK
+            }
+        except Exception:  # noqa: BLE001 — retried on the next advance
+            logger.warning("email setup: could not read the ledger for %s", state.run_id)
+            return
+        for index, step in enumerate(STEPS):
+            if step in state.results and index not in recorded:
+                self._audit(state, step, state.results[step])
 
     def _audit(self, state: OnboardingState, step: str, result: Mapping[str, Any]) -> None:
         """One ledger row per finished step: counts only, never content."""
@@ -816,13 +915,15 @@ class Onboarding:
             return StepOutcome.blocked(f"no mail provider is mounted for {state.account_id}")
         store = EmailStore(db_path=self.deps.email_db)
         store.ensure_schema()
-        JudgmentStore(db_path=self.deps.email_db).ensure_schema()
-        released: list[int] = []
+        judgments = JudgmentStore(db_path=self.deps.email_db)
+        judgments.ensure_schema()
+        run, effects = state.run_id, self.store
 
         def forward(topic: str, payload: Any) -> None:
-            if topic == EMAIL_NEW_ARRIVED:
-                released.append(int(payload.count))
             self.deps.emit(topic, payload)
+            if topic == EMAIL_NEW_ARRIVED:
+                # After the readers have it: a crash in between re-releases, never loses.
+                effects.record_effects(run, "fetch", "released", payload.new_message_ids)
 
         # A private bus, as the sweep's: the judge's queue holds what it will judge and
         # releases the rest to the process bus (where the runtime's readers listen).
@@ -836,32 +937,37 @@ class Onboarding:
         try:
             result = provider.fetch_new(
                 state.account_id,
-                store=store,
+                store=_RecordingSyncStore(
+                    store, lambda ids: effects.record_effects(run, "fetch", "fetched", ids)
+                ),
                 max_messages=self.config.fetch_max_messages,
                 cold_start_days=self.config.fetch_cold_start_days,
             )
         except Exception as exc:  # noqa: BLE001 — a login or network failure: fix it, resume
             return StepOutcome.blocked(f"could not fetch mail: {exc}")
-        if result.fetched:
+        # Everything this run fetched and has not handed to the judge's queue yet: this
+        # fetch's mail, and, on a resume, what an earlier attempt stored before it died.
+        # (Queued mail has a judgment row; released mail is recorded above.)
+        fetched = effects.effect_items(run, "fetch", "fetched")
+        handled = effects.effect_items(run, "fetch", "released")
+        unadmitted = judgments.missing(sorted(fetched - handled))
+        if unadmitted:
             bus.emit_sync(
                 EMAIL_SWEPT,
                 EmailNewArrivedPayload(
                     account_id=state.account_id,
-                    new_message_ids=result.new_message_ids,
-                    count=result.fetched,
+                    new_message_ids=tuple(unadmitted),
+                    count=len(unadmitted),
                     fell_back_to_cold_start=result.fell_back_to_cold_start,
                 ),
             )
-        waiting = sum(
-            1
-            for j in JudgmentStore(db_path=self.deps.email_db).waiting()
-            if j.account_id == state.account_id
-        )
+        waiting = sum(1 for j in judgments.waiting() if j.account_id == state.account_id)
+        done = effects.effect_counts(run, "fetch")
         return StepOutcome.finished(
-            fetched=result.fetched,
+            fetched=done["fetched"],
             stored=store.count(state.account_id, include_held=True),
             waiting_for_judge=waiting,
-            released=sum(released),
+            released=done["released"],
         )
 
     # -- 3. discover ----------------------------------------------------------------
@@ -959,7 +1065,6 @@ class Onboarding:
         store.ensure_schema()
         accepted: list[str] = []
         skipped: list[str] = []
-        inserted = unchanged = 0
         for cluster_id in sorted(set(wanted)):
             error, fields = category_fields(raw_rows[cluster_id], state.account_id)
             if error is not None:
@@ -969,13 +1074,22 @@ class Onboarding:
                 # Two clusters named alike: the first keeps the name (ADR-0020 Path D).
                 skipped.append(f"cluster {cluster_id}: {fields['path']} is already accepted")
                 continue
-            if store.upsert_if_new(Category(**fields)):
-                inserted += 1
-            else:
-                unchanged += 1
+            # Whether this run adds it is decided before the write and recorded first, so
+            # a re-run after a crash still counts the category this run inserted.
+            before = store.get(fields["path"])
+            if before is None or not before.active:
+                self.store.record_effects(
+                    state.run_id, "review_categories", "inserted", [fields["path"]]
+                )
+            store.upsert_if_new(Category(**fields))
             accepted.append(fields["path"])
+        added = self.store.effect_items(state.run_id, "review_categories", "inserted")
+        inserted = sum(1 for path in accepted if path in added)
         return StepOutcome.finished(
-            accepted=accepted, inserted=inserted, unchanged=unchanged, skipped=skipped
+            accepted=accepted,
+            inserted=inserted,
+            unchanged=len(accepted) - inserted,
+            skipped=skipped,
         )
 
     # -- 5. classify ----------------------------------------------------------------
@@ -988,18 +1102,32 @@ class Onboarding:
         the first classifier for categories (pure kNN, no model; ADR-0022) -- what it
         is unsure of waits for `iris email triage-batch`. Labels are not written here.
         """
+        from iris_personal.email.events import EMAIL_NEW_ARRIVED
+
+        from .judge import UNSURE
         from .judge_config import JudgeConfig
-        from .judge_wiring import judge_and_release
+        from .judge_wiring import judge_and_release, release
+        from .judgments import JudgmentStore
 
         del inputs
+        run, effects = state.run_id, self.store
+
+        def forward(topic: str, payload: Any) -> None:
+            self.deps.emit(topic, payload)
+            if topic == EMAIL_NEW_ARRIVED:
+                effects.record_effects(run, "classify", "released", payload.new_message_ids)
+
         llm = self.deps.judge_llm()
         report, _note = judge_and_release(
             llm=llm,
             config_dir=self.deps.config_dir,
             db_path=self.deps.email_db,
-            emit=self.deps.emit,
+            emit=forward,
             labels=False,
             limit=self.config.judge_limit,
+            # Each verdict carries the setup's run id: the record of what this run
+            # judged, written with the verdict, so a resumed step counts it too.
+            run_id=run,
         )
         if report.enabled and report.no_model:
             return StepOutcome.blocked(
@@ -1011,14 +1139,24 @@ class Onboarding:
                 f"the email_judge model is unreachable ({report.unreachable_error[:120]}): "
                 "start it, then run setup again"
             )
+        rows = JudgmentStore(db_path=self.deps.email_db).judged_in_run(run)
+        # Judged before a crash but never released to the readers: release it now.
+        released = effects.effect_items(run, "classify", "released")
+        pending: dict[str, list[str]] = {}
+        for row in rows:
+            if row.message_id not in released:
+                pending.setdefault(row.account_id, []).append(row.message_id)
+        release(forward, pending)
+        verdicts = [r for r in rows if not r.error.startswith("skipped:")]
+        counts = Counter(str(r.bucket) for r in verdicts)
         names = JudgeConfig.load(self.deps.config_dir).name
         knn = self._knn(state)
         return StepOutcome.finished(
             judge_enabled=report.enabled,
-            judged=report.judged,
-            buckets={names(k): v for k, v in sorted(report.counts.items())},
-            unsure=report.unsure,
-            judge_errors=report.errors,
+            judged=len(verdicts),
+            buckets={names(k): v for k, v in sorted(counts.items())},
+            unsure=counts.get(UNSURE, 0),
+            judge_errors=sum(1 for r in verdicts if r.error),
             still_waiting=report.waiting,
             **knn,
         )
@@ -1032,9 +1170,16 @@ class Onboarding:
 
         from .triage import EmailTriageClassifier
 
-        # What it files reaches the process bus (the wiki's translator) through ``emit``.
+        run, effects = state.run_id, self.store
+
+        def filed(payload: Any) -> None:
+            # What it files reaches the process bus (the wiki's translator) through
+            # ``emit``, and is counted for this run once it has.
+            self.deps.emit(EMAIL_CLASSIFIED, payload)
+            effects.record_effects(run, "classify", "knn_classified", [payload.id])
+
         bus = EventBus()
-        bus.on(EMAIL_CLASSIFIED, lambda payload: self.deps.emit(EMAIL_CLASSIFIED, payload))
+        bus.on(EMAIL_CLASSIFIED, filed)
         classifier = EmailTriageClassifier(
             workspace_dir=self._workspace(),
             db_path=self.deps.iris_db,
@@ -1042,10 +1187,14 @@ class Onboarding:
             bus=bus,
             embedder=self.deps.embedder,
         )
+        from iris_personal.email.store import EmailStore
+
         results = classifier.classify_unclassified(state.account_id, limit=self.config.knn_limit)
+        emails = EmailStore(db_path=self.deps.email_db)
         return {
-            "knn_classified": sum(1 for r in results if r.category_path and not r.queued),
-            "knn_to_review": sum(1 for r in results if r.queued),
+            "knn_classified": effects.effect_counts(run, "classify")["knn_classified"],
+            # What waits for review is in the mail store; this attempt's errors are not.
+            "knn_to_review": len(emails.list_pending_review(state.account_id, limit=10000)),
             "knn_errors": sum(1 for r in results if r.error is not None and not r.queued),
         }
 
@@ -1099,13 +1248,30 @@ class Onboarding:
     def _label_approval(self, state: OnboardingState, inputs: Inputs) -> StepOutcome:
         preview = self.label_preview(state.account_id)
         grant = self.deps.write_approvals().get(state.account_id)
-        if grant is not None:
-            # Approved before (an earlier setup, or the one-time writes command).
-            return self.write_labels(state.account_id, preview, grant.approval_ref, already=True)
         queue = self.deps.approval_queue()
+        if grant is not None:
+            asked = queue.get(grant.approval_ref.split(" ", 1)[0])
+            if asked is not None and asked.run_id == state.run_id:
+                # This run granted it, then died before step 6 was saved: finish it.
+                granted = self.write_labels(
+                    state.account_id,
+                    preview,
+                    grant.approval_ref,
+                    already=False,
+                    run_id=state.run_id,
+                )
+                granted.result["approval_id"] = asked.approval_id
+                return replace(granted, approval_id=asked.approval_id)
+            # Approved before (an earlier setup, or the one-time writes command).
+            return self.write_labels(
+                state.account_id, preview, grant.approval_ref, already=True, run_id=state.run_id
+            )
         row = queue.get(state.approval_id) if state.approval_id else None
         if row is None or row.status in ("timed_out", "expired"):
-            row = queue.get(self._request_approval(queue, state, preview, inputs))
+            # A row this run asked for before it died, unsaved, is still the question.
+            row = queue.pending_for_run(state.run_id) or queue.get(
+                self._request_approval(queue, state, preview, inputs)
+            )
         assert row is not None
         answer = inputs.approve_writes
         if answer is None and row.status in ("approved", "rejected"):
@@ -1127,8 +1293,14 @@ class Onboarding:
             )
             row = outcome.row
         elif answer and row.status != "approved":
-            # Declined earlier; the owner now says yes: a fresh row records this answer.
-            fresh = self._request_approval(queue, state, preview, inputs)
+            # Declined earlier; the owner now says yes: a fresh row records this answer
+            # (the one a crash left pending, if any).
+            waiting = queue.pending_for_run(state.run_id)
+            fresh = (
+                waiting.approval_id
+                if waiting is not None
+                else self._request_approval(queue, state, preview, inputs)
+            )
             row = respond_to_approval(fresh, status="approved", actor=inputs.actor, queue=queue).row
         if row.status != "approved":
             return StepOutcome(
@@ -1148,7 +1320,9 @@ class Onboarding:
                 "nothing was granted: run setup again",
                 approval_id=row.approval_id,
             )
-        granted = self.write_labels(state.account_id, preview, ref, already=False)
+        granted = self.write_labels(
+            state.account_id, preview, ref, already=False, run_id=state.run_id
+        )
         granted.result["approval_id"] = row.approval_id
         return replace(granted, approval_id=row.approval_id)
 
@@ -1177,30 +1351,57 @@ class Onboarding:
         )
 
     def write_labels(
-        self, account_id: str, preview: LabelPreview, ref: str, *, already: bool
+        self,
+        account_id: str,
+        preview: LabelPreview,
+        ref: str,
+        *,
+        already: bool,
+        run_id: str | None = None,
     ) -> StepOutcome:
         """Writes are approved: write the labels now due (when labels are on). Step 6's
-        second half; ``iris email demo`` runs it for its own account too."""
+        second half; ``iris email demo`` runs it for its own account too.
+
+        With ``run_id`` (setup), each written group is recorded in the run's effects as
+        the mailbox takes it, and the counts are the run's: a step 6 that resumes after a
+        crash reports the labels the first attempt wrote, not 0."""
         from .judge_config import JudgeConfig, labels_enabled
         from .judge_labels import sync_labels
         from .judgments import JudgmentStore
 
         written = removed = failed = 0
         error = ""
+        previewed = preview.total
         provider = self.deps.provider_for(account_id)
+        record: Callable[[str, str | None, list[str]], None] | None = None
+        if run_id is not None:
+            effects, run = self.store, run_id
+
+            def _record(_account: str, bucket: str | None, ids: list[str]) -> None:
+                kind = "label_written" if bucket is not None else "label_removed"
+                effects.record_effects(run, "label_approval", kind, ids)
+
+            record = _record
+
         if labels_enabled() and provider is not None:
             sync = sync_labels(
                 JudgmentStore(db_path=self.deps.email_db),
                 JudgeConfig.load(self.deps.config_dir),
                 {account_id: provider},
+                on_written=record,
             )
             written, removed, failed = sync.written, sync.removed, sync.failed
             error = "; ".join(sync.errors)
+        if run_id is not None:
+            done = self.store.effect_counts(run_id, "label_approval")
+            written, removed = done["label_written"], done["label_removed"]
+            # What the owner was shown: written by this run, plus what is still due.
+            previewed = written + self.label_preview(account_id).total
         return StepOutcome.finished(
             writes_approved=True,
             already_approved=already,
             approval_ref=ref,
-            labels_previewed=preview.total,
+            labels_previewed=previewed,
             labels_written=written,
             labels_removed=removed,
             labels_failed=failed,

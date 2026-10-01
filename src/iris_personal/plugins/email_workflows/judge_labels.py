@@ -91,11 +91,20 @@ def _labelling(provider: Any) -> bool:
 
 
 def sync_labels(
-    store: JudgmentStore, config: JudgeConfig, providers: Mapping[str, Any]
+    store: JudgmentStore,
+    config: JudgeConfig,
+    providers: Mapping[str, Any],
+    *,
+    on_written: Callable[[str, str | None, list[str]], None] | None = None,
 ) -> LabelSync:
     """Write the IRIS/* label of every row whose label is due, per account
     (``providers``: account id → mail provider). Never raises: an account's error is
-    reported in the result and the other accounts still run."""
+    reported in the result and the other accounts still run.
+
+    ``on_written(account_id, bucket, message_ids)`` hears of each group once the
+    mailbox has it and before the row is marked labelled (``bucket`` None: IRIS labels
+    removed), so a caller that counts writes durably counts each one: a crash between
+    the two leaves the row due, and the next sync writes it -- and reports it -- again."""
     result = LabelSync()
     names = config.labels  # bucket key → label name
     for account_id, provider in providers.items():
@@ -155,6 +164,8 @@ def sync_labels(
                 counts.failed += len(ids)
                 counts.error = str(exc)
                 continue
+            if on_written is not None:
+                on_written(account_id, bucket, ids)
             store.mark_labelled(ids, bucket)
             if bucket is None:
                 counts.removed += len(ids)

@@ -2,7 +2,9 @@
 
 Core-only: the plugins here are synthetic, so this runs in the public export too. The
 shipped domain plugins' screens, per profile, are pinned beside them in
-``tests/unit/iris_personal/plugins/test_personal_profile/test_webui_nav.py``.
+``tests/unit/iris_personal/plugins/test_personal_profile/test_webui_nav.py`` -- including
+``GET /api/v1/webui/nav`` served by a runtime built on the real ``email`` profile and on
+``default`` (no email plugins), with the email screens' APIs mounted only on the first.
 """
 
 from __future__ import annotations

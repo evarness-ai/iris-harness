@@ -4,6 +4,9 @@ Pinned:
 
 * the steps run in order and each finished step's result is kept: setup resumes where
   it stopped, never re-running a finished step, and ``restart`` forgets the state only;
+* a process that dies after any step is saved, or inside any step before it is, resumes
+  to the run's true counts with one ledger row per step and one approval, and no email
+  stranded between storage, the judge's queue and its release;
 * nothing touches the mailbox before step 6: the judge runs without its label step, the
   demo provider refuses a write with no grant, and ``--yes``/``assume_defaults`` never
   approves -- it stops at step 6 with a pending approval-queue row;
@@ -356,6 +359,233 @@ def test_resume_never_reruns_a_finished_step(world: World) -> None:
     assert again.results == waiting.results and again.run_id == waiting.run_id
     assert again.approval_id == waiting.approval_id  # the same pending row, not a second
     assert (world.provider.fetches, world.judge.calls) == (fetches, judged)
+
+
+class _ProcessDied(BaseException):
+    """The process going away: a ``BaseException``, so no ``except Exception`` in the
+    machine can turn it into a waiting step -- what was saved is all that survives."""
+
+
+def _setup_to_the_end(world: World) -> Any:
+    """What the owner does: run with the defaults, approve at step 6, run to the end."""
+    machine = world.machine()
+    state = machine.run(DEMO_ACCOUNT, Inputs(assume_defaults=True))
+    if state.step == "label_approval" and state.waiting_kind == DECISION:
+        state = machine.run(DEMO_ACCOUNT, Inputs(approve_writes=True, actor="cli:owner"))
+    return state
+
+
+@pytest.mark.parametrize("stop_after", STEPS)
+def test_setup_resumes_after_a_process_exit_at_every_step(
+    world: World, monkeypatch: pytest.MonkeyPatch, stop_after: str
+) -> None:
+    """Launch issue #11: kill the process the moment ``stop_after`` is saved as finished;
+    a fresh machine picks up at the next step, runs no finished step again, and
+    completes."""
+    from iris_personal.plugins.email_workflows.onboarding import OnboardingStore
+
+    calls: Counter[str] = Counter()
+    for step in STEPS:
+        original = getattr(Onboarding, f"_{step}")
+
+        def counted(self: Onboarding, state: Any, inputs: Inputs, *, _f=original, _s=step) -> Any:
+            calls[_s] += 1
+            return _f(self, state, inputs)
+
+        monkeypatch.setattr(Onboarding, f"_{step}", counted)
+
+    real_save = OnboardingStore.save
+    armed = [True]
+
+    def save_then_die(self: OnboardingStore, state: Any) -> None:
+        real_save(self, state)
+        if armed[0] and stop_after in state.results:
+            armed[0] = False
+            raise _ProcessDied(stop_after)
+
+    monkeypatch.setattr(OnboardingStore, "save", save_then_die)
+
+    with no_network(), pytest.raises(_ProcessDied):
+        _setup_to_the_end(world)
+    saved = world.machine().state(DEMO_ACCOUNT)
+    assert saved is not None
+    assert set(saved.results) == set(STEPS[: STEPS.index(stop_after) + 1])
+    finished = dict(saved.results)
+    before = Counter(calls)
+    side_effects = (world.provider.fetches, world.judge.calls, world.namer.calls)
+
+    with no_network():
+        state = _setup_to_the_end(world)
+
+    assert state.step == COMPLETE and state.status == "done"
+    assert state.run_id == saved.run_id
+    for step, result in finished.items():
+        assert calls[step] == before[step], f"{step} ran again after the resume"
+        if step != "summary":  # the summary is rendered from the run, not re-run
+            assert state.results[step] == result, f"{step}'s result changed on resume"
+    assert set(state.results) == set(STEPS)
+    if "classify" in finished:  # the model work is behind it: none of it again
+        assert (world.provider.fetches, world.judge.calls, world.namer.calls) == side_effects
+    assert world.provider.fetches == 1
+
+    # One ledger row per step for the whole run: a re-run step would write a second.
+    rows = AuditLog(db_path=world.deps.audit_db).query(run_id=state.run_id)
+    done = Counter(r.step_id for r in rows if r.hook_point == "email_onboarding")
+    assert done == Counter(range(len(STEPS)))
+    # One approval-queue row for the run, answered: step 6 never asked twice.
+    asked = [
+        r
+        for status in ("pending", "approved", "rejected", "expired")
+        for r in world.approvals.list_by_status(status)
+        if r.run_id == state.run_id
+    ]
+    assert [(r.approval_id, r.status) for r in asked] == [(state.approval_id, "approved")]
+    assert world.writes.get(DEMO_ACCOUNT) is not None
+    assert len(world.demo_labels()) == state.results["label_approval"]["labels_written"]
+
+
+def _die_before_saving(monkeypatch: pytest.MonkeyPatch, when: Callable[[Any], bool]) -> None:
+    """Kill the process at the first save ``when`` matches, before it is written: the
+    step's side effects are done, its result is lost."""
+    from iris_personal.plugins.email_workflows.onboarding import OnboardingStore
+
+    real_save = OnboardingStore.save
+    armed = [True]
+
+    def die_or_save(self: OnboardingStore, state: Any) -> None:
+        if armed[0] and when(state):
+            armed[0] = False
+            raise _ProcessDied(state.step)
+        real_save(self, state)
+
+    monkeypatch.setattr(OnboardingStore, "save", die_or_save)
+
+
+def _classified_by_knn(world: World) -> int:
+    with sqlite3.connect(world.deps.email_db) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM emails WHERE account_id = ? AND triage_state = 'classified'",
+            (DEMO_ACCOUNT,),
+        ).fetchone()
+    return int(row[0])
+
+
+def _assert_setup_is_whole(world: World, state: Any) -> None:
+    """What a finished setup must say, however many times a step ran: the run's true
+    counts, one ledger row per step, one approval, every fetched email accounted for."""
+    assert state.step == COMPLETE and state.status == "done"
+    r = state.results
+    fetch, classify, approval = r["fetch"], r["classify"], r["label_approval"]
+    assert fetch["fetched"] == 200 == fetch["stored"]
+    assert fetch["waiting_for_judge"] + fetch["released"] == fetch["fetched"]
+    # Every email reached the readers exactly once: released at the fetch, or after
+    # the judge read it. None stranded between storage and the judge's queue.
+    arrived = [
+        mid
+        for topic, p in world.events
+        if topic == "email.new_arrived"
+        for mid in p.new_message_ids
+    ]
+    assert len(arrived) == len(set(arrived)) == 200
+    assert classify["judged"] == fetch["waiting_for_judge"] == sum(classify["buckets"].values())
+    assert world.judge.calls == classify["judged"]  # no email judged twice
+    assert classify["knn_classified"] == _classified_by_knn(world) > 0
+    categories = r["review_categories"]
+    assert categories["inserted"] == len(categories["accepted"]) > 0
+    assert approval["writes_approved"] and not approval["already_approved"]
+    assert approval["approval_id"] == state.approval_id
+    assert approval["labels_written"] == len(world.demo_labels()) > 0
+    assert approval["labels_previewed"] == approval["labels_written"] + approval["labels_failed"]
+    summary = r["summary"]
+    assert (summary["fetched"], summary["judged"], summary["labels_written"]) == (
+        200,
+        classify["judged"],
+        approval["labels_written"],
+    )
+    rows = AuditLog(db_path=world.deps.audit_db).query(run_id=state.run_id)
+    done = Counter(row.step_id for row in rows if row.hook_point == "email_onboarding")
+    assert done == Counter(range(len(STEPS)))
+    asked = [
+        row
+        for status in ("pending", "approved", "rejected", "expired")
+        for row in world.approvals.list_by_status(status)
+        if row.run_id == state.run_id
+    ]
+    assert [(row.approval_id, row.status) for row in asked] == [(state.approval_id, "approved")]
+
+
+@pytest.mark.parametrize("dies_in", STEPS)
+def test_setup_resumes_after_a_process_exit_inside_every_step(
+    world: World, monkeypatch: pytest.MonkeyPatch, dies_in: str
+) -> None:
+    """The counterpart of the test above: the process dies after ``dies_in`` did its
+    work but before its result was saved. The step runs again on resume, finishes what
+    the dead attempt left, and reports the run's true counts -- not the re-run's."""
+    _die_before_saving(monkeypatch, lambda state: dies_in in state.results)
+    with no_network(), pytest.raises(_ProcessDied):
+        _setup_to_the_end(world)
+    saved = world.machine().state(DEMO_ACCOUNT)
+    assert saved is not None and saved.step == dies_in and dies_in not in saved.results
+
+    with no_network():
+        state = _setup_to_the_end(world)
+
+    _assert_setup_is_whole(world, state)
+    # Only the step that died re-ran its model work; discovery's naming is the one
+    # step that simply repeats (it writes nothing outside its proposals file).
+    expected_fetches = 2 if dies_in == "fetch" else 1
+    assert world.provider.fetches == expected_fetches
+
+
+@pytest.mark.parametrize(
+    "seam",
+    [
+        # The fetch stored the mail, then died before the judge's queue admitted it.
+        "admit_swept_mail",
+        # The judge recorded its verdicts, then died before releasing the mail.
+        "release",
+    ],
+)
+def test_mail_a_dead_attempt_left_half_handled_is_handed_on(
+    world: World, monkeypatch: pytest.MonkeyPatch, seam: str
+) -> None:
+    """Mail must not strand between two of a step's effects: the re-run finds what the
+    dead attempt did not hand on (from the run's effects) and hands it on."""
+    from iris_personal.plugins.email_workflows import judge_wiring
+
+    real = getattr(judge_wiring, seam)
+    armed = [True]
+
+    def die_once(*args: Any, **kwargs: Any) -> Any:
+        if armed[0]:
+            armed[0] = False
+            raise _ProcessDied(seam)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(judge_wiring, seam, die_once)
+    with no_network(), pytest.raises(_ProcessDied):
+        _setup_to_the_end(world)
+    with no_network():
+        state = _setup_to_the_end(world)
+    _assert_setup_is_whole(world, state)
+
+
+def test_an_approval_asked_before_a_crash_is_not_asked_again(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Step 6 enqueued its approval row, then died before saving that it waits on it:
+    the resume finds the row this run asked for instead of asking a second time."""
+    _die_before_saving(
+        monkeypatch, lambda state: state.step == "label_approval" and state.status == "waiting"
+    )
+    with no_network(), pytest.raises(_ProcessDied):
+        _setup_to_the_end(world)
+    saved = world.machine().state(DEMO_ACCOUNT)
+    assert saved is not None and saved.approval_id is None
+
+    with no_network():
+        state = _setup_to_the_end(world)
+    _assert_setup_is_whole(world, state)
 
 
 def test_restart_forgets_the_state_only(world: World) -> None:

@@ -758,6 +758,30 @@ def offline_web_fetch(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 @pytest.fixture(autouse=True)
+def _restore_process_state():
+    """Put back every declared piece of process-wide state after each test
+    (``foundation/process_state.py``): plugin API routes, mail providers, health checks,
+    the process bus's subscribers, the identity-redaction seams...
+
+    ``iris_harness.testing.harness`` does this for its own runs, but a test that calls
+    ``build_runtime`` or a plugin's ``setup`` directly does not, and what it mounted
+    stayed for every later test in the worker: a default-profile runtime (which prefers
+    ``email`` when the email plugins are installed) left the email routes registered,
+    so a later app served /api/v1/email/* for a profile without the email plugins. Same
+    class as ``_restore_os_environ``; higher-scoped fixtures run first, so what they
+    register is part of the snapshot and survives.
+    """
+    from iris_harness.foundation.process_state import (
+        restore_process_state,
+        snapshot_process_state,
+    )
+
+    snapshot = snapshot_process_state()
+    yield
+    restore_process_state(snapshot)
+
+
+@pytest.fixture(autouse=True)
 def _no_chat_turn_in_progress():  # a pytest generator fixture
     """Each test starts with no chat turn marked (foundation/activity.py): a chat test
     that just ended would otherwise make the next test's background sweep yield."""

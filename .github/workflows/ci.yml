@@ -1,8 +1,8 @@
 name: ci
 
 # The required pull-request checks of OSS plan R11 that run on the tree: lint, test (3.12
-# and 3.13), playground, quickstart, licenses and docs. security.yml and pr.yml carry the
-# rest. Contributors run the same steps locally with scripts/ci_local.sh.
+# and 3.13), playground, quickstart, licenses, docs and webui. security.yml and pr.yml
+# carry the rest. Contributors run the same steps locally with scripts/ci_local.sh.
 #
 # Security posture, for every workflow here: `pull_request` only, never
 # `pull_request_target` (a fork's code never runs with this repository's secrets or a
@@ -181,3 +181,30 @@ jobs:
           python -m venv "$RUNNER_TEMP/docs"
           "$RUNNER_TEMP/docs/bin/python" -m pip install --quiet -r docs/requirements.txt
           "$RUNNER_TEMP/docs/bin/mkdocs" build --strict --site-dir "$RUNNER_TEMP/site"
+
+  # The web console (webui/): what release.yml builds into the wheel must lint, type-check
+  # and build on every change, not first at tag time. It runs on every PR, webui/ changed
+  # or not: a workflow skipped by a `paths:` filter leaves a required check pending
+  # forever, and the job is about a minute.
+  webui:
+    name: webui
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: webui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22" # release.yml and the Dockerfile's webui stage
+      - name: Install (npm ci, the lockfile exactly)
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npx --no-install tsc --noEmit
+      - name: Build
+        run: npm run build

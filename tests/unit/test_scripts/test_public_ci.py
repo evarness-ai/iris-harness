@@ -9,7 +9,9 @@ What it pins: every R11 check exists under its required name; no workflow runs o
 read-only unless a job asks for more; checkout never persists credentials; no ``run:``
 script interpolates event data (a PR title is attacker-controlled); the test matrix is
 the supported Python range; PyPI publishing is trusted publishing, never a token; the
-docs deploy writes Pages from ``main`` only, and only from its deploy job.
+docs deploy writes Pages from ``main`` only, and only from its deploy job; the web console
+lints, type-checks and builds on every PR with release.yml's Node; Dependabot holds the
+web console to minor and patch updates and moves React with its types.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ REQUIRED_CHECKS = {
     "dco",
     "licenses",
     "pr-title",
+    "webui",
 }
 _SHA_PIN = re.compile(r"^[\w.-]+/[\w.-]+(/[\w./-]+)?@[0-9a-f]{40}$")
 
@@ -167,6 +170,49 @@ def test_dependabot_covers_python_actions_and_the_web_console() -> None:
     config = _load(GITHUB / "dependabot.yml")
     ecosystems = {(u["package-ecosystem"], u["directory"]) for u in config["updates"]}
     assert ecosystems == {("pip", "/"), ("github-actions", "/"), ("npm", "/webui")}
+
+
+def test_dependabot_moves_react_with_its_types_and_holds_majors_until_launch() -> None:
+    updates = _load(GITHUB / "dependabot.yml")["updates"]
+    (npm,) = [u for u in updates if u["package-ecosystem"] == "npm"]
+    # A dependency lands in the FIRST group it matches, so react must precede the catch-all.
+    assert list(npm["groups"])[0] == "react"
+    assert set(npm["groups"]["react"]["patterns"]) == {
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom",
+    }
+    assert npm["groups"]["webui-minor-patch"]["update-types"] == ["minor", "patch"]
+    # Until the release-1 launch: no semver-major web console update at all.
+    held = {"dependency-name": "*", "update-types": ["version-update:semver-major"]}
+    assert held in npm["ignore"]
+
+
+def test_the_webui_job_lints_typechecks_and_builds_on_every_pr() -> None:
+    workflow = _load(WORKFLOWS / "ci.yml")
+    # A `paths:` filter would leave the required `webui` check pending on a PR that does
+    # not touch webui/, so the workflow carries none and the job has no `if`.
+    triggers = _triggers(workflow)
+    for event in ("pull_request", "push"):
+        assert not {"paths", "paths-ignore"} & set(triggers[event] or {})
+    job = workflow["jobs"]["webui"]
+    assert "if" not in job
+    assert job["defaults"]["run"]["working-directory"] == "webui"
+    (node,) = [s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/setup-node@")]
+    (release_node,) = [
+        s
+        for s in _steps(_load(WORKFLOWS / "release.yml"))
+        if str(s.get("uses", "")).startswith("actions/setup-node@")
+    ]
+    assert node["uses"] == release_node["uses"]
+    assert node["with"]["node-version"] == release_node["with"]["node-version"] == "22"
+    assert [s["run"] for s in job["steps"] if "run" in s] == [
+        "npm ci --no-audit --no-fund",
+        "npm run lint",
+        "npx --no-install tsc --noEmit",
+        "npm run build",
+    ]
 
 
 def test_the_docs_deploy_writes_pages_from_main_only() -> None:

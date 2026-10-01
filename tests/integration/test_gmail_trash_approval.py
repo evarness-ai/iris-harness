@@ -233,18 +233,32 @@ def _model(self: Any, *, system_prompt: str, user_prompt: str, **kwargs: Any) ->
     return "Thought: nothing\nFinal Answer: ok"
 
 
-@pytest.fixture()
-def runtime_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+@pytest.fixture(params=["no_model", "model"])
+def runtime_world(
+    request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Any:
+    """A real runtime with the email plugin mounted, at the default 12-tool shortlist.
+
+    ``no_model`` is a fresh offline install (the hosted runner): no MiniLM on disk, so
+    the shortlist ranks without an embedder — the email agent's own tools first. With
+    the menu left to pool order every email tool fell off it and the fake model below
+    never saw ``trash_email``. ``model`` ranks with the embedder, where it is on disk.
+    """
+    from iris_harness.kernel.governance.evaluator import embeddings
     from iris_harness.llm.client import CodingLLMClient
-    from iris_harness.runtime import build_runtime
+    from iris_harness.runtime import build_runtime, routine_authoring
     from iris_personal.email.providers import register_mail_provider
 
+    if request.param == "no_model":
+        monkeypatch.setenv("IRIS_TEST_NULL_EMBEDDINGS", "1")
+        monkeypatch.setattr(embeddings, "default_model_on_disk", lambda: False)
+    elif not embeddings.default_model_on_disk():
+        pytest.skip(f"needs the all-MiniLM-L6-v2 ONNX model at {embeddings.default_model_path()}")
+    # A router built by an earlier test holds whichever embedder that test had.
+    monkeypatch.setattr(routine_authoring, "_semantic_router_singleton", None)
+    monkeypatch.setattr(routine_authoring, "_semantic_router_init_failed", False)
     monkeypatch.delenv("IRIS_GOVERNANCE_ENABLED", raising=False)
     monkeypatch.setattr(CodingLLMClient, "invoke", _model)
-    # The whole pool on the menu: which tools make the 12-tool shortlist is decided by
-    # the MiniLM embedder (or, with no model on disk, by pool order, which leaves every
-    # email tool off), and these tests are about routing and the approval, not ranking.
-    monkeypatch.setenv("IRIS_REACT_TOOL_CAP", "0")
     config_dir, data_dir = tmp_path / "config", tmp_path / "data"
     config_dir.mkdir()
     data_dir.mkdir()

@@ -296,6 +296,7 @@ function ContextBudgetSection() {
           <div className="h-2 min-w-[7rem] flex-1 overflow-hidden rounded bg-border">
             <div
               className={w.near_full ? "h-full bg-red-500" : "h-full bg-emerald-500"}
+              // eslint-disable-next-line react/forbid-dom-props -- dynamic width requires inline style
               style={{ width: `${Math.min(100, pct)}%` }}
             />
           </div>

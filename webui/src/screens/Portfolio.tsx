@@ -143,6 +143,7 @@ function Donut({ k }: { k: Kpi }) {
                 strokeWidth={SW}
                 strokeDasharray={`${p} ${100 - p}`}
                 strokeDashoffset={-cum}
+                // eslint-disable-next-line react/forbid-dom-props -- per-segment token color set at runtime
                 style={{ stroke: ASSET_COLORS[s.type] }}
               />
             );
@@ -155,6 +156,7 @@ function Donut({ k }: { k: Kpi }) {
           <li key={s.type} className="flex items-center gap-2">
             <span
               className="inline-block h-2.5 w-2.5 rounded-sm"
+              // eslint-disable-next-line react/forbid-dom-props -- per-segment token color set at runtime
               style={{ background: ASSET_COLORS[s.type] }}
             />
             <span className="text-fg-muted">{ASSET_LABELS[s.type]}</span>

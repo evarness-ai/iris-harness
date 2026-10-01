@@ -48,7 +48,7 @@ in the chat.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -653,6 +653,40 @@ class PluginRegistry:
             and record.status in (PluginStatus.LOADED, PluginStatus.DEGRADED)
             for intent in record.manifest.read_first_intents
         )
+
+    def tools_serving(self, intents: Iterable[str]) -> frozenset[str]:
+        """The tools of every mounted plugin that serves one of ``intents``.
+
+        A plugin serves an intent (or the agent name it routes to) when it registered
+        the intent handler for it, put it on the governed loop, or lists it under
+        ``read_first_intents``. The tool shortlist reads this as the turn's own domain
+        when it has no embedder to rank by (ADR-0077 addendum, 2026-10-01): what the
+        router already decided about the turn, said by the plugins' own declarations.
+        """
+        wanted = {intent for intent in intents if intent}
+        if not wanted:
+            return frozenset()
+        on_loop = {p for p, seam, key in self._seams if seam == "loop_intent" and key in wanted}
+        names: set[str] = set()
+        for record in self._plugins.values():
+            if record.status not in MOUNTED:
+                continue
+            serves = (
+                record.name in on_loop
+                or any(
+                    r.kind is RegistrationKind.INTENT_HANDLER and r.name in wanted
+                    for r in record.registrations
+                )
+                or (
+                    record.manifest is not None
+                    and bool(wanted & set(record.manifest.read_first_intents))
+                )
+            )
+            if serves:
+                names.update(
+                    r.name for r in record.registrations if r.kind is RegistrationKind.TOOL
+                )
+        return frozenset(names)
 
     # ---------------------------------------------------------- intent handlers
     def add_intent_handler(

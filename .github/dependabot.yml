@@ -34,6 +34,17 @@ updates:
     commit-message:
       prefix: build
       include: scope
+    # Until the release-1 launch the web console takes minor and patch updates only: React
+    # 19, dagre 3 and TypeScript 7 are deliberate migrations, not weekly bumps. The owner
+    # removes this ignore after the release-1 launch.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
+      # React and its type packages move together: a react bump without @types/react (or
+      # react-dom without react) is a half-upgrade. Dependabot puts a dependency in the
+      # first group that matches it, so this group is listed before the catch-all.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
       webui-minor-patch:
         update-types: [minor, patch]

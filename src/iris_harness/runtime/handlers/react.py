@@ -18,6 +18,7 @@ from iris_harness.runtime.handlers.general_support import _normalize_handler_res
 if TYPE_CHECKING:
     from iris_harness.agent.agentic_core import ResumeSeed
     from iris_harness.kernel.governance import HookDecision
+import math
 import os
 import re
 from collections.abc import Callable, Iterator
@@ -411,21 +412,67 @@ def _skills_to_react_tools(
 _REACT_CORE_TOOL_NAMES = frozenset({"memory_search", "ask_user"})
 
 
+def _terms(text: str) -> set[str]:
+    """The words of ``text`` for lexical matching: lowercased, split on anything that is
+    not a letter or digit (so ``trash_email`` is two words), a plural ``s`` dropped."""
+    out: set[str] = set()
+    for word in re.findall(r"[a-z0-9]+", text.lower()):
+        if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+            word = word[:-1]
+        out.add(word)
+    return out
+
+
+def _deterministic_tool_order(
+    tools: list[Any], query: str, domain_tools: frozenset[str]
+) -> list[Any]:
+    """Rank ``tools`` for the turn without a model (ADR-0077 addendum, 2026-10-01).
+
+    1. The turn's own domain first: tools of the plugin that serves the intent or agent
+       the turn was routed to (``PluginRegistry.tools_serving``) — the router has
+       already decided what the turn is about, and the plugins' declarations say which
+       tools that is.
+    2. Then lexical overlap between the query and the tool's name + description (the
+       text the embedder ranks), each shared word weighted by how rare it is across
+       these tools, so a word every description carries decides nothing. No word list:
+       the vocabulary is the tools' own.
+    3. Then pool order, so the result is the same for the same inputs.
+    """
+    texts = [_terms(f"{t.name} {t.description}") for t in tools]
+    q_terms = _terms(query)
+    n = len(tools)
+    weight = {term: math.log((n + 1) / (1 + sum(term in tt for tt in texts))) for term in q_terms}
+
+    def _key(item: tuple[int, Any]) -> tuple[int, float, int]:
+        i, tool = item
+        score = sum(weight[term] for term in q_terms & texts[i])
+        return (0 if tool.name in domain_tools else 1, -score, i)
+
+    return [tool for _i, tool in sorted(enumerate(tools), key=_key)]
+
+
 def _shortlist_react_tools(
     tools: list[Any],
     query: str,
     *,
     cap: int,
     router: Any,
+    domain_tools: frozenset[str] = frozenset(),
 ) -> tuple[list[Any], list[str]]:
     """Cap the toolset at ``cap``, keeping the core + the most relevant of the rest.
 
     Returns ``(kept_tools, dropped_names)``. The core (_REACT_CORE_TOOL_NAMES) and any
-    tool declared ``pinned`` are always kept; the remaining tools are ranked by cosine similarity of "name + description" to
-    the query (reusing the semantic router's embedder) and the top ones fill the cap.
-    No-ops when the toolset already fits, the query is empty, or no embedder is available
-    (fail-open: never fewer tools than today by accident). Dropped names are returned so
-    the caller can log them — no silent truncation.
+    tool declared ``pinned`` are always kept; the remaining tools are ranked by cosine
+    similarity of "name + description" to the query (reusing the semantic router's
+    embedder) and the top ones fill the cap. No-ops when the toolset already fits or
+    the query is empty. Dropped names are returned so the caller can log them — no
+    silent truncation.
+
+    With no embedder (``router`` None, or a query or tool that will not embed — an
+    offline install with no model on disk) the slots are filled by
+    ``_deterministic_tool_order``: the turn's ``domain_tools`` first, then lexical
+    overlap, then pool order. Pool order alone left every email tool off an email
+    turn's menu.
     """
     if cap <= 0 or len(tools) <= cap or not query.strip():
         return tools, []
@@ -433,16 +480,21 @@ def _shortlist_react_tools(
     core_names = {t.name for t in core}
     rest = [t for t in tools if t.name not in core_names]
     slots = max(0, cap - len(core))
-    if router is None or slots <= 0:
+    if slots <= 0:
         kept = (core + rest)[:cap]
         kept_names = {t.name for t in kept}
         return kept, [t.name for t in tools if t.name not in kept_names]
-    ranked = router.rank_texts(query, [(t, f"{t.name} {t.description}") for t in rest])
+    ranked = (
+        router.rank_texts(query, [(t, f"{t.name} {t.description}") for t in rest])
+        if router is not None
+        else []
+    )
     keep_names = {t.name for t, _ in ranked[:slots]}
-    # Any tool that failed to embed isn't in `ranked`; backfill by original order so a
-    # missing embedding never drops a tool below the cap.
+    # Whatever the embedder did not rank (all of it, with no model) fills the remaining
+    # slots in the deterministic order, so a missing embedding never drops a tool below
+    # the cap and never leaves the menu to pool order.
     if len(keep_names) < slots:
-        for t in rest:
+        for t in _deterministic_tool_order(rest, query, domain_tools):
             if t.name not in keep_names:
                 keep_names.add(t.name)
                 if len(keep_names) >= slots:
@@ -718,6 +770,7 @@ def _make_react_handler(
         session_id: str | None = None,
         origin_channel: str = "console",
         read_first: bool = False,
+        serving: tuple[str, ...] = (),
     ) -> AgenticCore:
         # Publish the turn's question before the pool is assembled, so a PLUGIN tool
         # (registered once at setup, with nothing to close over) still reads the
@@ -777,8 +830,14 @@ def _make_react_handler(
             tools.append(ASK_USER_TOOL)
         cap = int(os.getenv("IRIS_REACT_TOOL_CAP", "12"))
         full_pool = list(tools)
+        # The turn's own domain: what ranks first when there is no embedder to rank by.
+        domain_tools = (
+            runtime_holder[0].plugin_registry.tools_serving(serving)
+            if runtime_holder and runtime_holder[0] is not None
+            else frozenset()
+        )
         tools, dropped = _shortlist_react_tools(
-            tools, query, cap=cap, router=_get_semantic_router()
+            tools, query, cap=cap, router=_get_semantic_router(), domain_tools=domain_tools
         )
         if dropped:
             logger.debug("react tool shortlist kept %d, dropped: %s", len(tools), dropped)
@@ -879,6 +938,10 @@ def _make_react_handler(
         fb = fallback_handlers.get(str(task.params.get("intent") or ""))
         return fb(task) if fb is not None else None
 
+    def _serving(task: AgentTask) -> tuple[str, ...]:
+        """The intent and the agent the turn was routed to, as plugins declare them."""
+        return (str(task.params.get("intent") or ""), task.agent_type)
+
     def _read_first(task: AgentTask) -> bool:
         """The turn asks about the user's own data: a plugin lists its intent (or the
         agent it was routed to) under ``read_first_intents`` in its manifest."""
@@ -914,6 +977,7 @@ def _make_react_handler(
                 task.session_id,
                 task.origin_channel,
                 read_first=_read_first(task),
+                serving=_serving(task),
             )
             memory_context = _run_memory_context(task)
             if seed is not None:
@@ -977,6 +1041,7 @@ def _make_react_handler(
                 task.session_id,
                 task.origin_channel,
                 read_first=_read_first(task),
+                serving=_serving(task),
             )
             if seed is not None:
                 yield {"resumed": True}  # ADR-0118 decision 5: never escalate a resume

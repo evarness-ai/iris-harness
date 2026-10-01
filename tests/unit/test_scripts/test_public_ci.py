@@ -187,6 +187,9 @@ def test_dependabot_moves_react_with_its_types_and_holds_majors_until_launch() -
     # Until the release-1 launch: no semver-major web console update at all.
     held = {"dependency-name": "*", "update-types": ["version-update:semver-major"]}
     assert held in npm["ignore"]
+    # The Python dependencies hold majors until launch the same way.
+    pip = next(u for u in updates if u["package-ecosystem"] == "pip")
+    assert held in pip["ignore"]
 
 
 def test_the_webui_job_lints_typechecks_and_builds_on_every_pr() -> None:

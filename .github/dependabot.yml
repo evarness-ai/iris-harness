@@ -11,6 +11,12 @@ updates:
     commit-message:
       prefix: build
       include: scope
+    # Until the release-1 launch the Python dependencies take minor and patch updates only
+    # (psutil 7, watchdog 6 and sentence-transformers 6 wait), as the web console does
+    # below. The owner removes this ignore after the release-1 launch.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       python-minor-patch:
         update-types: [minor, patch]

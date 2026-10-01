@@ -151,7 +151,7 @@ duckdb = ">=1.1,<2"
 # it pulls torch, and on Linux torch pulls ~5 GB of CUDA wheels, which made a
 # fresh `poetry install` exceed the 45-minute CI job. Lazy-imported everywhere so
 # the harness runs without it; install with `poetry install -E ml`.
-sentence-transformers = {version = "^5.5.1", optional = true}
+sentence-transformers = {version = ">=5.5.1,<7.0.0", optional = true}
 pypdfium2 = "^5.9.0"
 trafilatura = "^2.1.0"
 # The built-in web-fetch skill parses pages with it (config/skills/builtin/web-fetch).

@@ -165,7 +165,59 @@ def test_pypi_publishing_is_trusted_publishing() -> None:
     assert publish["environment"]["name"] == "pypi"
     (step,) = [s for s in publish["steps"] if "pypi-publish" in str(s.get("uses", ""))]
     assert "password" not in (step.get("with") or {}), "trusted publishing needs no token"
-    assert set(_triggers(_load(WORKFLOWS / "release.yml"))) == {"push"}
+    assert "repository-url" not in (step.get("with") or {}), "the real release goes to PyPI"
+    triggers = _triggers(_load(WORKFLOWS / "release.yml"))
+    assert set(triggers) == {"push", "workflow_dispatch"}
+    assert set(triggers["push"]) == {"tags"}  # a tag publishes; a branch push never does
+    # A manual run never reaches PyPI or the GitHub release.
+    assert publish["if"] == jobs["github-release"]["if"] == "github.event_name == 'push'"
+
+
+def test_a_manual_run_publishes_to_testpypi_and_installs_from_it() -> None:
+    """Issue #25: a TestPyPI release installs and runs `iris doctor`."""
+    jobs = _load(WORKFLOWS / "release.yml")["jobs"]
+    dispatch = "github.event_name == 'workflow_dispatch'"
+
+    publish = jobs["testpypi"]
+    assert publish["if"] == dispatch
+    assert publish["needs"] == "build"
+    assert publish["permissions"] == {"id-token": "write"}
+    assert publish["environment"]["name"] == "testpypi"  # never the `pypi` environment
+    (step,) = [s for s in publish["steps"] if "pypi-publish" in str(s.get("uses", ""))]
+    assert step["uses"] == next(
+        s["uses"] for s in jobs["pypi"]["steps"] if "pypi-publish" in str(s.get("uses", ""))
+    )
+    assert step["with"] == {"repository-url": "https://test.pypi.org/legacy/"}  # no token
+
+    # id-token: write on the two publish jobs only.
+    for job_id, job in jobs.items():
+        if job_id not in {"pypi", "testpypi"}:
+            assert "id-token" not in (job.get("permissions") or {}), job_id
+
+    # The build stamps a dev version on a manual run only, and checks the tag only on a tag.
+    build_steps = {s.get("name"): s for s in jobs["build"]["steps"]}
+    stamp = build_steps["Stamp the TestPyPI dev version"]
+    assert stamp["if"] == dispatch
+    assert stamp["run"] == 'python scripts/stamp_dev_version.py "$GITHUB_RUN_NUMBER"'
+    assert build_steps["Tag matches the package version"]["if"] == "github.event_name == 'push'"
+    assert "if" not in build_steps["The wheel carries the web console"]  # both paths
+    assert jobs["build"]["outputs"]["version"] == "${{ steps.version.outputs.version }}"
+
+    # Installed from TestPyPI: that version's wheel alone (no dependencies from there),
+    # the same bytes as the build's, then the quickstart check's own script on it.
+    install = jobs["testpypi-install"]
+    assert install["needs"] == ["build", "testpypi"]
+    assert "permissions" not in install  # the read-only top level
+    steps = {s.get("name"): s for s in install["steps"]}
+    fetch = steps["Fetch the wheel from TestPyPI"]
+    assert fetch["env"] == {"VERSION": "${{ needs.build.outputs.version }}"}
+    script = fetch["run"]
+    assert "--index-url https://test.pypi.org/simple/" in script
+    assert "--no-deps" in script
+    assert '"iris-harness==${VERSION}"' in script
+    assert "is not the wheel this run built" in script
+    run = steps["Install, iris doctor, iris email demo"]["run"]
+    assert 'IRIS_QUICKSTART_WHEEL="$wheel" bash scripts/ci_quickstart.sh' in run
 
 
 def test_dependabot_covers_python_actions_and_the_web_console() -> None:

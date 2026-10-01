@@ -17,7 +17,11 @@
 #      must exit with a code the page allows.
 #
 # Usage:  scripts/ci_quickstart.sh [<tree>]          (default: the repository root)
-# Env:    IRIS_QUICKSTART_PYTHON      Python for the tool env (default 3.12)
+# Env:    IRIS_QUICKSTART_WHEEL       a built wheel to install instead of the tree (its
+#                                      [email] extra; the docs still come from <tree>):
+#                                      release.yml's TestPyPI check passes the wheel it
+#                                      downloaded from TestPyPI
+#         IRIS_QUICKSTART_PYTHON      Python for the tool env (default 3.12)
 #         IRIS_QUICKSTART_BUDGET_S    the install budget in seconds (default 60)
 #         IRIS_QUICKSTART_WARM_CACHE=1  reuse uv's cache (local iteration only: the
 #                                      number is then not the cold-install number)
@@ -42,14 +46,23 @@ now() { python3 -c 'import time; print(f"{time.time():.3f}")'; }
 # 1. The install, timed.
 CACHE_ARGS=()
 [[ "${IRIS_QUICKSTART_WARM_CACHE:-0}" == "1" ]] || CACHE_ARGS=(--cache-dir "$WORK/uv-cache")
-echo "quickstart: uv tool install \"<tree>[email]\" (Python $PY_VERSION, cache: ${CACHE_ARGS[*]:-warm})"
+if [[ -n "${IRIS_QUICKSTART_WHEEL:-}" ]]; then
+  [[ -f "$IRIS_QUICKSTART_WHEEL" ]] || { echo "ci_quickstart: no wheel at $IRIS_QUICKSTART_WHEEL" >&2; exit 2; }
+  WHEEL_URL="$(python3 -c 'import pathlib, sys; print(pathlib.Path(sys.argv[1]).resolve().as_uri())' "$IRIS_QUICKSTART_WHEEL")"
+  SPEC="iris-harness[email] @ ${WHEEL_URL}"
+  WHAT="$(basename "$IRIS_QUICKSTART_WHEEL")[email]"
+else
+  SPEC="${TREE}[email]"
+  WHAT="<tree>[email]"
+fi
+echo "quickstart: uv tool install \"$WHAT\" (Python $PY_VERSION, cache: ${CACHE_ARGS[*]:-warm})"
 START=$(now)
 UV_TOOL_DIR="$WORK/tools" UV_TOOL_BIN_DIR="$WORK/bin" \
-  uv tool install -q ${CACHE_ARGS[@]+"${CACHE_ARGS[@]}"} --python "$PY_VERSION" "${TREE}[email]"
+  uv tool install -q ${CACHE_ARGS[@]+"${CACHE_ARGS[@]}"} --python "$PY_VERSION" "$SPEC"
 SECS=$(python3 -c "print(f'{$(now) - $START:.1f}')")
 echo "quickstart: [email] install took ${SECS}s (target < ${BUDGET}s)"
 summary "### quickstart"
-summary "- \`uv tool install \"iris-harness[email]\"\`, cold cache: **${SECS} s** (target < ${BUDGET} s)"
+summary "- \`uv tool install \"${WHAT}\"\`, cold cache: **${SECS} s** (target < ${BUDGET} s)"
 if ! python3 -c "import sys; sys.exit(0 if $SECS < $BUDGET else 1)"; then
   echo "::error title=quickstart::[email] install took ${SECS}s, over the ${BUDGET}s target (R19)"
   exit 1

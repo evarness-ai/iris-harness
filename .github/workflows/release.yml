@@ -9,10 +9,19 @@ name: release
 # must be configured for this repository, this workflow file (release.yml) and the
 # `pypi` environment before the first tag; the `pypi` environment should require the
 # maintainer's approval, so a pushed tag alone never publishes.
+#
+# A manual run (workflow_dispatch) is the dry run (issue #25): the same build, published
+# to TestPyPI instead -- trusted publishing again, through the `testpypi` environment --
+# then installed from TestPyPI on a fresh runner, where `iris doctor` and `iris email
+# demo` must pass (scripts/ci_quickstart.sh, the quickstart check's own script). No PyPI
+# upload and no GitHub release on that path. TestPyPI refuses a second upload of a
+# version, so the run stamps `<pyproject version>.dev<run number>` into its build only
+# (scripts/stamp_dev_version.py says why .devN); nothing is committed.
 
 on:
   push:
     tags: ["v*.*.*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,6 +35,8 @@ jobs:
     name: build
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,6 +45,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Tag matches the package version
+        if: github.event_name == 'push'
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -42,6 +54,16 @@ jobs:
             echo "::error::tag ${TAG} does not match pyproject's version ${version} (expected v${version})"
             exit 1
           fi
+      # TestPyPI only: this run's own version, in this runner's checkout only.
+      - name: Stamp the TestPyPI dev version
+        if: github.event_name == 'workflow_dispatch'
+        run: python scripts/stamp_dev_version.py "$GITHUB_RUN_NUMBER"
+      - name: The version this run builds
+        id: version
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["tool"]["poetry"]["version"])')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Building iris-harness ${version}" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22" # the Dockerfile's webui stage
@@ -83,6 +105,7 @@ jobs:
 
   pypi:
     name: publish to PyPI
+    if: github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -100,6 +123,7 @@ jobs:
 
   github-release:
     name: GitHub release
+    if: github.event_name == 'push'
     needs: pypi
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -123,3 +147,77 @@ jobs:
           else
             gh release create "$TAG" dist/* --verify-tag --generate-notes --repo "$GITHUB_REPOSITORY"
           fi
+
+  testpypi:
+    name: publish to TestPyPI
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/iris-harness
+    permissions:
+      id-token: write # trusted publishing: the OIDC token is the only credential
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  # Issue #25's "done when": the TestPyPI release installs and runs `iris doctor`. Only
+  # iris-harness comes from TestPyPI (fetched alone, with no dependencies, and checked
+  # byte for byte against the file this run built); its dependencies come from PyPI, as a
+  # user's do. Resolving them across both indexes would let any squatted name on TestPyPI
+  # (where anyone can upload anything) win the resolution.
+  testpypi-install:
+    name: install from TestPyPI
+    needs: [build, testpypi]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          enable-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: built/
+      # A fresh upload can take a minute to reach the index: retried, not assumed.
+      - name: Fetch the wheel from TestPyPI
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if python -m pip download --quiet --no-deps --only-binary :all: \
+                --index-url https://test.pypi.org/simple/ \
+                --dest testpypi/ "iris-harness==${VERSION}"; then
+              break
+            fi
+            [[ $attempt -lt 10 ]] || { echo "::error::iris-harness ${VERSION} is not on TestPyPI"; exit 1; }
+            echo "not on the index yet (attempt ${attempt}); retrying in 30 s"
+            sleep 30
+          done
+          python - <<'PY'
+          import glob, hashlib, sys
+          (fetched,) = glob.glob("testpypi/*.whl")
+          (built,) = glob.glob("built/*.whl")
+          def digest(path):
+              return hashlib.sha256(open(path, "rb").read()).hexdigest()
+          if digest(fetched) != digest(built):
+              sys.exit(f"{fetched} from TestPyPI is not the wheel this run built")
+          print(f"{fetched}: the wheel this run built (sha256 {digest(built)})")
+          PY
+      - name: Install, iris doctor, iris email demo
+        run: |
+          wheel=$(ls testpypi/*.whl)
+          IRIS_QUICKSTART_WHEEL="$wheel" bash scripts/ci_quickstart.sh

@@ -156,6 +156,27 @@ def _default(value: Any) -> str:
 
 _APPLIES = {"now": "next call", "next_run": "next run", "restart": "restart"}
 
+# Not `IRIS_*`, so outside the settings catalog's scope (`catalog.py` rejects any
+# other prefix) -- the two local-model backends' own address variables, read
+# straight from the environment wherever the harness talks to them
+# (`llm/tier_router.py`, the health checks' service probes). Documented here by
+# hand, inside the generated page, so they do not silently stay undiscoverable.
+_THIRD_PARTY_SETTINGS: tuple[tuple[str, str, str], ...] = (
+    (
+        "OLLAMA_BASE_URL",
+        "`http://localhost:11434`",
+        "Ollama's base URL (a trailing `/v1` is accepted and trimmed). Set it to move the "
+        "local-model backend to another box -- the cloud harness reaches the Mac's Ollama "
+        "over the tailnet this way.",
+    ),
+    (
+        "LM_STUDIO_BASE_URL",
+        "`http://localhost:1234`",
+        "LM Studio's base URL, shared with the LLM failover proxy -- told apart by port "
+        "(the proxy's `IRIS_PROXY_PORT`, default 4000, vs. LM Studio's 1234).",
+    ),
+)
+
 
 _HEADER = "| Variable | Kind | Default | Applies | Description |"
 _RULE = "|---|---|---|---|---|"
@@ -215,6 +236,19 @@ def render_env() -> str:
         _RULE,
     ]
     lines += [_row(catalog.entries[name]) for name in stable]
+    lines += [
+        "",
+        "## Third-party model backends",
+        "",
+        "Not `IRIS_*`, so outside the settings catalog's scope -- the local-model",
+        "backends' own address variables, read wherever the harness talks to them.",
+        "",
+        "| Variable | Default | Description |",
+        "|---|---|---|",
+    ]
+    lines += [
+        f"| `{name}` | {default} | {_cell(desc)} |" for name, default, desc in _THIRD_PARTY_SETTINGS
+    ]
     lines += [
         "",
         "## Every other setting",

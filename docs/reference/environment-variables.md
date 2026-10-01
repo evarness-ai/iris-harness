@@ -34,6 +34,16 @@ cycle. `src/iris_harness/sdk/stable_tier.yaml` lists them.
 | `IRIS_EMAIL_JUDGE_LABELS` | bool | `on` | next run | When on (default), each judged email gets one IRIS/* label in Gmail (never archived, never marked read); off keeps the judgments in IRIS only. |
 | `IRIS_EMAIL_JUDGE_UNSURE_BELOW` | float | `0.7` | next run | A judgment less sure than this is filed as Unsure and asked on an Action Center card. |
 
+## Third-party model backends
+
+Not `IRIS_*`, so outside the settings catalog's scope -- the local-model
+backends' own address variables, read wherever the harness talks to them.
+
+| Variable | Default | Description |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama's base URL (a trailing `/v1` is accepted and trimmed). Set it to move the local-model backend to another box -- the cloud harness reaches the Mac's Ollama over the tailnet this way. |
+| `LM_STUDIO_BASE_URL` | `http://localhost:1234` | LM Studio's base URL, shared with the LLM failover proxy -- told apart by port (the proxy's `IRIS_PROXY_PORT`, default 4000, vs. LM Studio's 1234). |
+
 ## Every other setting
 
 ??? note "The full catalog of the `email` profile (not stable)"

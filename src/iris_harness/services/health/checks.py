@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from iris_harness.foundation.clock import utc_now_iso
+from iris_harness.foundation.env import probe_host
 from iris_harness.foundation.observability.logging_setup import log_egress
 from iris_harness.foundation.paths import data_dir
 from iris_harness.services.health.models import CheckKind, HealthCheck, HealthSnapshot, HealthState
@@ -243,7 +244,7 @@ def service_checks(
     prober: Callable[[str], int | None] = _probe_one,
 ) -> list[HealthCheck]:
     """Probe every service target and classify each."""
-    resolved_host = host or os.environ.get("IRIS_API_HOST", "127.0.0.1")
+    resolved_host = probe_host(host or os.environ.get("IRIS_API_HOST", "127.0.0.1"))
     checks: list[HealthCheck] = []
     for target in _SERVICES:
         url = target.url(resolved_host)

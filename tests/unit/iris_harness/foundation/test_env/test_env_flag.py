@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from iris_harness.foundation.env import env_flag, env_flag_on
+from iris_harness.foundation.env import env_flag, env_flag_on, probe_host
 
 
 @pytest.mark.parametrize("value", ["0", "false", "FALSE", "no", " off ", "Off", "", "  "])
@@ -96,3 +96,19 @@ def test_there_is_only_one_implementation_left() -> None:
         "these re-read the environment instead of delegating to "
         "iris_harness.foundation.env:\n  " + "\n  ".join(hand_rolled)
     )
+
+
+@pytest.mark.parametrize(
+    ("host", "expected"),
+    [
+        ("0.0.0.0", "127.0.0.1"),  # noqa: S104 - the wildcard address under test
+        ("::", "[::1]"),
+        ("127.0.0.1", "127.0.0.1"),
+        ("example.internal", "example.internal"),
+    ],
+)
+def test_probe_host_translates_wildcard_binds_only(host: str, expected: str) -> None:
+    """``iris serve --host 0.0.0.0`` binds every interface, but nothing answers a
+    probe sent to 0.0.0.0 itself — a wildcard bind becomes its loopback
+    equivalent; any other host is returned unchanged."""
+    assert probe_host(host) == expected

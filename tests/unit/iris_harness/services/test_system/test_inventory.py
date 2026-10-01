@@ -3,6 +3,8 @@ parsing is hermetic; the rest is local reads (version, git, importlib)."""
 
 from __future__ import annotations
 
+import pytest
+
 from iris_harness.services.system.inventory import (
     RuntimeInventory,
     _ollama_models,
@@ -38,3 +40,15 @@ def test_ollama_unreachable_yields_empty_not_error() -> None:
         raise OSError("connection refused")
 
     assert _ollama_models(fetch=_boom) == []
+
+
+def test_ollama_models_wildcard_bind_host_queries_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IRIS_API_HOST", "0.0.0.0")  # noqa: S104
+    seen: list[str] = []
+
+    def _capture(url: str) -> dict[str, object]:
+        seen.append(url)
+        return {"models": []}
+
+    _ollama_models(fetch=_capture)
+    assert seen == ["http://127.0.0.1:11434/api/tags"]

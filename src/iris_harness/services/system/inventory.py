@@ -18,6 +18,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
 import iris_harness
+from iris_harness.foundation.env import probe_host
 
 # Key dependencies worth surfacing (the model/runtime backbone). Names are the
 # distribution names as installed.
@@ -81,7 +82,7 @@ def _ollama_models(
 
     Best-effort: an unreachable Ollama yields an empty list, never an error.
     ``fetch`` is injectable for tests (default hits the local /api/tags)."""
-    host = os.environ.get("IRIS_API_HOST", "127.0.0.1")
+    host = probe_host(os.environ.get("IRIS_API_HOST", "127.0.0.1"))
     port = os.environ.get("IRIS_OLLAMA_PORT", "11434")
     url = f"http://{host}:{port}/api/tags"
     getter = fetch or _fetch_ollama_tags

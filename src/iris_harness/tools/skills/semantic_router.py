@@ -46,6 +46,12 @@ class SemanticSkillRouter:
     def threshold(self) -> float:
         return self._threshold
 
+    @property
+    def available(self) -> bool:
+        """Whether the embedder can embed at all. An embedder without the notion (a
+        test stub) always can."""
+        return bool(getattr(self._embedder, "available", True))
+
     def _skill_doc(self, package: Any) -> str:
         manifest = package.manifest
         parts: list[str] = [

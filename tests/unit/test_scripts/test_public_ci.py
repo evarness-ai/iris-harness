@@ -185,6 +185,19 @@ def test_the_docs_deploy_writes_pages_from_main_only() -> None:
     for job_id, job in jobs.items():
         if job_id != "deploy":
             assert "permissions" not in job, f"{job_id} widens the token"
+    # A private repository has no free Pages: the build (and so the deploy) skips there.
+    assert jobs["build"]["if"] == "${{ !github.event.repository.private }}"
+    assert jobs["deploy"]["needs"] == "build"
     script = "\n".join(step.get("run", "") for step in jobs["build"]["steps"])
     assert "-r docs/requirements.txt" in script
     assert "mkdocs" in script and "build --strict" in script
+
+
+def test_codeql_runs_only_on_a_public_repository_and_the_secret_scan_always() -> None:
+    jobs = _load(WORKFLOWS / "security.yml")["jobs"]
+    # Code scanning on a private repository needs paid Advanced Security: CodeQL skips there.
+    assert jobs["codeql"]["if"] == "${{ !github.event.repository.private }}"
+    # gitleaks and the identity scan are free and guard every push: never conditional.
+    assert "if" not in jobs["security"]
+    script = "\n".join(step.get("run", "") for step in jobs["security"]["steps"])
+    assert "oss_pii_scan.sh --strict" in script and "gitleaks git" in script

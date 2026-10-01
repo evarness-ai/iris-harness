@@ -268,7 +268,12 @@ def run_web_command(
     )
 
     with _capture_lock:
-        previous_width = console.width
+        # Restore the console's own setting, not its measured width: ``console.width``
+        # reads back the width it resolved (80 off a terminal), and writing that back
+        # pins it, so every later print in this process wraps at 80 whatever COLUMNS or
+        # the terminal says. ``_width`` is None unless someone fixed it; Rich has no
+        # public way to put None back.
+        previous_width = console._width
         console.width = _CAPTURE_WIDTH
         try:
             with console.capture() as captured:
@@ -279,7 +284,7 @@ def run_web_command(
                 handler(cast("REPLContext", ctx), args)
             output = captured.get()
         finally:
-            console.width = previous_width
+            console._width = previous_width
 
     # A handler that writes through ``session_manager.save`` has already updated
     # the store; one that mutates the session in place without saving (``/router``

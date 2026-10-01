@@ -99,3 +99,34 @@ def test_no_agents_md_beside_its_public_source() -> None:
         if _source(rel) != REPO_ROOT / rel and (REPO_ROOT / rel).exists()
     ]
     assert not clashes, f"AGENTS.md already exists beside its public source: {clashes}"
+
+
+def test_the_shipped_gitignore_keeps_every_public_agent_file(tmp_path: Path) -> None:
+    """The tree's ``.gitignore`` files ship with it, and the export commits with
+    ``git add -A``: a public file they ignore is checked in the working tree and then
+    left out of the commit. The root ``/*.md`` rule did that to ``AGENTS.md`` in the
+    first public push. Checked against a scratch repository holding only the tree's
+    ignore files, so it runs where the tree has no ``.git`` (the export's suite copy)."""
+    import shutil
+    import subprocess
+
+    git = shutil.which("git")
+    assert git is not None, "git is required"
+    for ignore in REPO_ROOT.rglob(".gitignore"):
+        rel = ignore.relative_to(REPO_ROOT)
+        if {".git", ".venv", "node_modules"} & set(rel.parts):
+            continue
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ignore, tmp_path / rel)
+    subprocess.run([git, "init", "-q", str(tmp_path)], check=True)  # noqa: S603
+    exported = ("README.md", *ROOT_FILES, *FOLDER_FILES)
+    result = subprocess.run(  # noqa: S603
+        [git, "-c", "core.excludesFile=", "check-ignore", "--no-index", *exported],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode in (0, 1), result.stderr  # 1: nothing is ignored
+    ignored = result.stdout.split()
+    assert not ignored, f"the shipped .gitignore leaves these out of the commit: {ignored}"

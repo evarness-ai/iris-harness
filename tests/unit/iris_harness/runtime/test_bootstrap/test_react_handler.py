@@ -367,10 +367,39 @@ def test_skills_adapter_filters_unrelated_when_query_given() -> None:
     assert specs == []
 
 
-def test_skills_adapter_includes_matching_skill() -> None:
-    """A query naming the skill should include it (manifest-name bonus)."""
+@pytest.fixture()
+def no_embedding_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No MiniLM model on disk and no fetching one (the suite's rule, a fresh clone's
+    state), with a router built fresh so an earlier test's loaded model is not reused."""
+    from iris_harness.kernel.governance.evaluator import embeddings
+    from iris_harness.runtime import routine_authoring
+
+    monkeypatch.setenv("IRIS_TEST_NULL_EMBEDDINGS", "1")
+    monkeypatch.setattr(embeddings, "default_model_on_disk", lambda: False)
+    monkeypatch.setattr(routine_authoring, "_semantic_router_singleton", None)
+    monkeypatch.setattr(routine_authoring, "_semantic_router_init_failed", False)
+
+
+def test_a_router_that_cannot_embed_is_no_router(no_embedding_model: None) -> None:
+    """Every caller's no-router path is its no-embeddings path. A router that scored
+    every skill 0.0 instead filtered them all out of the pool."""
+    from iris_harness.runtime.routine_authoring import _get_semantic_router
+
+    assert _get_semantic_router() is None
+
+
+def test_skills_adapter_includes_matching_skill(no_embedding_model: None) -> None:
+    """With no embeddings, a query naming the skill includes it (the keyword scorer's
+    manifest-name bonus)."""
     specs = _skills_to_react_tools(_StubRegistry(), query="run the echo-skill on my text")
     assert [s.name for s in specs] == ["echo_tool"]
+
+
+def test_skills_adapter_without_embeddings_still_filters_unrelated(
+    no_embedding_model: None,
+) -> None:
+    specs = _skills_to_react_tools(_StubRegistry(), query="what is the weather today")
+    assert specs == []
 
 
 # --- P4: intent-aware degrade fallback + opt-in flag (ADR-0077) ---------------

@@ -87,12 +87,18 @@ def _get_semantic_router() -> Any | None:
     Init is lazy: the underlying ChromaDB ONNX model only loads on first
     embed call. Set ``IRIS_SKILL_ROUTER_SEMANTIC=0`` to force the legacy
     keyword scorer (useful for diagnosing routing regressions).
+
+    A router whose embedder cannot embed (no model, and fetching one is not
+    allowed) is unavailable too: every caller's no-router path is its
+    no-embeddings path (the keyword scorer), and a router that scores
+    everything 0.0 would instead filter every skill out. Checked per call,
+    because the model can appear on disk after the router is built.
     """
     global _semantic_router_singleton, _semantic_router_init_failed
     if _semantic_router_init_failed:
         return None
     if _semantic_router_singleton is not None:
-        return _semantic_router_singleton
+        return _semantic_router_singleton if _semantic_router_singleton.available else None
     if os.getenv(_SEMANTIC_ROUTER_ENABLED_ENV, "1").strip().lower() in _FALSE_ENV_VALUES:
         _semantic_router_init_failed = True
         return None
@@ -117,7 +123,7 @@ def _get_semantic_router() -> Any | None:
         logger.exception("semantic skill router init failed; using keyword scorer")
         _semantic_router_init_failed = True
         return None
-    return _semantic_router_singleton
+    return _semantic_router_singleton if _semantic_router_singleton.available else None
 
 
 _BRIEF_TEMPLATE_ALIASES: dict[str, str] = {

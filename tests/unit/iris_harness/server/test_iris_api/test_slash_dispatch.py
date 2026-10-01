@@ -205,3 +205,17 @@ def test_a_one_line_confirmation_is_not_fenced(client: TestClient) -> None:
 
     assert "```" not in output
     assert "qwen3.5:latest" in output
+
+
+def test_a_command_leaves_the_shared_console_width_unpinned(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Capturing widens the shared console for the one command, then puts its own
+    setting back. Writing back the width it had *measured* pinned it (80 off a
+    terminal), so every later print in the process ignored COLUMNS and the terminal."""
+    from iris_harness.foundation.console import console
+
+    monkeypatch.setattr(console, "_width", None)  # unpinned, as a fresh process has it
+    _dispatch(client, "/model qwen3.5:latest")
+
+    assert console._width is None

@@ -55,6 +55,9 @@ docs/stories/index.md
 !/readme.md
 !/CONTRIBUTING.md
 !/CLAUDE.md
+# The public tree's root agent file: the export renames AGENTS.public.md to it, and this
+# .gitignore ships, so without the exception the export's own commit leaves it out.
+!/AGENTS.md
 # The open-source project files, and the public README and agent files the export renames
 # to README.md, AGENTS.md and CLAUDE.md
 !/README.public.md

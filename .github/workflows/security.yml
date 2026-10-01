@@ -54,6 +54,11 @@ jobs:
 
   codeql:
     name: codeql (${{ matrix.language }})
+    # Code scanning on a private repository needs paid GitHub Advanced Security: while the
+    # repository is private (before launch) CodeQL is skipped, not failed, and it starts on
+    # its own once the repository is public. The `security` job (gitleaks, the identity
+    # scan) runs either way.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

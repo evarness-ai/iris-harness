@@ -121,6 +121,21 @@ os.environ["IRIS_ALLOWED_HOSTS"] = "iris.test"
 # CliRunner (a non-tty) renders plain text regardless of the developer's shell.
 for _color_var in ("FORCE_COLOR", "CLICOLOR_FORCE", "COLORTERM"):
     os.environ.pop(_color_var, None)
+# The same for width and for CI's own forcing, which a hosted runner (GitHub Actions)
+# turns on without asking:
+#   * a Rich ``Console()`` built while COLUMNS/LINES are set freezes that width for the
+#     life of the process, so a module-level console (``cli/device.py``, the shared
+#     ``foundation.console``) ignores the ``CliRunner(env={"COLUMNS": ...})`` a test
+#     gives it and wraps at the shell's width. Unset here, before any CLI module is
+#     imported, a console resolves its width at print time: the test's COLUMNS, or 80
+#     (Rich's default off a terminal).
+#   * Typer forces its help console into terminal mode (ANSI escapes) when GITHUB_ACTIONS,
+#     FORCE_COLOR or PY_COLORS is set, and TERMINAL_WIDTH pins its width.
+#     ``_TYPER_FORCE_DISABLE_TERMINAL`` is Typer's own switch for exactly this; it is read
+#     when ``typer.rich_utils`` is imported, so it is set here, first.
+for _width_var in ("COLUMNS", "LINES", "TERMINAL_WIDTH", "PY_COLORS"):
+    os.environ.pop(_width_var, None)
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
 
 # Never load the developer's repo-root ``.env`` into the test process. Several modules
 # call ``load_dotenv()`` at import time (e.g. ``iris_harness.server.iris_api.main`` so uvicorn sees

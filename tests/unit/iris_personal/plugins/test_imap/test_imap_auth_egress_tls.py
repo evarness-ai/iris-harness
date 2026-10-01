@@ -151,7 +151,13 @@ def test_tls_modes_verify_the_certificate_and_sync(
         )
         assert trusting.fetch_new(acct.account_id, store=store).fetched == 2
         if mode == "starttls":
-            assert box.commands[:2] == ["CAPABILITY", "STARTTLS"]
+            # The password goes over TLS: STARTTLS comes before LOGIN, and the
+            # capabilities are read again over TLS (the plaintext ones are not trusted).
+            # Whether a CAPABILITY precedes STARTTLS is imaplib's business: newer
+            # releases (3.13.15 does) take them from the greeting and send none.
+            starttls, login = box.commands.index("STARTTLS"), box.commands.index("LOGIN")
+            assert starttls < login
+            assert "CAPABILITY" in box.commands[starttls + 1 : login]
 
         # The default context does not trust a self-signed certificate: refused.
         default = ImapProvider(state=state, timeout=5.0)  # type: ignore[arg-type]

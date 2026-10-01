@@ -22,6 +22,10 @@ concurrency:
 jobs:
   build:
     name: build
+    # Pages is free only for a public repository: while the repository is private (before
+    # launch) the deploy is skipped, not failed, and it starts on its own once the
+    # repository is public. `deploy` needs `build`, so it skips with it.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

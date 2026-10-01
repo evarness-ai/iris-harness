@@ -241,6 +241,10 @@ def runtime_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
 
     monkeypatch.delenv("IRIS_GOVERNANCE_ENABLED", raising=False)
     monkeypatch.setattr(CodingLLMClient, "invoke", _model)
+    # The whole pool on the menu: which tools make the 12-tool shortlist is decided by
+    # the MiniLM embedder (or, with no model on disk, by pool order, which leaves every
+    # email tool off), and these tests are about routing and the approval, not ranking.
+    monkeypatch.setenv("IRIS_REACT_TOOL_CAP", "0")
     config_dir, data_dir = tmp_path / "config", tmp_path / "data"
     config_dir.mkdir()
     data_dir.mkdir()

@@ -51,13 +51,23 @@ class DefaultEmbedder:
     def __init__(self) -> None:
         self._fn: Any | None = None
 
+    @property
+    def available(self) -> bool:
+        """False when a call would embed nothing without trying, so a caller can take
+        its no-embeddings path up front instead of reading every score as 0.0.
+
+        That is the test flag's promise, "no model fetch": the ONNX download is a
+        network call the suite forbids. A model already on disk is used as before (the
+        semantic-routing tests assert on real similarities); without one, nothing is
+        embedded.
+        """
+        if self._fn is not None:
+            return True
+        return not (os.environ.get("IRIS_TEST_NULL_EMBEDDINGS") and not default_model_on_disk())
+
     def __call__(self, text: str) -> Sequence[float]:
         if self._fn is None:
-            if os.environ.get("IRIS_TEST_NULL_EMBEDDINGS") and not default_model_on_disk():
-                # The test flag's promise is "no model fetch": the ONNX download is a
-                # network call the suite forbids. A model already on disk is used as
-                # before (the semantic-routing tests assert on real similarities);
-                # without one, embed nothing and let the caller fall back.
+            if not self.available:
                 return []
             self._fn = _load_default_embedding_function()
         # chromadb's embedding function takes a list of inputs and

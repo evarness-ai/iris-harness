@@ -14,7 +14,7 @@
     "test:viewport": "playwright test"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^1.1.4",
+    "@dagrejs/dagre": "^3.1.1",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-dropdown-menu": "^2.1.18",
     "@radix-ui/react-scroll-area": "^1.2.12",

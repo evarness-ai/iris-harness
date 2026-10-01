@@ -108,10 +108,18 @@ def test_no_token_ever_reaches_browser_storage() -> None:
     assert 'credentials: "same-origin"' in HTTP.read_text(encoding="utf-8")
 
 
-def test_a_401_never_falls_back_to_mock_traces() -> None:
-    """Each mock-backed read rethrows a 401 instead of returning canned data."""
-    client = CLIENT.read_text(encoding="utf-8")
+def test_the_console_carries_no_mock_data() -> None:
+    """A 401 or an unreachable API is an error the screen shows, never canned data.
 
-    assert client.count("refuseUnauthorized(r);") == 3, "listTraces, listSessions, getTrace"
-    assert client.count("if (e instanceof UnauthorizedError) throw e;") == 3
-    assert client.count("MOCK_TRACES") == 3, "import + two uses; a new mock path needs the guard"
+    The console once fell back to mock traces and sessions when the API was down (and,
+    for sessions, when it was empty), so an unpaired phone or a fresh install showed
+    someone else's turns. There is no mock data to fall back to now; keep it that way.
+    """
+    assert not (SRC / "mock").exists(), "mock data belongs under webui/tests, not src/"
+    offenders = [
+        f"{path.relative_to(ROOT)}:{number}"
+        for path in _sources()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if re.search(r"MOCK_|['\"]mock['\"]|mock data", line)
+    ]
+    assert offenders == []

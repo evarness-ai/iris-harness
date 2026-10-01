@@ -25,9 +25,9 @@ npm run build    # type-check + production build
   - **Node detail panel** — timing, LLM model/provider/tokens, input/output, tool stdout/stderr,
     governance decision, and a CPU/GPU/RAM resource panel.
   - **Waterfall** — per-step duration bars.
-  - Trace selector + a **live / mock** badge.
+  - Trace selector over the recent turns.
 
-## Data source — live, with mock fallback
+## Data source — the live API, nothing else
 
 The screen calls the IRIS API (proxied via `/api`):
 
@@ -39,9 +39,11 @@ which reconstructs the graph from session JSONL (`~/.iris/logs/session-<id>.json
 (`user_message` … `agent_response`) becomes one trace; `trace_id` is `"<session_id>~<turn_index>"`.
 Degenerate turns (e.g. `approve`/routine triggers with no pipeline activity) are skipped.
 
-If the API is unreachable or has no logs yet, `src/lib/client.ts` falls back to the canned mock
-traces in `src/mock/traces.ts`, and the UI shows a **mock data** badge (vs **live logs**).
-A 401 is not "unreachable": it goes to `/pair` (see *Pairing a browser*), never to mock data.
+The console ships no mock data. If the API is unreachable, every screen shows the "API
+unavailable" notice naming `iris serve`. If it answers but has no logs yet (a fresh install),
+Call Trace and Sessions say so and link to Chat: start a conversation and its turns appear
+here. A 401 goes to `/pair` (see *Pairing a browser*). `tests/real-data-only.spec.ts` holds
+all three.
 
 To run against live data, start the API and the dev server:
 
@@ -101,9 +103,8 @@ once, for every lib module, React or not. Two rules ride on it:
 
 - **No tokens in JS.** The cookie is HttpOnly; never read, store or send a device token or
   the service secret from browser code (no `localStorage`, no `Authorization` header).
-- **A 401 is never "API down".** A catch-all fallback must let it through: the mock-backed
-  reads in `lib/client.ts` rethrow `UnauthorizedError` instead of showing mock traces to an
-  unpaired browser.
+- **A 401 is never hidden behind data.** No read falls back to canned data, so a 401 is an
+  error like any other and `apiFetch` sends the browser to `/pair`.
 
 `tests/unit/test_webui/test_webui_pairing.py` holds these lines (there is no JS test runner).
 
@@ -132,7 +133,7 @@ not yet shown for live traces — a follow-up.
 `session_log.py` now attaches a `resources` block (CPU%, RAM free/total, thermal) to `llm_call`,
 `tool_run`, and `agent_response` events. **GPU%** is not obtainable via psutil on macOS / Apple
 Silicon (would need privileged `powermetrics`), so it is logged as `null` and rendered as
-"n/a" — the mock data shows representative GPU values on LLM nodes to exercise the UI.
+"n/a".
 
 ## Stack
 

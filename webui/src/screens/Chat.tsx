@@ -229,8 +229,8 @@ function HistorySidebar({
   onSelect: (id: string) => void;
   onNew: () => void;
 }) {
-  const { data, isLoading } = useSessions();
-  const sessions = data?.sessions ?? [];
+  const { data, isLoading, isError } = useSessions();
+  const sessions = data ?? [];
   const [collapsedByDay, setCollapsedByDay] = useState<Record<string, boolean>>({});
 
   const grouped = sessions.reduce<Record<string, typeof sessions>>((acc, s) => {
@@ -268,7 +268,12 @@ function HistorySidebar({
             Loading history…
           </div>
         )}
-        {!isLoading && sessions.length === 0 && (
+        {isError && (
+          <div className="p-3 text-center text-xs text-danger">
+            API unavailable — start it with <code>iris serve</code>.
+          </div>
+        )}
+        {!isLoading && !isError && sessions.length === 0 && (
           <div className="p-3 text-center text-xs text-fg-subtle">
             No conversations yet.
           </div>

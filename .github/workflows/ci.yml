@@ -190,6 +190,14 @@ jobs:
     name: webui
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Playwright's own image carries the browsers and every system library they need, so
+    # the job never apt-installs them from the runner's Ubuntu mirror (a slow mirror once
+    # stalled `playwright install --with-deps` past the timeout). Its tag must match the
+    # @playwright/test version in webui/package-lock.json; it is pinned by digest. The
+    # image's documented GitHub Actions setup runs as uid 1001.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --user 1001
     defaults:
       run:
         working-directory: webui
@@ -213,8 +221,6 @@ jobs:
       # fixtures (no API). playwright.config.ts's webServer builds and serves `vite preview`
       # itself (with CI set it never reuses a running server).
       # Two engines: WebKit (iPhone 13, the target) and Chromium for the one
-      # service-worker spec, which Playwright runs only there.
-      - name: Install the Playwright browsers
-        run: npx --no-install playwright install --with-deps webkit chromium
+      # service-worker spec, which Playwright runs only there. Both come with the image.
       - name: Playwright specs
         run: npx --no-install playwright test

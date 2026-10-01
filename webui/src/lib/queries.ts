@@ -1,6 +1,6 @@
 /* TanStack Query hooks over the API client — real loading/error/caching.
- * The client functions still carry a mock fallback so the prototype renders
- * offline; the `source` field ('live' | 'mock') surfaces which one is in use. */
+ * Every read is the live API's answer: when the API is down the hook is in its
+ * error state and the screen says so; there is no canned fallback. */
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   getTrace,

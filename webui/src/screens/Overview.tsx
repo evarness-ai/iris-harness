@@ -4,7 +4,7 @@ import { Card, Kpi } from "@/components/Card";
 import { Tag } from "@/components/Tag";
 import { Button } from "@/components/ui/button";
 import { Grid } from "@/components/layout";
-import { Notice } from "@/components/control/parts";
+import { ApiUnavailable, Notice } from "@/components/control/parts";
 import { fmtMs, fmtTokens } from "@/lib/nodeMeta";
 import { isMetricsDisabled } from "@/lib/control";
 import {
@@ -57,7 +57,7 @@ function LlmModeCard() {
       {isLoading ? (
         <Notice>Loading…</Notice>
       ) : isError || !data ? (
-        <Notice tone="danger">API unavailable</Notice>
+        <ApiUnavailable />
       ) : (
         <>
           <div className="mb-2 font-mono text-xl font-semibold text-primary">{data.mode}</div>
@@ -111,7 +111,7 @@ function LlmModeCard() {
 function LearningCard() {
   const { data, isLoading, isError } = useLearningMetrics();
   if (isLoading) return <Card title="Self-learning"><Notice>Loading…</Notice></Card>;
-  if (isError || !data) return <Card title="Self-learning"><Notice tone="danger">API unavailable</Notice></Card>;
+  if (isError || !data) return <Card title="Self-learning"><ApiUnavailable /></Card>;
   if (isMetricsDisabled(data)) {
     return (
       <Card title="Self-learning">
@@ -149,7 +149,7 @@ function RoutinesCard() {
       {isLoading ? (
         <Notice>Loading…</Notice>
       ) : isError ? (
-        <Notice tone="danger">API unavailable</Notice>
+        <ApiUnavailable />
       ) : (
         <>
           <div className="grid grid-cols-3 gap-2">
@@ -178,7 +178,7 @@ function HeartbeatsCard() {
       {isLoading ? (
         <Notice>Loading…</Notice>
       ) : isError ? (
-        <Notice tone="danger">API unavailable</Notice>
+        <ApiUnavailable />
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2">

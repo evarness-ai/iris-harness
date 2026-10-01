@@ -10,12 +10,11 @@
 export const PAIR_PATH = "/pair";
 const CLAIM_PATH = "/api/v1/devices/pair/claim";
 
-/** Thrown by callers that would otherwise hide a 401 behind a fallback (mock data). */
-export class UnauthorizedError extends Error {
-  constructor() {
-    super("HTTP 401 Unauthorized");
-    this.name = "UnauthorizedError";
-  }
+/** True when a request never got an answer: the API is not running or not reachable.
+ * `fetch` rejects with a TypeError then; an HTTP error status is an answer, and its
+ * caller's own message (the server's detail) says more than "unavailable" would. */
+export function isUnreachable(err: unknown): boolean {
+  return err instanceof TypeError;
 }
 
 /** Open-redirect guard for `?next=`: a same-origin path only. It starts with a

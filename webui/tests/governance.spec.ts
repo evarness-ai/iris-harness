@@ -8,6 +8,7 @@
  * must NEVER show is a payload field the server did not send or an unmasked address. */
 import { test, expect, type Page } from "@playwright/test";
 import { fixtureFor } from "./fixtures";
+import { FRESH } from "./fresh-install";
 
 const ADDRESS = "jordan.owner@example.com";
 
@@ -304,46 +305,9 @@ test("a call trace lists every hook decision of the turn, in order", async ({ pa
 });
 
 /* A fresh install (OSS plan R17, public issue #20): no turn has run, so the ledger, the
- * proof window and the trace list are empty. The bodies below are what the IRIS API
+ * proof window and the trace list are empty. FRESH (tests/fresh-install.ts) is what the IRIS API
  * answers on an empty IRIS_HOME. Each screen must say what to do next, never sit on a
- * spinner, and never show the canned mock traces as if they were the owner's. */
-const FRESH: Record<string, unknown> = {
-  "/governance/state": {
-    enabled: true,
-    audit_db: "/home/owner/.iris/governance/audit.db",
-    audit_count: 0,
-    flags: [{ key: "IRIS_GOVERNANCE_ENABLED", label: "Kernel enabled", on: true }],
-  },
-  "/governance/audit": {
-    count: 0,
-    total: 0,
-    audit_db: "/home/owner/.iris/governance/audit.db",
-    callers: [],
-    entries: [],
-  },
-  "/governance/pii-shadow": {
-    mode: "off",
-    since: "2026-09-24T10:00:00+00:00",
-    rows: 0,
-    checked: {},
-    unobserved: {},
-    cells: [],
-  },
-  "/governance/proof-bundle/check": {
-    since: "2026-09-24T10:00:00+00:00",
-    until: null,
-    ledger_rows: 0,
-    ok: true,
-    integrity: [],
-    invariants: [
-      { id: "no-private-to-cloud", statement: "No private call to a cloud tier.", ok: true, violation_count: 0, violations: [], evidence: { model_call_rows: 0 } },
-      { id: "mailbox-write-approved", statement: "No mailbox write without an approval.", ok: true, violation_count: 0, violations: [], evidence: { approval_rows: 0, writes_observed: 0 } },
-      { id: "every-call-and-answer-audited", statement: "Every call and answer audited.", ok: true, violation_count: 0, violations: [], evidence: { model_calls_observed: 0, answers_observed: 0 } },
-    ],
-  },
-  "/api/traces": [],
-};
-
+ * spinner, and never show canned traces as if they were the owner's. */
 async function serveFresh(page: Page): Promise<string[]> {
   const errors: string[] = [];
   page.on("console", (m) => {

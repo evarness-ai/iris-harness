@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Card, Kpi } from "../components/Card";
-import { Tag } from "../components/Tag";
+import { ApiUnavailable } from "../components/control/parts";
 import { fmtMs, fmtTokens } from "../lib/nodeMeta";
 import { useSessions } from "../lib/queries";
 
@@ -18,9 +18,8 @@ function fmtTime(iso: string): string {
 
 export function SessionsScreen() {
   const navigate = useNavigate();
-  const { data, isLoading } = useSessions();
-  const source = data?.source ?? "mock";
-  const sessions = useMemo(() => data?.sessions ?? [], [data]);
+  const { data, isLoading, isError } = useSessions();
+  const sessions = useMemo(() => data ?? [], [data]);
   const [sel, setSel] = useState<string>("");
 
   const selected = useMemo(
@@ -33,13 +32,30 @@ export function SessionsScreen() {
   if (isLoading) {
     return <div className="p-8 text-center text-sm text-fg-muted">Loading sessions…</div>;
   }
+  if (isError) return <ApiUnavailable />;
+  // A fresh install: the API is up and no conversation has run yet.
+  if (sessions.length === 0) {
+    return (
+      <div data-testid="sessions-empty">
+        <Card title="No conversations yet">
+          <p className="text-sm text-fg-muted">
+            Every conversation you have with IRIS is listed here, with its turns, tokens and
+            timing. Start a chat, then come back.
+          </p>
+          <Link
+            to="/chat"
+            className="mt-4 inline-flex min-h-[44px] items-center rounded-lg border border-border px-3 text-sm text-fg hover:bg-surface-raised"
+          >
+            Open Chat
+          </Link>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Tag kind={source === "live" ? "ok" : "warn"}>
-          {source === "live" ? "live logs" : "mock data"}
-        </Tag>
         <span className="text-xs text-fg-subtle">
           recent conversation sessions — open any turn in the Call Trace
         </span>
@@ -79,9 +95,6 @@ export function SessionsScreen() {
                 </div>
               </button>
             ))}
-            {sessions.length === 0 && (
-              <div className="p-4 text-center text-xs text-fg-subtle">No sessions found.</div>
-            )}
           </div>
         </Card>
 
@@ -92,7 +105,7 @@ export function SessionsScreen() {
               <button
                 type="button"
                 onClick={() => navigate(`/chat/${selected.session_id}`)}
-                className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-fg hover:opacity-90"
+                className="min-h-[44px] rounded-md bg-primary px-2 py-1 text-[11px] sm:min-h-0 font-semibold text-primary-fg hover:opacity-90"
               >
                 open in chat →
               </button>
@@ -123,7 +136,7 @@ export function SessionsScreen() {
                   <button
                     type="button"
                     onClick={() => navigate(`/calltrace/${t.trace_id}`)}
-                    className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-fg hover:opacity-90"
+                    className="min-h-[44px] shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] sm:min-h-0 font-semibold text-primary-fg hover:opacity-90"
                   >
                     view trace →
                   </button>

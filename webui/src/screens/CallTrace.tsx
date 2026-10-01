@@ -14,7 +14,6 @@ import '@xyflow/react/dist/style.css';
 
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Card, Kpi } from '../components/Card';
-import { Tag } from '../components/Tag';
 import { IRISNode } from '../components/IRISNode';
 import { GovernanceTimeline } from '../components/GovernanceTimeline';
 import { NodeDetail } from '../components/NodeDetail';
@@ -23,8 +22,8 @@ import { Replay } from '../components/Replay';
 import { Waterfall } from '../components/Waterfall';
 import { buildGraph, type Direction, type IRISNodeData } from '../lib/layout';
 import { fmtMs } from '../lib/nodeMeta';
-import { getTrace, listTraces, type Source, type TraceSummary } from '../lib/client';
-import type { Trace } from '../lib/types';
+import { useTrace, useTraces } from '../lib/queries';
+import { ApiUnavailable } from '../components/control/parts';
 
 const nodeTypes = { iris: IRISNode };
 
@@ -62,10 +61,10 @@ export function CallTraceScreen() {
   const { traceId } = useParams<{ traceId?: string }>();
   const navigate = useNavigate();
   const tid = traceId ?? '';
-  const [summaries, setSummaries] = useState<TraceSummary[]>([]);
-  const [source, setSource] = useState<Source>('mock');
-  const [listed, setListed] = useState(false);
-  const [trace, setTrace] = useState<Trace | null>(null);
+  const tracesQ = useTraces();
+  const summaries = useMemo(() => tracesQ.data ?? [], [tracesQ.data]);
+  const traceQ = useTrace(tid);
+  const trace = traceQ.data ?? null;
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
   // View controls
@@ -83,34 +82,10 @@ export function CallTraceScreen() {
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const rfi = useRef<ReactFlowInstance<Node<IRISNodeData>, Edge> | null>(null);
 
-  // Load the list of recent traces (live API, or mock fallback).
+  // No trace in the URL → redirect to the newest (deep-linkable default).
   useEffect(() => {
-    listTraces().then(({ source: src, traces }) => {
-      setSource(src);
-      setSummaries(traces);
-      setListed(true);
-      // No trace in the URL → redirect to the newest (deep-linkable default).
-      if (!traceId && traces[0]) navigate(`/calltrace/${traces[0].trace_id}`, { replace: true });
-    }).catch(() => {
-      /* 401 — lib/http.ts is already routing to /pair; never fall back to mock here */
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Fetch the selected trace's full graph.
-  useEffect(() => {
-    if (!tid) return;
-    let alive = true;
-    setTrace(null);
-    getTrace(tid).then((t) => {
-      if (alive) setTrace(t ?? null);
-    }).catch(() => {
-      /* 401 — routed to /pair */
-    });
-    return () => {
-      alive = false;
-    };
-  }, [tid]);
+    if (!traceId && summaries[0]) navigate(`/calltrace/${summaries[0].trace_id}`, { replace: true });
+  }, [traceId, summaries, navigate]);
 
   const orderedIds = useMemo(
     () => (trace ? [...trace.nodes].sort((a, b) => a.t_offset_ms - b.t_offset_ms).map((n) => n.id) : []),
@@ -227,9 +202,13 @@ export function CallTraceScreen() {
     setStep(0);
   };
 
+  // The API is down (a 401 is routed to /pair by lib/http.ts): say so, never show canned
+  // traces in its place.
+  if (tracesQ.isError || traceQ.isError) return <ApiUnavailable />;
+
   // A fresh install: the API is up and has traced no turn yet. Without this the screen
   // would wait on "Loading trace…" for a trace that does not exist.
-  if (listed && source === 'live' && summaries.length === 0 && !tid) {
+  if (tracesQ.isSuccess && summaries.length === 0 && !tid) {
     return (
       <div data-testid="calltrace-empty">
         <Card title="No turns traced yet">
@@ -263,7 +242,6 @@ export function CallTraceScreen() {
             </option>
           ))}
         </select>
-        <Tag kind={source === 'live' ? 'ok' : 'warn'}>{source === 'live' ? 'live logs' : 'mock data'}</Tag>
         {trace && <span className="font-mono text-[11px] text-fg-subtle">session {trace.session_id}</span>}
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[11px] text-fg-subtle">layout</span>
@@ -325,7 +303,7 @@ export function CallTraceScreen() {
             <div className="relative h-[440px] rounded-lg border border-border bg-bg md:h-[620px]">
               {!trace && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-fg-subtle">
-                  Loading trace…
+                  {traceQ.isSuccess ? 'No such trace — pick a turn above.' : 'Loading trace…'}
                 </div>
               )}
               <ReactFlow

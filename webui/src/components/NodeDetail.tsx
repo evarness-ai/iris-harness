@@ -43,7 +43,7 @@ function ResourcePanel({ r }: { r: Resources }) {
       />
       <div className="mt-1.5 flex items-center gap-2 text-[10.5px]">
         {r.thermal_throttled ? <Tag kind="warn">thermal-throttled</Tag> : <Tag kind="ok">nominal</Tag>}
-        {r.gpu_percent == null && <span className="text-fg-subtle">GPU% n/a on macOS — mock</span>}
+        {r.gpu_percent == null && <span className="text-fg-subtle">GPU% not reported on this host</span>}
       </div>
     </Card>
   );

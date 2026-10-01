@@ -253,7 +253,31 @@ export const SHEET_REMINDER = {
   actions: ["done", "10m", "1h", "tomorrow_9am"],
 };
 
+/** Recent turns as GET /api/traces lists them (a bare list, not an object). */
+const TRACE_LIST = rows(8, (i) => ({
+  session_id: `${LONG_ID}-s${i % 3}`,
+  trace_id: `${LONG_ID}-s${i % 3}~${i}`,
+  request: `What did the overnight ticks do, and why did the calendar credential at ${LONG_PATH} fail? (${i})`,
+  started_at: "2026-09-20T08:40:00Z",
+  total_duration_ms: 41_200 + i,
+  total_tokens: 31_800 + i,
+}));
+
 export const OVERRIDES: Record<string, unknown> = {
+  /* The trace and session lists are bare lists. These two screens used to fall back to
+   * canned traces whenever the body was not a list, so DEFAULT's object let the smoke
+   * lay out canned rows instead of these; now a non-list is an error, so they are named. */
+  "/api/traces": TRACE_LIST,
+  "/api/sessions": rows(12, (i) => ({
+    session_id: `${LONG_ID}-s${i}`,
+    title: `What did the overnight ticks do, and why did the calendar credential fail? (${i})`,
+    turn_count: TRACE_LIST.length,
+    started_at: "2026-09-20T06:00:00Z",
+    last_at: "2026-09-20T08:40:00Z",
+    total_tokens: 48_210,
+    total_duration_ms: 92_140,
+    turns: TRACE_LIST,
+  })),
   // Every plugin mounted, so every screen is reachable (tests/routes.ts).
   "/api/v1/webui/nav": navFixture("personal-assistant"),
   [`/api/v1/reminders/${SHEET_REMINDER_ID}`]: SHEET_REMINDER,

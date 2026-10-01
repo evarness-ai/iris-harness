@@ -21,6 +21,16 @@ export function Notice({
   );
 }
 
+/** The one "the API is down" notice: what happened and the command that fixes it. */
+export function ApiUnavailable() {
+  return (
+    <Notice tone="danger">
+      API unavailable — is the IRIS API running? Start it with <code>iris serve</code> (port
+      8003 by default).
+    </Notice>
+  );
+}
+
 /** Standard loading / error / empty handling for a read-only control query. */
 export function QueryState({
   loading,
@@ -36,7 +46,7 @@ export function QueryState({
   children: ReactNode;
 }) {
   if (loading) return <Notice>Loading…</Notice>;
-  if (error) return <Notice tone="danger">API unavailable — is the IRIS API running? Start it with <code>iris serve</code> (port 8003 by default).</Notice>;
+  if (error) return <ApiUnavailable />;
   if (empty) return <Notice>{emptyText}</Notice>;
   return <>{children}</>;
 }

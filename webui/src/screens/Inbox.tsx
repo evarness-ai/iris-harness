@@ -12,6 +12,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Tag } from "@/components/Tag";
+import { ApiUnavailable } from "@/components/control/parts";
+import { isUnreachable } from "@/lib/http";
 import {
   useJudgments,
   useSetJudgmentBucket,
@@ -174,6 +176,8 @@ export function InboxScreen() {
       </div>
       {isLoading ? (
         <p className="text-sm text-fg-muted">Loading…</p>
+      ) : isUnreachable(error) ? (
+        <ApiUnavailable />
       ) : error ? (
         <p className="text-sm text-danger">
           Couldn't load the judged emails{error instanceof Error ? `: ${error.message}` : ""}.

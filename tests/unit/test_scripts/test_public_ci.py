@@ -17,6 +17,7 @@ web console to minor and patch updates and moves React with its types.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -217,8 +218,8 @@ def test_the_webui_job_lints_typechecks_and_builds_on_every_pr() -> None:
         "npx --no-install tsc --noEmit",
         "npm run build",
         # The Playwright specs (viewport, nav gating, Setup, Governance, Call trace), after
-        # the build, with exactly the engines playwright.config.ts's projects use.
-        "npx --no-install playwright install --with-deps webkit chromium",
+        # the build. The browsers come with the job's Playwright image: nothing is
+        # apt-installed from the runner's mirror.
         "npx --no-install playwright test",
     ]
 
@@ -229,8 +230,16 @@ def test_the_webui_job_installs_exactly_the_browsers_the_specs_use() -> None:
     devices = set(re.findall(r'devices\["([^"]+)"\]', config))
     assert devices == {"iPhone 13", "Pixel 7"}, "a new project may need another browser"
     job = _load(WORKFLOWS / "ci.yml")["jobs"]["webui"]
-    (install,) = [s["run"] for s in job["steps"] if "playwright install" in s.get("run", "")]
-    assert install.split()[-2:] == ["webkit", "chromium"]
+    # The image ships WebKit and Chromium (and Firefox); nothing installs browsers.
+    assert not [s for s in job["steps"] if "playwright install" in s.get("run", "")]
+    image = job["container"]["image"]
+    assert image.startswith("mcr.microsoft.com/playwright:v")
+    tag, _, digest = image.partition("@")
+    assert re.fullmatch(r"sha256:[0-9a-f]{64}", digest), "pin the image by digest"
+    # The image's browsers are built for one Playwright release: the lockfile's.
+    lock = json.loads((ROOT / "webui" / "package-lock.json").read_text(encoding="utf-8"))
+    version = lock["packages"]["node_modules/@playwright/test"]["version"]
+    assert tag.split(":")[1] == f"v{version}-noble"
 
 
 def test_the_docs_deploy_writes_pages_from_main_only() -> None:

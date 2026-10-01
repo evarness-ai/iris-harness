@@ -14,7 +14,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { Card } from "@/components/Card";
-import { Notice } from "@/components/control/parts";
+import { ApiUnavailable, Notice } from "@/components/control/parts";
 import { cn } from "@/lib/utils";
 import { useKnowledgeGraph } from "@/lib/queries";
 import { KGNode, KG_KIND_CLASS } from "@/components/knowledge/KGNode";
@@ -110,8 +110,7 @@ export function KnowledgeScreen() {
   const selected = selectedId ? (byId.get(selectedId) ?? null) : null;
 
   if (isLoading) return <Notice>Building the context map…</Notice>;
-  if (isError || !data)
-    return <Notice tone="danger">API unavailable — is the IRIS API running? Start it with <code>iris serve</code> (port 8003 by default).</Notice>;
+  if (isError || !data) return <ApiUnavailable />;
 
   const empty = data.nodes.length === 0;
 

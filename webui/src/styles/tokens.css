@@ -27,15 +27,18 @@
   --primary: 31 158 120; /* darkened teal for AA on light surfaces */
   --primary-fg: 255 255 255;
   --ring: 31 158 120;
-  /* Status (theme-invariant hues, tuned per theme for contrast) */
-  --success: 47 163 127;
-  --warning: 185 117 42;
-  --danger: 216 63 103;
-  --info: 47 116 192;
-  /* Trace-node palette (shared across themes) */
+  /* Status (theme-invariant hues, tuned per theme for contrast). Light values are
+     darkened until a Tag (this colour as text on a 15% tint of itself) reads at
+     WCAG-AA 4.5:1 over surface, bg and sidebar; see design.md § Colors. */
+  --success: 30 106 82;
+  --warning: 131 83 30;
+  --danger: 175 35 72;
+  --info: 39 96 159;
+  /* Trace-node palette (shared hues; the two that Tag uses as text, runtime and
+     cognition, are darkened for the same AA reason) */
   --node-perception: 111 180 240;
-  --node-cognition: 224 164 88;
-  --node-runtime: 127 119 221;
+  --node-cognition: 130 83 24;
+  --node-runtime: 83 72 209;
   --node-action: 93 202 165;
   --node-llm: 201 139 219;
   --node-governance: 237 106 139;
@@ -69,6 +72,8 @@
   --warning: 224 164 88;
   --danger: 237 106 139;
   --info: 111 180 240;
+  --node-cognition: 224 164 88;
+  --node-runtime: 127 119 221;
   --overlay: rgb(0 0 0 / 0.55);
   --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.30);
   --shadow-e2: 0 4px 12px rgb(0 0 0 / 0.35);

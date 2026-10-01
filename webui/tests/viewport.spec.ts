@@ -36,7 +36,6 @@ const ROUTES = [
 const TAP_TARGETS: Record<string, number> = {
   "/documents": 5,
   "/devices": 2,
-  "/sessions": 2,
   "/twin": 1,
 };
 

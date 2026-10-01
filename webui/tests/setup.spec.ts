@@ -432,10 +432,10 @@ test("a connected account with no setup can be started", async ({ page }) => {
   expect(onboardingPath("imap:new@example.com")).toContain("imap%3Anew%40example.com");
 });
 
-// -- dark mode (public issue #19) ----------------------------------------------------------
-// Dark is the console's default (lib/theme.ts); it is set here explicitly so the test does
-// not lean on that default. The light theme is not held to this yet: there the "done" and
-// "now" tags read at 2.6:1 and 3.6:1, under AA -- a shared Tag/token issue, not Setup's.
+// -- contrast in both themes (public issue #19) ---------------------------------------------
+// Dark is the console's default (lib/theme.ts); each theme is set here explicitly so the
+// test does not lean on that default. Light is held to the same AA bar since its status
+// tokens were darkened (design.md § Colors).
 
 /** WCAG contrast of each matched element's text against what is painted behind it,
  * compositing translucent backgrounds (`bg-primary/5`) over their ancestors. */
@@ -478,20 +478,29 @@ async function lowContrast(page: Page, selector: string): Promise<string[]> {
   }, selector);
 }
 
-test("Setup reads at phone width in dark mode", async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem("iris-theme", "dark"));
-  await serve(page, fakeSetupApi([setupAt(ACCOUNT, "classify")]));
-  await page.goto("/setup", { waitUntil: "networkidle" });
+for (const theme of ["dark", "light"] as const) {
+  test(`Setup reads at phone width in ${theme} mode`, async ({ page }) => {
+    await page.addInitScript((t) => localStorage.setItem("iris-theme", t), theme);
+    await serve(page, fakeSetupApi([setupAt(ACCOUNT, "classify")]));
+    await page.goto("/setup", { waitUntil: "networkidle" });
 
-  expect(await page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(true);
-  await expect(page.getByTestId("current-step")).toContainText("Next: Classify");
-  // The step titles and tags, their results and the current step's prompt: AA (4.5:1).
-  const selector =
-    "ol[aria-label='Setup steps'] li span, ol[aria-label='Setup steps'] li pre, [data-testid='current-step'] p";
-  expect(await page.locator(selector).count()).toBeGreaterThan(5);
-  expect(await lowContrast(page, selector)).toEqual([]);
-  const sideways = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(sideways).toBeLessThanOrEqual(1);
-});
+    expect(await page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(
+      theme === "dark",
+    );
+    await expect(page.getByTestId("current-step")).toContainText("Next: Classify");
+    // The shared Tags this screen shows, which read under AA on light grounds before the
+    // light status tokens were darkened (done 2.6:1, now 3.6:1).
+    const steps = page.locator("ol[aria-label='Setup steps']");
+    await expect(steps.getByText("done", { exact: true }).first()).toBeVisible();
+    await expect(steps.getByText("now", { exact: true })).toBeVisible();
+    // The step titles and tags, their results and the current step's prompt: AA (4.5:1).
+    const selector =
+      "ol[aria-label='Setup steps'] li span, ol[aria-label='Setup steps'] li pre, [data-testid='current-step'] p";
+    expect(await page.locator(selector).count()).toBeGreaterThan(5);
+    expect(await lowContrast(page, selector)).toEqual([]);
+    const sideways = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(sideways).toBeLessThanOrEqual(1);
+  });
+}

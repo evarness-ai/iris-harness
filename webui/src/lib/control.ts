@@ -3,8 +3,8 @@
  * Thin typed wrappers over the IRIS API's operator endpoints — LLM mode +
  * pressure, self-learning metrics, routines, heartbeats. All GET / read-only;
  * UI-driven writes (approve a routine, pin a mode, trigger a heartbeat) come in
- * a later phase behind the approval flow. Unlike the trace/session client these
- * have NO mock fallback: when the API is down the React Query hook surfaces an
+ * a later phase behind the approval flow. Like the trace/session client these
+ * have no fallback data: when the API is down the React Query hook surfaces an
  * error state and the screen shows an "API unavailable" notice. */
 import { apiFetch } from "./http";
 

@@ -1,17 +1,12 @@
-import { MOCK_TRACES } from '../mock/traces';
-import { apiFetch, UnauthorizedError } from './http';
+import { apiFetch } from './http';
 import type { Trace } from './types';
 
-// Data source for the trace screen. Hits the live IRIS API
-// (GET /api/traces, /api/traces/:id — served by src/iris_harness/server/iris_api from session
-// logs, via the Vite /api proxy). If the API is unreachable, it falls back to the
-// canned mock traces so the prototype always renders. (Sessions still also falls
-// back when the API has no logs yet; traces do not, see listTraces.)
-//
-// A 401 is neither: the API is up and this browser is not paired (or was revoked).
-// Mock traces under a "mock data" badge would hide that — and CallTrace would
-// navigate to a mock trace, racing the redirect to /pair — so the mock-backed
-// reads rethrow it instead of falling back.
+// Data source for the trace and session screens: the live IRIS API
+// (GET /api/traces, /api/traces/:id, /api/sessions — served by src/iris_harness/server/iris_api
+// from session logs, via the Vite /api proxy). There is no canned fallback: an API that
+// cannot be reached (or answers 401 — lib/http.ts routes that to /pair) is an error the
+// React Query hook surfaces, and the screen shows the "API unavailable" notice. A live
+// API with no logs yet (a fresh install) answers [] and the screen says what to do next.
 
 export interface TraceSummary {
   session_id: string;
@@ -74,65 +69,24 @@ export interface SlashDispatchResult {
   model?: string;
 }
 
-/** Where the current list came from — surfaced in the UI as a small badge. */
-export type Source = 'live' | 'mock';
-
-function refuseUnauthorized(r: Response): void {
-  if (r.status === 401) throw new UnauthorizedError();
+async function getJSON<T>(url: string): Promise<T> {
+  const r = await apiFetch(url, { headers: { accept: 'application/json' } });
+  if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`.trim());
+  return (await r.json()) as T;
 }
 
-const mockSummaries = (): TraceSummary[] =>
-  MOCK_TRACES.map((t) => ({
-    session_id: t.session_id,
-    trace_id: t.trace_id,
-    request: t.request,
-    started_at: t.started_at,
-    total_duration_ms: t.total_duration_ms,
-    total_tokens: t.total_tokens,
-  }));
-
-// A live API with no logs yet (a fresh install) is live and empty, not "no API": mock
-// traces there would show a builder someone else's turns under a small "mock data"
-// badge, and Call Trace says what to do instead. Only an unreachable API falls back.
-export async function listTraces(): Promise<{ source: Source; traces: TraceSummary[] }> {
-  try {
-    const r = await apiFetch('/api/traces');
-    refuseUnauthorized(r);
-    if (r.ok) {
-      const data = (await r.json()) as TraceSummary[];
-      if (Array.isArray(data)) return { source: 'live', traces: data };
-    }
-  } catch (e) {
-    if (e instanceof UnauthorizedError) throw e;
-    /* API down — fall back to mock */
-  }
-  return { source: 'mock', traces: mockSummaries() };
+/** Newest-first summaries of recent turns; [] on a fresh install. */
+export async function listTraces(): Promise<TraceSummary[]> {
+  const data = await getJSON<TraceSummary[]>('/api/traces');
+  if (!Array.isArray(data)) throw new Error('GET /api/traces: expected a list');
+  return data;
 }
 
-export async function listSessions(): Promise<{ source: Source; sessions: SessionSummary[] }> {
-  try {
-    const r = await apiFetch('/api/sessions');
-    refuseUnauthorized(r);
-    if (r.ok) {
-      const data = (await r.json()) as SessionSummary[];
-      if (Array.isArray(data) && data.length > 0) return { source: 'live', sessions: data };
-    }
-  } catch (e) {
-    if (e instanceof UnauthorizedError) throw e;
-    /* API down — fall back to mock */
-  }
-  // Mock: each canned trace is a single-turn session.
-  const sessions: SessionSummary[] = mockSummaries().map((t) => ({
-    session_id: t.session_id,
-    title: t.request,
-    turn_count: 1,
-    started_at: t.started_at,
-    last_at: t.started_at,
-    total_tokens: t.total_tokens,
-    total_duration_ms: t.total_duration_ms,
-    turns: [t],
-  }));
-  return { source: 'mock', sessions };
+/** Recent conversation sessions; [] on a fresh install. */
+export async function listSessions(): Promise<SessionSummary[]> {
+  const data = await getJSON<SessionSummary[]>('/api/sessions');
+  if (!Array.isArray(data)) throw new Error('GET /api/sessions: expected a list');
+  return data;
 }
 
 /** Replay a past session's user/assistant messages (empty if none / API down). */
@@ -149,16 +103,14 @@ export async function listSessionMessages(sessionId: string): Promise<SessionMes
   return [];
 }
 
-export async function getTrace(traceId: string): Promise<Trace | undefined> {
-  try {
-    const r = await apiFetch(`/api/traces/${encodeURIComponent(traceId)}`);
-    refuseUnauthorized(r);
-    if (r.ok) return (await r.json()) as Trace;
-  } catch (e) {
-    if (e instanceof UnauthorizedError) throw e;
-    /* fall through to mock */
-  }
-  return MOCK_TRACES.find((t) => t.trace_id === traceId);
+/** One turn's full graph, or null when the API has no such trace (404). */
+export async function getTrace(traceId: string): Promise<Trace | null> {
+  const r = await apiFetch(`/api/traces/${encodeURIComponent(traceId)}`, {
+    headers: { accept: 'application/json' },
+  });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`HTTP ${r.status} ${r.statusText}`.trim());
+  return (await r.json()) as Trace;
 }
 
 export async function listSlashCommands(): Promise<SlashCommandSummary[]> {

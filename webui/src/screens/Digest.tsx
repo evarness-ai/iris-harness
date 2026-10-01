@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import { Section } from "@/components/layout";
 import { Tag } from "@/components/Tag";
 import { markdownComponents } from "@/components/chat/Markdown";
-import { fmtDateTime } from "@/components/control/parts";
+import { ApiUnavailable, fmtDateTime } from "@/components/control/parts";
 import {
   DigestNotFound,
   NOT_USEFUL_SCHEME,
@@ -237,8 +237,7 @@ export function DigestScreen() {
         )}
       </p>
     );
-  else if (error || !data)
-    content = <p className="text-sm text-danger">API unavailable — could not load the digest.</p>;
+  else if (error || !data) content = <ApiUnavailable />;
   else content = <DigestBody digest={data} />;
 
   return (

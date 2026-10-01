@@ -17,6 +17,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Tag } from "@/components/Tag";
+import { ApiUnavailable } from "@/components/control/parts";
+import { isUnreachable } from "@/lib/http";
 import { ConfirmDialog, type ConfirmState } from "@/components/ConfirmDialog";
 import { useWritesEnabled } from "@/lib/queries";
 import {
@@ -639,6 +641,8 @@ export function SetupScreen() {
       </p>
       {isLoading ? (
         <p className="text-sm text-fg-muted">Loading…</p>
+      ) : isUnreachable(error) ? (
+        <ApiUnavailable />
       ) : error ? (
         <p className="text-sm text-danger">
           Couldn't load email setup{error instanceof Error ? `: ${error.message}` : ""}.

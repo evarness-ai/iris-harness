@@ -121,7 +121,7 @@ CSS variables in sync (and run `npm run tokens:lint`).
 
 Semantic roles, not raw hex, are what components reference. The front-matter holds
 the **dark** (default) values; the **light** theme overrides the surface/foreground
-roles below while keeping the brand + status + node hues (they read on both):
+roles below, and darkens the status colors and the two node hues a Tag uses as text:
 
 | Role | Dark | Light |
 |---|---|---|
@@ -134,11 +134,20 @@ roles below while keeping the brand + status + node hues (they read on both):
 | `fgMuted` | `#9aa7b8` | `#516072` |
 | `fgSubtle` | `#6b7889` | `#7a8798` |
 | `primary` | `#5dcaa5` | `#1f9e78` (darkened for AA on light) |
+| `success` | `#5dcaa5` | `#1e6a52` |
+| `warning` | `#e0a458` | `#83531e` |
+| `danger` | `#ed6a8b` | `#af2348` |
+| `info` | `#6fb4f0` | `#27609f` |
+| `nodeCognition` | `#e0a458` | `#825318` |
+| `nodeRuntime` | `#7f77dd` | `#5348d1` |
 
-The trace-node palette (`nodePerception` … `nodeGovernance`) is shared across
-themes — these are categorical hues read against surfaces, and each clears WCAG-AA
-against both `bg` values. Status colors (`success`/`warning`/`danger`/`info`)
-likewise carry across themes.
+A **Tag** sets its text in a status or node color on a 15% tint of that same color.
+On light grounds the dark-theme hues read at 1.8–3.9:1 that way, so each light value
+above is the same hue darkened until the Tag reads at WCAG-AA 4.5:1 or better over
+`surface`, `bg` and `sidebar`. `npm run tokens:lint` checks only the front-matter (dark)
+values; `tests/setup.spec.ts` measures the rendered Tags in both themes. The other
+node hues (`nodePerception`, `nodeAction`, `nodeLlm`, `nodeGovernance`) are fills and
+accents, never Tag text, and stay shared across themes.
 
 ## Typography
 

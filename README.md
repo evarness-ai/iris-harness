@@ -81,6 +81,22 @@ What a plugin may import, and the deprecation rule that protects it, is the
   the deterministic guards held. Since then every answer, generated or not, passes the
   model-free guards.
 
+## See every decision
+
+The web console shows the ledger. Governance has the kernel's posture and the proof
+bundle's invariants, checked against the audit rows; Call trace has each turn as a graph,
+with the governance decision at every hook. Both are from `iris email demo`:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/evarness-ai/iris-harness/raw/main/docs/assets/screenshots/governance-dark.webp">
+  <img alt="The Governance screen after the email demo: the kernel's protections, mostly on, over the run's audit entries, and the proof bundle verified, with no-private-to-cloud and mailbox-write-approved holding." src="https://github.com/evarness-ai/iris-harness/raw/main/docs/assets/screenshots/governance-light.webp" width="800">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/evarness-ai/iris-harness/raw/main/docs/assets/screenshots/call-trace-dark.webp">
+  <img alt="The Call trace of the first-chat welcome turn: four steps, no model call, with the pre_response guard's allow decision open in the detail panel." src="https://github.com/evarness-ai/iris-harness/raw/main/docs/assets/screenshots/call-trace-light.webp" width="800">
+</picture>
+
 ## What ships
 
 | Part | Where |

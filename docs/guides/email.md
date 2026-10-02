@@ -52,6 +52,18 @@ Open the console at `http://localhost:8003` and pair the browser: in another she
 the same `IRIS_AUTH_SECRET` (`export IRIS_AUTH_SECRET="$(cat .auth-secret)"`, not a
 fresh `openssl rand`), `iris device pair` prints a one-time code to type there.
 
+**A "Governor not reachable" banner is expected** if this is all you started: the
+Governor is a *separate* HTTP frontend on port 8080 for the same governance kernel
+`iris serve` already runs in-process, so nothing above needs it. Start it too, with
+the same secret, only if you want the warning gone or want the full stack the README
+describes:
+
+```bash
+export IRIS_AUTH_SECRET="$(cat .auth-secret)"
+iris serve &   # or: poetry run iris serve &, from a source checkout
+uvicorn iris_harness.server.governor.main:app --port 8080
+```
+
 ## Day to day
 
 | What | How |

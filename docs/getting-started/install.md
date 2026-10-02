@@ -74,6 +74,19 @@ keyring (WSL2, a headless server), it prints an `export IRIS_VAULT_MASTER_KEY=..
 line instead. Put that line in your shell profile, and keep a copy somewhere safe,
 because the vault cannot be read without the key.
 
+**The email judge needs its own model, separately.** `--fix` pulls only the general
+starter model above; the email assistant's judge is pinned to a specific, smaller one
+(`config/llm_tiers.yaml`'s `email_judge` tier) that `iris doctor` does not check or
+pull. Before [connecting your mailbox](connect-your-mailbox.md), also run:
+
+<!-- ci: skip downloads the email judge's model (about 2.5 GB) from Ollama -->
+```bash
+ollama pull qwen3.5:4b-q4_K_M
+```
+
+Without it, `iris email setup`'s "Classify" step blocks with "no local email_judge
+model tier is configured" — the demo is unaffected, since it runs on a scripted model.
+
 ## Next
 
 [Try the demo](demo.md): a synthetic mailbox, end to end, in a few seconds.

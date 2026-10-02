@@ -168,14 +168,18 @@ the refusal names the command above.
 ## Start the IRIS API
 
 The scheduled sweep and the judge run inside the IRIS API service, which also serves
-the web console. Start it with a long random shared secret (every API call needs it);
-it runs in the foreground, on `127.0.0.1:8003`, until you stop it:
+the web console:
 
 <!-- ci: skip runs the API in the foreground until stopped -->
 ```bash
 export IRIS_AUTH_SECRET="$(openssl rand -hex 32)"
 iris serve
 ```
+
+[The email assistant](../guides/email.md#run-the-iris-api) covers the rest: the one
+shared secret, used the same way in every shell that talks to this API (`iris device
+pair` included, not just this one), building the web console from a source checkout,
+and the separate, optional Governor service.
 
 ## Next
 

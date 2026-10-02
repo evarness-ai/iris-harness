@@ -39,6 +39,18 @@ if TYPE_CHECKING:
 
     from .provider import ImapProvider
 
+
+def _clean_hidden_input(raw: str) -> str:
+    """A hidden (no-echo) prompt's capture: drop non-printable characters (a
+    terminal/paste artifact ``getpass``-style reads don't expect) and the ordinary
+    leading/trailing whitespace ``--password-stdin`` already strips for itself.
+    Issue #69: a pasted app password failed once through this prompt and worked
+    immediately via ``--password-stdin`` with the same bytes, not reproduced
+    reliably enough to name a cause -- this is a cheap, safe-regardless mitigation,
+    not a claimed fix."""
+    return "".join(ch for ch in raw if ch.isprintable()).strip()
+
+
 #: Well-known hosts by address domain, so the common case asks only for the password.
 #: ``--host`` always wins. (Outlook.com is absent on purpose: it no longer takes app
 #: passwords over IMAP.)
@@ -146,7 +158,7 @@ def cmd_auth_imap_login(
     if password_stdin:
         password = sys.stdin.readline().rstrip("\r\n")
     else:
-        password = typer.prompt(f"App password for {address}", hide_input=True)
+        password = _clean_hidden_input(typer.prompt(f"App password for {address}", hide_input=True))
     if not password:
         print_error("an app password is required")
         raise typer.Exit(2)

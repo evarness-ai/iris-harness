@@ -28,7 +28,9 @@ approval stay.
 
 **Waiting.** A step that cannot finish says why and what it needs. ``decision`` means
 the owner decides (create the vault key, accept categories, approve mailbox writes);
-``blocked`` means something outside setup must happen first (log in, start the model).
+``blocked`` means something outside setup must happen first (log in, start the model);
+``activity`` means a long step (``fetch``, ``classify``) is running in the background
+on the harness's Activity spine -- call ``advance`` again to poll it, no answer needed.
 ``assume_defaults`` (``--yes``) takes the default of every decision except one:
 
 **Nothing touches the mailbox before ``label_approval``.** Setup judges without the label
@@ -97,6 +99,9 @@ DONE = "done"
 # What a waiting step needs.
 DECISION = "decision"
 BLOCKED = "blocked"
+# A long step (fetch, classify) running in the background on the Activity spine;
+# the caller just polls (calls ``advance`` again) rather than answering anything.
+ACTIVITY = "activity"
 
 PLUGIN = "email_onboarding"
 HOOK = "email_onboarding"
@@ -187,6 +192,10 @@ class OnboardingState:
     waiting_for: str = ""
     results: dict[str, dict[str, Any]] = field(default_factory=dict)
     approval_id: str | None = None
+    # The Activity id a ``waiting_kind == ACTIVITY`` step is polling. Set only while
+    # that wait holds for that same activity; cleared the moment it resolves (done,
+    # blocked, or a decision) so the step starts a fresh one if it is asked to run again.
+    activity_id: str | None = None
     started_at: str = ""
     updated_at: str = ""
     completed_at: str | None = None
@@ -216,6 +225,7 @@ class OnboardingState:
             "waiting_kind": self.waiting_kind,
             "waiting_for": self.waiting_for,
             "approval_id": self.approval_id,
+            "activity_id": self.activity_id,
             "steps": steps,
             "results": self.results,
             "started_at": self.started_at,
@@ -236,6 +246,7 @@ CREATE TABLE IF NOT EXISTS email_onboarding (
     waiting_for  TEXT NOT NULL DEFAULT '',
     results      TEXT NOT NULL DEFAULT '{}',
     approval_id  TEXT,
+    activity_id  TEXT,
     started_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL,
     completed_at TEXT
@@ -253,6 +264,13 @@ CREATE TABLE IF NOT EXISTS email_onboarding_effects (
 """
 
 
+def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    """Idempotent additive migration for an existing table."""
+    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 @dataclass
 class OnboardingStore:
     """The ``email_onboarding`` table in ``email.db``."""
@@ -264,6 +282,7 @@ class OnboardingStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite_conn(self.db_path, row_factory=sqlite3.Row) as conn:
             conn.executescript(_SCHEMA)
+            _add_column_if_missing(conn, "email_onboarding", "activity_id", "TEXT")
             yield conn
 
     def get(self, account_id: str) -> OnboardingState | None:
@@ -282,13 +301,14 @@ class OnboardingStore:
         with self._conn() as conn:
             conn.execute(
                 "INSERT INTO email_onboarding (account_id, run_id, provider, step, status, "
-                "waiting_kind, waiting_for, results, approval_id, started_at, updated_at, "
-                "completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "waiting_kind, waiting_for, results, approval_id, activity_id, started_at, "
+                "updated_at, completed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(account_id) DO UPDATE SET run_id = excluded.run_id, "
                 "provider = excluded.provider, step = excluded.step, "
                 "status = excluded.status, waiting_kind = excluded.waiting_kind, "
                 "waiting_for = excluded.waiting_for, results = excluded.results, "
-                "approval_id = excluded.approval_id, started_at = excluded.started_at, "
+                "approval_id = excluded.approval_id, activity_id = excluded.activity_id, "
+                "started_at = excluded.started_at, "
                 "updated_at = excluded.updated_at, completed_at = excluded.completed_at",
                 (
                     state.account_id,
@@ -300,6 +320,7 @@ class OnboardingStore:
                     state.waiting_for,
                     json.dumps(state.results, sort_keys=True, default=str),
                     state.approval_id,
+                    state.activity_id,
                     state.started_at,
                     state.updated_at,
                     state.completed_at,
@@ -359,6 +380,7 @@ def _from_row(row: sqlite3.Row) -> OnboardingState:
         waiting_for=row["waiting_for"],
         results=json.loads(row["results"] or "{}"),
         approval_id=row["approval_id"],
+        activity_id=row["activity_id"],
         started_at=row["started_at"],
         updated_at=row["updated_at"],
         completed_at=row["completed_at"],
@@ -400,6 +422,17 @@ def _none() -> Any:
 
 
 @dataclass
+class ActivityJobs:
+    """What a long step (fetch, classify) needs from the harness's Activity spine:
+    submit work in the background, and check how a submitted job is doing. Duck-typed
+    on purpose -- ``submit`` matches ``ActivityRunner.submit``'s keywords and ``get``
+    matches ``ActivityStore.get``, but this module never imports either class."""
+
+    submit: Callable[..., str]
+    get: Callable[[str], Any]
+
+
+@dataclass
 class OnboardingDeps:
     """Where setup reads and writes, and the calls it makes. Production defaults; a test
     passes its own paths, stubs the model calls and the embedder."""
@@ -417,6 +450,9 @@ class OnboardingDeps:
     # ``embed_corpus``'s shape; None = the local MiniLM embedder.
     embedder: Any = None
     emit: Callable[[str, Any], None] = _default_emit
+    # An :class:`ActivityJobs`, or None: fetch/classify then run inline, exactly as
+    # they did before the Activity spine existed (a test, or a host without one).
+    activities: Callable[[], ActivityJobs | None] = _none
     # Read the OS keyring for the vault key (a terminal); False for a server or script.
     read_keyring: bool = False
     approvals_db: Path | None = None
@@ -495,6 +531,7 @@ class StepOutcome:
     kind: str = ""
     waiting_for: str = ""
     approval_id: str | None = None
+    activity_id: str | None = None
     notice: str = ""
 
     @classmethod
@@ -508,6 +545,10 @@ class StepOutcome:
     @classmethod
     def blocked(cls, why: str, **kw: Any) -> StepOutcome:
         return cls(done=False, kind=BLOCKED, waiting_for=why, **kw)
+
+    @classmethod
+    def running(cls, activity_id: str, *, why: str) -> StepOutcome:
+        return cls(done=False, kind=ACTIVITY, waiting_for=why, activity_id=activity_id)
 
 
 # -- the label preview --------------------------------------------------------------
@@ -733,12 +774,18 @@ class Onboarding:
         now = _now()
         approval_id = outcome.approval_id or state.approval_id
         if not outcome.done:
+            # An activity id is only ever carried forward while still waiting on THAT
+            # activity. A decision or a block -- even one reached mid-poll, like the
+            # activity having failed -- clears it: asked to run this step again, it
+            # must submit a fresh one rather than keep polling a resolved row.
+            carried_activity = outcome.activity_id if outcome.kind == ACTIVITY else None
             return replace(
                 state,
                 status=WAITING,
                 waiting_kind=outcome.kind,
                 waiting_for=outcome.waiting_for,
                 approval_id=approval_id,
+                activity_id=carried_activity,
                 updated_at=now,
             )
         results = {**state.results, step: outcome.result}
@@ -748,6 +795,7 @@ class Onboarding:
             state,
             step=following,
             status=DONE if following == COMPLETE else IN_PROGRESS,
+            activity_id=None,
             waiting_kind="",
             waiting_for="",
             results=results,
@@ -895,9 +943,60 @@ class Onboarding:
             )
         return StepOutcome.blocked(fixed.detail)
 
+    # -- long steps: run inline, or backgrounded on the Activity spine --------------
+
+    def _run_long_step(
+        self,
+        state: OnboardingState,
+        *,
+        kind: str,
+        title: str,
+        waiting_for: str,
+        work: Callable[[Callable[[float, str], None] | None], dict[str, Any]],
+    ) -> StepOutcome:
+        """Run a step whose work can take minutes: backgrounded on the harness's
+        Activity spine when one is wired (submit once, poll after, the webui and the
+        CLI both just call ``advance`` again); inline, exactly as before, when it
+        isn't (a test, or a host with no Activities).
+
+        ``work`` raises on a real failure either way: inline, the exception becomes a
+        blocked outcome directly; backgrounded, ``ActivityRunner`` catches it and
+        fails the row, and the next poll turns that into the same blocked outcome."""
+        from iris_harness.sdk.activities import ActivityOutcome
+
+        activities = self.deps.activities()
+        if activities is None:
+            try:
+                return StepOutcome.finished(**work(None))
+            except Exception as exc:  # noqa: BLE001 — a step's failure waits, not crashes
+                return StepOutcome.blocked(str(exc))
+
+        if state.activity_id:
+            activity = activities.get(state.activity_id)
+            if activity is not None and activity.status == "completed":
+                return StepOutcome.finished(**activity.metadata)
+            if activity is not None and activity.status == "failed":
+                return StepOutcome.blocked(activity.error or f"{title} failed")
+            if activity is not None and activity.status in ("queued", "running"):
+                return StepOutcome.running(
+                    state.activity_id, why=activity.progress_message or waiting_for
+                )
+            # None (the row is gone), or cancelled (nothing cancels one today, but
+            # nothing should get stuck if it ever does): submit a fresh one below.
+
+        def run_work(progress: Callable[[float, str], None]) -> ActivityOutcome:
+            return ActivityOutcome(metadata=work(progress))
+
+        activity_id = activities.submit(
+            kind=kind, title=title, origin="email_onboarding", work=run_work
+        )
+        return StepOutcome.running(activity_id, why=waiting_for)
+
     # -- 2. fetch -------------------------------------------------------------------
 
-    def _fetch(self, state: OnboardingState, inputs: Inputs) -> StepOutcome:
+    def _do_fetch(
+        self, state: OnboardingState, progress: Callable[[float, str], None] | None
+    ) -> dict[str, Any]:
         from iris_harness.sdk.events import EventBus
         from iris_personal.email.events import (
             EMAIL_NEW_ARRIVED,
@@ -909,10 +1008,9 @@ class Onboarding:
         from .judge_wiring import build_queue_handler
         from .judgments import JudgmentStore
 
-        del inputs
         provider = self.deps.provider_for(state.account_id)
         if provider is None:
-            return StepOutcome.blocked(f"no mail provider is mounted for {state.account_id}")
+            raise RuntimeError(f"no mail provider is mounted for {state.account_id}")
         store = EmailStore(db_path=self.deps.email_db)
         store.ensure_schema()
         judgments = JudgmentStore(db_path=self.deps.email_db)
@@ -942,9 +1040,10 @@ class Onboarding:
                 ),
                 max_messages=self.config.fetch_max_messages,
                 cold_start_days=self.config.fetch_cold_start_days,
+                progress=progress,
             )
-        except Exception as exc:  # noqa: BLE001 — a login or network failure: fix it, resume
-            return StepOutcome.blocked(f"could not fetch mail: {exc}")
+        except Exception as exc:  # a login or network failure: fix it, resume
+            raise RuntimeError(f"could not fetch mail: {exc}") from exc
         # Everything this run fetched and has not handed to the judge's queue yet: this
         # fetch's mail, and, on a resume, what an earlier attempt stored before it died.
         # (Queued mail has a judgment row; released mail is recorded above.)
@@ -963,11 +1062,21 @@ class Onboarding:
             )
         waiting = sum(1 for j in judgments.waiting() if j.account_id == state.account_id)
         done = effects.effect_counts(run, "fetch")
-        return StepOutcome.finished(
-            fetched=done["fetched"],
-            stored=store.count(state.account_id, include_held=True),
-            waiting_for_judge=waiting,
-            released=done["released"],
+        return {
+            "fetched": done["fetched"],
+            "stored": store.count(state.account_id, include_held=True),
+            "waiting_for_judge": waiting,
+            "released": done["released"],
+        }
+
+    def _fetch(self, state: OnboardingState, inputs: Inputs) -> StepOutcome:
+        del inputs
+        return self._run_long_step(
+            state,
+            kind="email.fetch",
+            title=f"Fetch mail for {state.account_id}",
+            waiting_for="fetching mail…",
+            work=lambda progress: self._do_fetch(state, progress),
         )
 
     # -- 3. discover ----------------------------------------------------------------
@@ -1094,7 +1203,9 @@ class Onboarding:
 
     # -- 5. classify ----------------------------------------------------------------
 
-    def _classify(self, state: OnboardingState, inputs: Inputs) -> StepOutcome:
+    def _do_classify(
+        self, state: OnboardingState, progress: Callable[[float, str], None] | None
+    ) -> dict[str, Any]:
         """The judge over what the fetch queued, then kNN over what it released.
 
         The judge runs first because mail it has not read is held: no reader, the kNN
@@ -1109,7 +1220,6 @@ class Onboarding:
         from .judge_wiring import judge_and_release, release
         from .judgments import JudgmentStore
 
-        del inputs
         run, effects = state.run_id, self.store
 
         def forward(topic: str, payload: Any) -> None:
@@ -1128,14 +1238,15 @@ class Onboarding:
             # Each verdict carries the setup's run id: the record of what this run
             # judged, written with the verdict, so a resumed step counts it too.
             run_id=run,
+            progress=progress,
         )
         if report.enabled and report.no_model:
-            return StepOutcome.blocked(
+            raise RuntimeError(
                 "no local email_judge model tier is configured (llm_tiers.yaml): the judge "
                 "cannot read the mail. Configure it, then run setup again"
             )
         if report.unreachable and not report.judged:
-            return StepOutcome.blocked(
+            raise RuntimeError(
                 f"the email_judge model is unreachable ({report.unreachable_error[:120]}): "
                 "start it, then run setup again"
             )
@@ -1151,14 +1262,24 @@ class Onboarding:
         counts = Counter(str(r.bucket) for r in verdicts)
         names = JudgeConfig.load(self.deps.config_dir).name
         knn = self._knn(state)
-        return StepOutcome.finished(
-            judge_enabled=report.enabled,
-            judged=len(verdicts),
-            buckets={names(k): v for k, v in sorted(counts.items())},
-            unsure=counts.get(UNSURE, 0),
-            judge_errors=sum(1 for r in verdicts if r.error),
-            still_waiting=report.waiting,
+        return {
+            "judge_enabled": report.enabled,
+            "judged": len(verdicts),
+            "buckets": {names(k): v for k, v in sorted(counts.items())},
+            "unsure": counts.get(UNSURE, 0),
+            "judge_errors": sum(1 for r in verdicts if r.error),
+            "still_waiting": report.waiting,
             **knn,
+        }
+
+    def _classify(self, state: OnboardingState, inputs: Inputs) -> StepOutcome:
+        del inputs
+        return self._run_long_step(
+            state,
+            kind="email.classify",
+            title=f"Judge mail for {state.account_id}",
+            waiting_for="judging mail…",
+            work=lambda progress: self._do_classify(state, progress),
         )
 
     def _knn(self, state: OnboardingState) -> dict[str, Any]:
@@ -1697,10 +1818,12 @@ def acceptable_ids(state: OnboardingState) -> list[int]:
 
 
 __all__ = [
+    "ACTIVITY",
     "BLOCKED",
     "COMPLETE",
     "DECISION",
     "STEPS",
+    "ActivityJobs",
     "Inputs",
     "LabelGroup",
     "LabelPreview",

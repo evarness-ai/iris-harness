@@ -33,6 +33,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# ``(fraction 0..1, short message) -> None``: live progress during a long fetch, the
+# same shape ``iris_harness.services.activities.ActivityRunner`` hands a submitted
+# job. Optional everywhere it appears: a provider that doesn't call it just shows an
+# indeterminate "still working" state to whatever is watching, never a stuck one.
+ProgressFn = Callable[[float, str], None]
+
 
 @runtime_checkable
 class MailSyncStore(Protocol):
@@ -135,8 +141,13 @@ class MailProvider(Protocol):
         store: MailSyncStore | None = None,
         max_messages: int = 100,
         cold_start_days: int = 30,
+        progress: ProgressFn | None = None,
     ) -> FetchResult:
-        """Sync new mail for one account into the store. Idempotent on re-runs."""
+        """Sync new mail for one account into the store. Idempotent on re-runs.
+
+        ``progress``, when given, is called with how far through the fetch this
+        call is. Optional: a provider that doesn't call it just runs exactly as
+        it always has."""
         ...
 
     def reset_cursor(self, account_id: str, *, store: MailSyncStore) -> None:

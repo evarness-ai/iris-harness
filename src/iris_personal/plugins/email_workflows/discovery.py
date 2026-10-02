@@ -120,6 +120,9 @@ Examples of corrections to apply:
 
 Return ONLY a JSON object with keys: root, branch, leaf, rationale.
 No confidence field — we compute confidence from cluster cohesion.
+RATIONALE must be ONE short sentence (12 words or fewer) — just enough to justify the
+name, not a full explanation. A long rationale risks being cut off before the JSON's
+closing brace, which silently drops the whole cluster.
 """
 
 _JSON_BLOCK_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -159,7 +162,10 @@ class LlamaServerClient:
                     {"role": "user", "content": user},
                 ],
                 "temperature": 0.1,
-                "max_tokens": 256,
+                # Headroom past a typical root.branch.leaf + a one-sentence rationale,
+                # so an unusually verbose response doesn't get cut before the closing
+                # brace and silently drop the cluster (issue #68).
+                "max_tokens": 384,
                 "response_format": {"type": "json_object"},
             },
             timeout=self.timeout_s,

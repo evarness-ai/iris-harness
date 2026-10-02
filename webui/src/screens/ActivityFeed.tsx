@@ -20,7 +20,7 @@ function statusTone(status: string): "ok" | "bad" | "warn" | "info" {
   }
 }
 
-function ProgressBar({ frac, message }: { frac: number; message: string }) {
+export function ProgressBar({ frac, message }: { frac: number; message: string }) {
   const pct = Math.round(Math.max(0, Math.min(1, frac)) * 100);
   return (
     <div className="mt-2">

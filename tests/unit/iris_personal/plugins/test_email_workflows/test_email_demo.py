@@ -211,6 +211,26 @@ def test_the_demo_mailbox_is_read_only(tmp_path: Path) -> None:
     assert not hasattr(provider, "send_message")
 
 
+def test_fetch_new_reports_progress_once(tmp_path: Path) -> None:
+    from iris_personal.email.store import EmailStore
+
+    provider = DemoMailProvider(state_path=tmp_path / "state.json")
+    store = EmailStore(db_path=tmp_path / "email.db")
+    store.ensure_schema()
+    calls: list[tuple[float, str]] = []
+
+    result = provider.fetch_new(
+        "demo:x@example.com",
+        store=store,
+        max_messages=5,
+        progress=lambda f, m: calls.append((f, m)),
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == 1.0
+    assert calls[0][1] == f"fetched {result.fetched}"
+
+
 def test_labels_wait_for_the_mailbox_write_approval(tmp_path: Path) -> None:
     """R4: the demo mailbox is where the approval step is tried, so it keeps the rule."""
     approvals = WriteApprovalStore(db_path=tmp_path / "approvals.db")

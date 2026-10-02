@@ -54,6 +54,11 @@ class Activity(BaseModel):
     error: str = ""
     # A reversible-job handle (e.g. the OrganizePlan id) so the feed can offer undo.
     undo_ref: str | None = None
+    # The OS pid of the process that created this row (always in-process work).
+    # Lets a later process tell "my own prior incarnation died mid-job" (reap it)
+    # from "a sibling process has this one, right now" (leave it alone) when they
+    # share one activities.db — see ActivityStore.reconcile_orphaned.
+    owner_pid: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     started_at: datetime | None = None
     finished_at: datetime | None = None

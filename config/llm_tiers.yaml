@@ -200,13 +200,15 @@ tiers:
   # governed call per email. Always the Mac's Ollama and always this model: `pinned` stops the resource governor's downshift and any
   # learned prior from moving it, because the judge's accuracy is only comparable run
   # to run on one model. A 4B reasoning model — the call turns thinking off. The reply
-  # is one small JSON object, so 512 tokens is plenty; 8192 holds the prompt plus a
-  # 4000-character body.
+  # is one small JSON object; 768 tokens leaves headroom past a typical verdict (or the
+  # namer's root.branch.leaf + one-sentence rationale, same tier -- issue #68) so an
+  # unusually verbose reply doesn't get cut before the closing brace. 8192 holds the
+  # prompt plus a 4000-character body.
   email_judge:
     name: "Email judge"
     provider: "ollama"
     model: "qwen3.5:4b-q4_K_M"
-    max_tokens: 512
+    max_tokens: 768
     num_ctx: 8192
     keep_alive: "10m"
     temperature: 0.1

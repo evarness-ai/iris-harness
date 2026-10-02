@@ -16,6 +16,7 @@ import {
   overview,
   setupAt,
   waitingAtApproval,
+  waitingOnActivity,
   type SetupFixture,
 } from "./setup-fixtures";
 
@@ -402,6 +403,35 @@ test("a slow step is submitted once, shows it is working, and stays locked acros
   await expect(page.getByTestId("setup-summary")).toBeVisible();
   await expect(page.getByTestId("setup-busy")).toHaveCount(0);
   expect(api.posted).toHaveLength(1);
+});
+
+test("a background activity (fetch, the judge) polls on its own, no click needed", async ({
+  page,
+}) => {
+  // Issue #67: fetch/classify now submit to the harness's Activity spine and return
+  // almost at once with waiting_kind "activity", instead of holding the request open.
+  const api = fakeSetupApi([waitingOnActivity(ACCOUNT, "fetch", "act-1", "fetched 10/412")]);
+  let polls = 0;
+  api.answerAdvanceWith((_s, _body) => {
+    polls += 1;
+    return polls < 2
+      ? waitingOnActivity(ACCOUNT, "fetch", "act-1", `fetched ${10 + polls * 50}/412`)
+      : setupAt(ACCOUNT, "discover");
+  });
+  await serve(page, api);
+  await page.goto("/setup", { waitUntil: "networkidle" });
+
+  await expect(page.getByTestId("waiting-for")).toContainText("fetched 10/412");
+  await expect(page.getByTestId("activity-polling")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check again" })).toHaveCount(0);
+
+  // No click anywhere: the page re-advances on its own until the activity resolves.
+  await expect(page.getByTestId("current-step")).toContainText("Discover categories", {
+    timeout: 10_000,
+  });
+  const advances = api.posted.filter((p) => p.path === `advance:${ACCOUNT}`);
+  expect(advances.length).toBeGreaterThanOrEqual(2);
+  for (const p of advances) expect(p.body).not.toHaveProperty("accept_defaults", true);
 });
 
 test("a failed request says so and re-reads the state the server kept", async ({ page }) => {

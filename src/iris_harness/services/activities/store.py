@@ -13,12 +13,16 @@ WAL + busy_timeout (via ``persistence.connect``) make that safe.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import psutil
 
 from iris_harness.foundation.clock import utc_now
 from iris_harness.foundation.eventbus import EventBus
@@ -36,6 +40,8 @@ from .events import (
 )
 from .models import Activity, ActivityStatus
 
+logger = logging.getLogger(__name__)
+
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
@@ -43,6 +49,16 @@ def _iso(dt: datetime | None) -> str | None:
 
 def _parse_dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def _pid_alive(pid: int) -> bool:
+    """Best-effort liveness check. A pid a platform can't answer about (a
+    permissions error, an exotic OS) is treated as alive — reaping is only ever
+    safe to do when we're SURE the owner is gone."""
+    try:
+        return bool(psutil.pid_exists(pid))
+    except Exception:  # noqa: BLE001 — unsure beats wrongly reaping a live job
+        return True
 
 
 def _row_to_activity(row: sqlite3.Row) -> Activity:
@@ -57,6 +73,7 @@ def _row_to_activity(row: sqlite3.Row) -> Activity:
         result_summary=row["result_summary"] or "",
         error=row["error"] or "",
         undo_ref=row["undo_ref"],
+        owner_pid=row["owner_pid"],
         metadata=json.loads(row["metadata"] or "{}"),
         started_at=_parse_dt(row["started_at"]),
         finished_at=_parse_dt(row["finished_at"]),
@@ -84,6 +101,7 @@ class ActivityStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
+            _add_column_if_missing(conn, "activities", "owner_pid", "INTEGER")
 
     def _connect(self) -> sqlite3.Connection:
         return connect(self.db_path, row_factory=sqlite3.Row)
@@ -139,6 +157,7 @@ class ActivityStore:
             title=title,
             status=status,
             origin=origin,
+            owner_pid=os.getpid(),
             metadata=metadata or {},
         )
         with self._connect() as conn:
@@ -236,6 +255,33 @@ class ActivityStore:
     def mark_cancelled(self, activity_id: str) -> Activity:
         return self._update(activity_id, status="cancelled", finished_at=utc_now())
 
+    def reconcile_orphaned(self) -> int:
+        """Reap rows left ``queued``/``running`` by a process that is no longer
+        alive (a crash or a kill, not a clean shutdown — those finish their rows).
+
+        ``activities.db`` can be shared by more than one live process (an API
+        server and a CLI command, say), so a row is only ever reaped by checking
+        ITS OWN ``owner_pid`` for life, never by "I'm starting up, so anything
+        not mine must be dead" — that would kill a sibling process's real job.
+        Call once, right after a process's own startup; never from a per-request
+        read path (a fresh ``ActivityStore`` there would re-run this on every
+        call and could race a job this same process just started).
+        """
+        reaped = 0
+        for row in self.list(status="queued", limit=10_000) + self.list(
+            status="running", limit=10_000
+        ):
+            if row.owner_pid is not None and _pid_alive(row.owner_pid):
+                continue
+            try:
+                self.mark_failed(row.id, "interrupted: the process running it did not exit cleanly")
+            except KeyError:
+                continue
+            reaped += 1
+        if reaped:
+            logger.warning("activities: reaped %d orphaned row(s) on startup", reaped)
+        return reaped
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
@@ -263,6 +309,7 @@ def _to_row(activity: Activity) -> dict[str, Any]:
         "result_summary": activity.result_summary,
         "error": activity.error,
         "undo_ref": activity.undo_ref,
+        "owner_pid": activity.owner_pid,
         "metadata": json.dumps(activity.metadata),
         "started_at": _iso(activity.started_at),
         "finished_at": _iso(activity.finished_at),
@@ -283,6 +330,7 @@ CREATE TABLE IF NOT EXISTS activities (
     result_summary    TEXT    NOT NULL DEFAULT '',
     error             TEXT    NOT NULL DEFAULT '',
     undo_ref          TEXT,
+    owner_pid         INTEGER,
     metadata          TEXT    NOT NULL DEFAULT '{}',
     started_at        TEXT,
     finished_at       TEXT,
@@ -295,14 +343,21 @@ CREATE INDEX IF NOT EXISTS idx_activities_origin ON activities(origin, created_a
 """
 
 
+def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    """Idempotent additive migration for an existing table."""
+    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+    if column not in cols:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 _INSERT_SQL = """
 INSERT INTO activities (
     id, kind, title, status, progress, progress_message, origin,
-    result_summary, error, undo_ref, metadata,
+    result_summary, error, undo_ref, owner_pid, metadata,
     started_at, finished_at, created_at, updated_at
 ) VALUES (
     :id, :kind, :title, :status, :progress, :progress_message, :origin,
-    :result_summary, :error, :undo_ref, :metadata,
+    :result_summary, :error, :undo_ref, :owner_pid, :metadata,
     :started_at, :finished_at, :created_at, :updated_at
 )
 """
@@ -319,6 +374,7 @@ UPDATE activities SET
     result_summary = :result_summary,
     error = :error,
     undo_ref = :undo_ref,
+    owner_pid = :owner_pid,
     metadata = :metadata,
     started_at = :started_at,
     finished_at = :finished_at,

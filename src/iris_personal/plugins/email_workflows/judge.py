@@ -58,6 +58,7 @@ from .judgments import PROMO, WAITING, JudgmentStore
 if TYPE_CHECKING:
     from iris_harness.sdk.services import TierRouterService
     from iris_personal.email.contracts import EmailMessage
+    from iris_personal.email.provider_api import ProgressFn
     from iris_personal.email.store import EmailStore
 
 logger = logging.getLogger(__name__)
@@ -504,11 +505,13 @@ def run_judge(
     now: datetime | None = None,
     tz: tzinfo | None = None,
     run_id: str | None = None,
+    progress: ProgressFn | None = None,
 ) -> JudgeRunReport:
     """Judge what is waiting, up to ``limit`` (default ``IRIS_EMAIL_JUDGE_MAX``).
 
     ``dry_run`` writes nothing (no rows, no events): the verdicts are only in the
     report. ``backfill`` also takes up to that many recent emails that have no row yet.
+    ``progress``, when given, is called before each candidate is judged.
     """
     report = JudgeRunReport(run_id=run_id or uuid.uuid4().hex[:12], dry_run=dry_run)
     if not judge_enabled():
@@ -532,7 +535,10 @@ def run_judge(
             released.setdefault(account, []).append(mid)
 
     candidates = _candidates(store, email_store, config, cap, backfill)
-    for message_id, account_id, was_waiting in candidates:
+    total = len(candidates)
+    for i, (message_id, account_id, was_waiting) in enumerate(candidates, start=1):
+        if progress is not None:
+            progress(i / total, f"judging {i}/{total}")
         message = load_message(email_store, message_id)
         reason = (
             "email not in the store" if message is None else skip_reason(message, config, store)

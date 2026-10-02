@@ -911,6 +911,44 @@ export function runHealthWatch(): Promise<HealthWatchPass> {
   return postJSON<HealthWatchPass>("/health/watch");
 }
 
+// ---- System Check (iris doctor's install preflight, OSS plan R5) ---------
+
+export interface DoctorCheck {
+  name: string;
+  status: "pass" | "warn" | "fail" | "info";
+  state: string;
+  detail: string;
+  fix: string | null;
+  /** What a failing check stops: real use, everything (incl. the demo), or nothing. */
+  blocks: "all" | "use" | "none";
+}
+
+export interface StarterModel {
+  name: string;
+  size_gb: number;
+}
+
+export interface DoctorReport {
+  verdict: "ready" | "demo_only" | "not_ready";
+  exit_code: number;
+  checks: DoctorCheck[];
+  missing_models: StarterModel[];
+  key: { source: string; detail: string };
+  ollama_url: string;
+  /** Something a fix (a model pull, this screen's one write) could do. */
+  fixable: boolean;
+}
+
+/** The same preflight `iris doctor` prints: hardware, Ollama, the starter model,
+ * the vault key. Pure read. */
+export const getDoctorReport = () => getJSON<DoctorReport>("/health/doctor");
+
+/** Pull a missing starter model in the background (write-gated): returns the
+ * Activity id to poll through `useActivities()`. */
+export function pullStarterModel(model: string): Promise<{ activity_id: string }> {
+  return postJSON<{ activity_id: string }>("/health/doctor/pull-model", { model });
+}
+
 // ---- Context health (ADR-0081) ------------------------------------------
 
 export interface ContextHealth {

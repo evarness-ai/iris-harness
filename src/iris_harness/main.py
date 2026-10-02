@@ -504,6 +504,18 @@ app.add_typer(device_app, name="device")
 app.add_typer(push_app, name="push")
 
 
+def _clean_hidden_input(raw: str) -> str:
+    """A hidden (no-echo) prompt's capture: drop non-printable characters (a
+    terminal/paste artifact ``getpass``-style reads don't expect) and ordinary
+    leading/trailing whitespace. Issue #69: a pasted app password failed once
+    through IMAP's own hidden prompt and worked immediately via its
+    ``--password-stdin`` path with the same bytes -- not reproduced reliably
+    enough to name a cause, so this is a cheap, safe-regardless mitigation for
+    every hidden-prompt capture, not a claimed fix. Also fine for a value given
+    directly as ``--value``, not just one typed at the prompt."""
+    return "".join(ch for ch in raw if ch.isprintable()).strip()
+
+
 @vault_app.command("add")
 def cmd_vault_add(
     handle: Annotated[
@@ -534,7 +546,7 @@ def cmd_vault_add(
         store = VaultStore()
         store.add(
             handle=handle,
-            secret_value=secret_value,
+            secret_value=_clean_hidden_input(secret_value),
             governor_route=route,
             replace=replace,
         )

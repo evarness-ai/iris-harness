@@ -43,6 +43,7 @@ from iris_personal.email.providers import (
     LabellingProvider,
     MailProvider,
     MailSyncStore,
+    ProgressFn,
     register_mail_provider,
 )
 
@@ -122,6 +123,7 @@ __all__ = [
     "LabellingProvider",
     "MailProvider",
     "MailSyncStore",
+    "ProgressFn",
     "WriteTally",
     "connect_account",
     "default_sync_store",

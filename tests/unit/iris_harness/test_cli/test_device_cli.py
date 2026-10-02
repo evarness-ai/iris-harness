@@ -239,6 +239,14 @@ def test_401_with_a_secret_says_the_secret_is_wrong(api: _FakeApi) -> None:
     assert "s3cret" not in result.output
 
 
+def test_401_hints_at_the_re_run_the_generator_footgun(api: _FakeApi) -> None:
+    """Issue #70: re-running `openssl rand -hex 32` in a second shell makes a
+    DIFFERENT secret, and the bare 401 gave no hint that was the likely cause."""
+    api.fail_with = _http_error(401, "missing or invalid bearer token")
+    result = _run("list")
+    assert "different" in result.output and "each time" in result.output
+
+
 def test_401_without_a_secret_says_it_is_unset(
     api: _FakeApi, monkeypatch: pytest.MonkeyPatch
 ) -> None:

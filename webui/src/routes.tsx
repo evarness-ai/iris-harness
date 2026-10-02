@@ -137,6 +137,12 @@ export const router = createBrowserRouter([
         lazy: async () => ({ Component: (await import("./screens/Health")).HealthScreen }),
       },
       {
+        path: "system-check",
+        lazy: async () => ({
+          Component: (await import("./screens/SystemCheck")).SystemCheckScreen,
+        }),
+      },
+      {
         path: "overview",
         lazy: async () => ({ Component: (await import("./screens/Overview")).OverviewScreen }),
       },

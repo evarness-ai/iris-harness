@@ -1,6 +1,9 @@
 # Every stable name: <module>:<name>, one per line (OSS plan R16; tests/unit/test_stable_tier.py).
 # Removing a line needs a deprecation cycle first (docs/reference/stable-api.md); adding one
 # is a new promise, reviewed like any API change.
+iris_harness.sdk.activities:ActivityOutcome
+iris_harness.sdk.activities:ActivityRunner
+iris_harness.sdk.activities:ActivityStore
 iris_harness.sdk.activity:chat_in_progress
 iris_harness.sdk.approvals:ApprovalAlreadyAnsweredError
 iris_harness.sdk.approvals:ApprovalCard

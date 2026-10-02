@@ -23,9 +23,10 @@ export interface SetupFixture {
   account_id: string;
   step: string;
   status: "in_progress" | "waiting" | "done";
-  waiting_kind: "" | "decision" | "blocked";
+  waiting_kind: "" | "decision" | "blocked" | "activity";
   waiting_for: string;
   approval_id: string | null;
+  activity_id: string | null;
   results: Record<string, Json>;
   rendered: Record<string, string>;
   connect_command: string;
@@ -106,6 +107,7 @@ export function setupAt(
     waiting_kind: "",
     waiting_for: "",
     approval_id: null,
+    activity_id: null,
     steps: STEP_TITLES.map(([s, title]) => ({
       step: s,
       title,
@@ -138,6 +140,22 @@ export function waitingAtApproval(accountId: string, approvalId = "appr-7f3c9e10
     waiting_kind: "decision",
     waiting_for: `approve the label preview (approval ${approvalId}) to let IRIS change ${accountId}, or decline to keep it read-only`,
     approval_id: approvalId,
+  });
+}
+
+/** A long step (fetch, the judge) running in the background on the Activity spine
+ * (issue #67): the screen polls this rather than waiting out one long request. */
+export function waitingOnActivity(
+  accountId: string,
+  step: string,
+  activityId = "act-fetch-1",
+  progress = "fetching mail…",
+): SetupFixture {
+  return setupAt(accountId, step, {
+    status: "waiting",
+    waiting_kind: "activity",
+    waiting_for: progress,
+    activity_id: activityId,
   });
 }
 

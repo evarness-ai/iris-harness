@@ -183,6 +183,24 @@ def test_cold_start_when_no_cursor(store: EmailStore) -> None:
     assert store.get_cursor("gmail", "gmail:user@gmail.com", "gmail_history_id") == "9000"
 
 
+def test_cold_start_reports_progress_per_message(store: EmailStore) -> None:
+    service = _build_mock_service(
+        messages_list_responses=[{"messages": [{"id": "m1"}, {"id": "m2"}]}],
+        profile_history_id="9000",
+    )
+    calls: list[tuple[float, str]] = []
+
+    with (
+        patch.object(gmail_fetch, "build", return_value=service),
+        patch.object(gmail_fetch, "load_credentials", return_value=MagicMock()),
+    ):
+        fetch_new_emails(
+            "gmail:user@gmail.com", store=store, progress=lambda f, m: calls.append((f, m))
+        )
+
+    assert calls == [(0.5, "fetched 1/2"), (1.0, "fetched 2/2")]
+
+
 def test_cold_start_with_no_messages_still_writes_cursor(store: EmailStore) -> None:
     service = _build_mock_service(
         messages_list_responses=[{"messages": []}],

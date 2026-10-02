@@ -44,6 +44,7 @@ CORE_NAV = [
     "/learning",
     "/twin",
     "/health",
+    "/system-check",
     "/governance",
     "/devices",
     "/settings",

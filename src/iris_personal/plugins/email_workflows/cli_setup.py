@@ -14,6 +14,7 @@ owner's decision, or on something outside setup); run it again to resume.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Annotated, Any
 
 import typer
@@ -28,13 +29,20 @@ EXIT_WAITING = 3
 
 def cli_deps(*, interactive: bool) -> OnboardingDeps:
     """Setup's calls in a CLI process: the config dir's tiers for the judge, the namer
-    and the digest. The OS keyring is read only at an interactive terminal."""
+    and the digest. The OS keyring is read only at an interactive terminal.
+
+    There is no running :class:`IrisRuntime` here to hand fetch/classify the harness's
+    shared Activity spine, so this builds its own small one -- same ``activities.db``,
+    same reconciliation, a worker of its own -- lazily, and only once per process: the
+    CLI's own poll loop (``cmd_email_setup``) calls ``advance`` many times a second, and
+    a fresh :class:`ActivityRunner` (its own thread pool) on every one of those would
+    leak threads for no reason."""
     from iris_harness.sdk.config import config_dir, config_path
     from iris_harness.sdk.llm import TierRouter, make_narrative_llm_call
 
     from .discovery import GovernedNamingClient
     from .judge import llm_from_router
-    from .onboarding import OnboardingDeps
+    from .onboarding import ActivityJobs, OnboardingDeps
 
     tiers = config_path("llm_tiers.yaml")
     try:
@@ -52,11 +60,26 @@ def cli_deps(*, interactive: bool) -> OnboardingDeps:
     def narrate() -> Any:
         return make_narrative_llm_call(router) if router is not None else None
 
+    jobs: list[ActivityJobs] = []
+
+    def activities() -> ActivityJobs:
+        if not jobs:
+            from iris_harness.sdk.activities import ActivityRunner, ActivityStore
+            from iris_harness.sdk.persistence import data_path
+
+            store = ActivityStore(db_path=data_path("activities.db"))
+            store.ensure_schema()
+            store.reconcile_orphaned()
+            runner = ActivityRunner(store=store, max_workers=1)
+            jobs.append(ActivityJobs(submit=runner.submit, get=store.get))
+        return jobs[0]
+
     return OnboardingDeps(
         config_dir=config_dir(),
         judge_llm=judge,
         naming_client=namer,
         narrate=narrate,
+        activities=activities,
         read_keyring=interactive,
     )
 
@@ -172,6 +195,7 @@ def cmd_email_setup(
     from iris_personal.email.providers import mount_cli_mail_providers
 
     from .onboarding import (
+        ACTIVITY,
         COMPLETE,
         IN_PROGRESS,
         STEPS,
@@ -217,6 +241,7 @@ def cmd_email_setup(
     console.print(f"[dim]email setup for {picked}[/dim]")
     shown: set[str] = set()
     asked: set[str] = set()
+    last_activity_line = ""
     before = machine.state(picked)
     if before is not None:
         shown = set(before.results)
@@ -235,6 +260,14 @@ def cmd_email_setup(
         if state.step == COMPLETE:
             return
         if state.status == IN_PROGRESS:
+            continue
+        if state.waiting_kind == ACTIVITY:
+            # A background job (fetch, classify), not a question: show it's moving
+            # and poll again, rather than asking anything or giving up the terminal.
+            if state.waiting_for != last_activity_line:
+                console.print(f"[dim]… {state.waiting_for}[/dim]", markup=False)
+                last_activity_line = state.waiting_for
+            time.sleep(0.5)
             continue
         # Asked once per step: an answer that leaves the step waiting (no key wanted)
         # stops here rather than asking again.

@@ -17,6 +17,7 @@ from iris_personal.email.provider_api import (
     EmailMessage,
     FetchResult,
     MailSyncStore,
+    ProgressFn,
 )
 
 from . import gmail_attachments, gmail_fetch
@@ -42,9 +43,14 @@ class GmailProvider:
         store: MailSyncStore | None = None,
         max_messages: int = gmail_fetch.DEFAULT_MAX_MESSAGES,
         cold_start_days: int = gmail_fetch.DEFAULT_COLD_START_DAYS,
+        progress: ProgressFn | None = None,
     ) -> FetchResult:
         return gmail_fetch.fetch_new_emails(
-            account_id, store=store, max_messages=max_messages, cold_start_days=cold_start_days
+            account_id,
+            store=store,
+            max_messages=max_messages,
+            cold_start_days=cold_start_days,
+            progress=progress,
         )
 
     def reset_cursor(self, account_id: str, *, store: MailSyncStore) -> None:

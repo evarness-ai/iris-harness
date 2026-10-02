@@ -4,8 +4,10 @@ probed."""
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -210,3 +212,97 @@ def test_health_doctor_serves_the_preflight_without_reading_the_keyring(
     rows = {c["name"]: c for c in body["checks"]}
     assert rows["Starter models"]["status"] == "fail"
     assert body["missing_models"][0]["name"] == "qwen2.5:7b-instruct"
+
+
+# ── pulling a missing starter model (the System Check screen's one write) ───
+
+
+class _FakeActivityNotices:
+    """Just enough of IrisRuntime's own ``_activity_notices()`` seam for the route
+    to submit real work to a real (tmp-path) ActivityRunner -- no mocked spine."""
+
+    def __init__(self, runner: Any) -> None:
+        self._runner = runner
+
+    def activities(self) -> Any:
+        return self._runner
+
+
+def _runtime_with_activities(tmp_path: Path) -> tuple[SimpleNamespace, Any]:
+    from iris_harness.services.activities import ActivityRunner, ActivityStore
+
+    store = ActivityStore(db_path=tmp_path / "activities.db")
+    store.ensure_schema()
+    runner = ActivityRunner(store=store, max_workers=1)
+    rt = SimpleNamespace(_activity_notices=lambda: _FakeActivityNotices(runner))
+    return rt, store
+
+
+def _doctor_sees_a_missing_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from iris_harness.services.system import doctor as dr
+
+    host = dr.HostFacts("3.12.4", "Linux", "x86_64", "6.1.0", 32 * 1024**3)
+    monkeypatch.setattr(dr, "host_facts", lambda: host)
+    monkeypatch.setattr(dr, "disk_free_bytes", lambda p: (tmp_path, 100 * 10**9))
+    monkeypatch.setattr(dr, "configured_ollama_models", lambda: ())
+    monkeypatch.setattr(
+        dr,
+        "ollama_facts",
+        lambda client, root: dr.OllamaFacts(url=root, reachable=True, models=frozenset()),
+    )
+    monkeypatch.delenv("IRIS_VAULT_MASTER_KEY", raising=False)
+
+
+def test_pull_model_is_write_gated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _doctor_sees_a_missing_model(monkeypatch, tmp_path)
+    monkeypatch.delenv("IRIS_WEBUI_ALLOW_WRITES", raising=False)
+    rt, _ = _runtime_with_activities(tmp_path)
+    with TestClient(
+        create_app(runtime=rt, auto_start_runtime=False), headers=auth_headers()
+    ) as client:
+        resp = client.post("/health/doctor/pull-model", json={"model": "qwen2.5:7b-instruct"})
+    assert resp.status_code == 403
+
+
+def test_pull_model_refuses_a_model_that_is_not_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _doctor_sees_a_missing_model(monkeypatch, tmp_path)
+    monkeypatch.setenv("IRIS_WEBUI_ALLOW_WRITES", "1")
+    rt, _ = _runtime_with_activities(tmp_path)
+    with TestClient(
+        create_app(runtime=rt, auto_start_runtime=False), headers=auth_headers()
+    ) as client:
+        resp = client.post("/health/doctor/pull-model", json={"model": "not-a-real-model"})
+    assert resp.status_code == 404
+
+
+def test_pull_model_submits_an_activity_and_reports_progress(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from iris_harness.services.system import doctor as dr
+
+    _doctor_sees_a_missing_model(monkeypatch, tmp_path)
+    monkeypatch.setenv("IRIS_WEBUI_ALLOW_WRITES", "1")
+
+    def fake_pull_model(name: str, *, client: Any, root: str | None, on_progress: Any) -> None:
+        on_progress(dr.PullProgress("pulling", 50, 100))
+        on_progress(dr.PullProgress("success", 100, 100))
+
+    monkeypatch.setattr(dr, "pull_model", fake_pull_model)
+    rt, store = _runtime_with_activities(tmp_path)
+    with TestClient(
+        create_app(runtime=rt, auto_start_runtime=False), headers=auth_headers()
+    ) as client:
+        resp = client.post("/health/doctor/pull-model", json={"model": "qwen2.5:7b-instruct"})
+    assert resp.status_code == 200
+    activity_id = resp.json()["activity_id"]
+
+    for _ in range(200):
+        activity = store.get(activity_id)
+        if activity is not None and activity.status in ("completed", "failed"):
+            break
+        time.sleep(0.01)
+    assert activity is not None and activity.status == "completed"
+    assert activity.result_summary == "pulled qwen2.5:7b-instruct"
+    assert activity.progress == 1.0

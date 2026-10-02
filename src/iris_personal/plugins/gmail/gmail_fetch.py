@@ -72,6 +72,7 @@ from iris_personal.email.provider_api import (
     EmailMessage,
     FetchResult,
     MailSyncStore,
+    ProgressFn,
     default_sync_store,
 )
 
@@ -106,6 +107,7 @@ def fetch_new_emails(
     store: MailSyncStore | None = None,
     max_messages: int = DEFAULT_MAX_MESSAGES,
     cold_start_days: int = DEFAULT_COLD_START_DAYS,
+    progress: ProgressFn | None = None,
 ) -> FetchResult:
     """Sync new mail for one account. Idempotent on re-runs."""
     s = store if store is not None else default_sync_store()
@@ -140,7 +142,7 @@ def fetch_new_emails(
     else:
         message_ids, new_cursor = _cold_start(service, max_messages, cold_start_days)
 
-    messages = _batch_get_metadata(service, message_ids, account_id)
+    messages = _batch_get_metadata(service, message_ids, account_id, progress=progress)
     persisted = s.upsert_many(messages)
     label_changes = _read_label_changes(service, s, relabelled, exclude=set(message_ids))
 
@@ -753,11 +755,16 @@ def _cold_start(
 
 
 def _batch_get_metadata(
-    service: Any, message_ids: list[str], account_id: str
+    service: Any,
+    message_ids: list[str],
+    account_id: str,
+    *,
+    progress: ProgressFn | None = None,
 ) -> list[EmailMessage]:
     """Fetch metadata for each id; skip individual failures with a debug log."""
     out: list[EmailMessage] = []
-    for mid in message_ids:
+    total = len(message_ids)
+    for i, mid in enumerate(message_ids, start=1):
         try:
             payload = (
                 service.users().messages().get(userId="me", id=mid, format="metadata").execute()
@@ -765,6 +772,9 @@ def _batch_get_metadata(
         except HttpError as exc:
             logger.debug("gmail-fetch: skipping %s (HttpError: %s)", mid, exc)
             continue
+        finally:
+            if progress is not None:
+                progress(i / total, f"fetched {i}/{total}")
         try:
             out.append(_parse_message(payload, account_id))
         except (ValueError, KeyError) as exc:

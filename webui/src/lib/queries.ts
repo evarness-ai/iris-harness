@@ -49,6 +49,8 @@ import {
   getCost,
   getHealthIncidents,
   runHealthWatch,
+  getDoctorReport,
+  pullStarterModel,
   getHeartbeatRuns,
   getHeartbeats,
   getSettingsCatalog,
@@ -496,6 +498,30 @@ export function useRunHealthWatch() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["health"] });
       qc.invalidateQueries({ queryKey: ["health-incidents"] });
+    },
+  });
+}
+
+/* System Check (iris doctor's install preflight, OSS plan R5). Polled gently --
+ * this doesn't change on its own between a model pull completing and the owner
+ * fixing something at a terminal. */
+export function useDoctorReport() {
+  return useQuery({
+    queryKey: ["doctor"],
+    queryFn: getDoctorReport,
+    refetchInterval: 30_000,
+  });
+}
+
+/* Pull a missing starter model: invalidate the report (and the Activity feed
+ * already polls on its own) once the job is submitted, so "missing" clears as
+ * soon as the background pull finishes. */
+export function usePullStarterModel() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: pullStarterModel,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["activities"] });
     },
   });
 }

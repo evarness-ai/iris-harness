@@ -21,6 +21,20 @@ def test_the_provider_satisfies_the_mail_provider_protocol(provider: ImapProvide
     assert provider.name == "imap"
 
 
+def test_fetch_new_reports_progress(
+    provider: ImapProvider, account: ImapAccount, mailbox: FakeMailbox, store: EmailStore
+) -> None:
+    seed(mailbox, 5)
+    calls: list[tuple[float, str]] = []
+
+    result = provider.fetch_new(
+        account.account_id, store=store, progress=lambda f, m: calls.append((f, m))
+    )
+
+    assert result.fetched == 5
+    assert calls == [(1.0, "fetched 5/5")]
+
+
 def test_first_sync_stores_every_message_and_the_uid_mark(
     provider: ImapProvider, account: ImapAccount, mailbox: FakeMailbox, store: EmailStore
 ) -> None:

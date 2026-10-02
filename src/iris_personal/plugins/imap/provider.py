@@ -45,6 +45,7 @@ from iris_personal.email.provider_api import (
     EmailMessage,
     FetchResult,
     MailSyncStore,
+    ProgressFn,
     default_sync_store,
 )
 
@@ -249,6 +250,7 @@ class ImapProvider:
         store: MailSyncStore | None = None,
         max_messages: int = 100,
         cold_start_days: int = 30,
+        progress: ProgressFn | None = None,
     ) -> FetchResult:
         s = store if store is not None else default_sync_store()
         s.ensure_schema()
@@ -280,7 +282,7 @@ class ImapProvider:
                 batch = window[-max_messages:] if max_messages > 0 else []
                 top = session.uid_search("UID", "*")
                 high = max([*top, *batch, 0])
-            messages = self._fetch_messages(session, account, info, batch)
+            messages = self._fetch_messages(session, account, info, batch, progress=progress)
             if incremental:
                 label_changes = self._read_back(session, account, info, s, exclude=set(batch))
 
@@ -297,13 +299,18 @@ class ImapProvider:
         )
 
     def _download(
-        self, session: ImapSession, uids: Sequence[int]
+        self,
+        session: ImapSession,
+        uids: Sequence[int],
+        *,
+        progress: ProgressFn | None = None,
     ) -> tuple[list[FetchedItem], dict[int, bytes]]:
         """Flags/date/size for each UID, then the bytes: whole messages up to the size
         cap, headers only above it. ``BODY.PEEK`` throughout: nothing is marked read."""
         meta: list[FetchedItem] = []
         raw: dict[int, bytes] = {}
-        for start in range(0, len(uids), _FETCH_CHUNK):
+        total = len(uids)
+        for start in range(0, total, _FETCH_CHUNK):
             chunk = list(uids[start : start + _FETCH_CHUNK])
             items = session.uid_fetch(chunk, "(UID FLAGS INTERNALDATE RFC822.SIZE)")
             meta.extend(items)
@@ -315,6 +322,9 @@ class ImapProvider:
             for got in session.uid_fetch(large, "(UID BODY.PEEK[HEADER])"):
                 if got.body is not None:
                     raw[got.uid] = got.body
+            if progress is not None:
+                done = min(start + len(chunk), total)
+                progress(done / total, f"fetched {done}/{total}")
         return meta, raw
 
     def _fetch_messages(
@@ -323,11 +333,13 @@ class ImapProvider:
         account: ImapAccount,
         info: FolderInfo,
         uids: Sequence[int],
+        *,
+        progress: ProgressFn | None = None,
     ) -> list[EmailMessage]:
         if not uids:
             return []
         known = self.state.label_keywords(account.account_id)
-        meta, raw = self._download(session, uids)
+        meta, raw = self._download(session, uids, progress=progress)
         out: list[EmailMessage] = []
         rows: list[tuple[str, str, int, int, str | None, tuple[str, ...]]] = []
         for item in sorted(meta, key=lambda i: i.uid):

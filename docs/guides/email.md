@@ -13,23 +13,44 @@ page is what comes after.
 The scheduled jobs (the email sweep that fetches new mail, and the judge that sorts it
 on the local model) run inside the IRIS API service, which also serves the web
 console. Set a long random shared secret first: every API call needs it, except the
-`/healthz` probe.
+`/healthz` probe. Write it to a file once, rather than re-running the generator in
+every shell -- `openssl rand -hex 32` makes a *different* value each time it runs, so
+exporting its output straight in a second terminal does not reproduce the first
+shell's secret, and the API answers with a 401 that gives no sign why:
 
 ```bash
-export IRIS_AUTH_SECRET="$(openssl rand -hex 32)"
+openssl rand -hex 32 > .auth-secret
+export IRIS_AUTH_SECRET="$(cat .auth-secret)"
 iris serve
 ```
 
+Use the same two commands (`export IRIS_AUTH_SECRET="$(cat .auth-secret)"`, then
+whatever you're running) in every other shell that talks to this API -- `iris device
+pair`, `iris status`, a second terminal open to the same install.
+
 `iris serve` runs the API in the foreground on `127.0.0.1:8003`; `--port` (or
 `IRIS_API_PORT`) moves it. From a clone of the repository, the same command is
-`poetry run iris serve`. [Run with Docker](docker.md) keeps it up as a service.
+`poetry run iris serve`. [Run with Docker](docker.md) keeps it up as a service, and an
+installed wheel or a container image ships the web console already built.
+
+**From a source checkout, build the console first.** A bare `git clone` + `poetry
+install` has no console at all -- `iris serve` answers `/chat` and friends, but
+`http://localhost:8003` shows nothing -- until you build it and point `iris serve` at
+the result:
+
+```bash
+cd webui && npm install && npm run build && cd ..
+export IRIS_WEBUI_DIST="$PWD/webui/dist"
+iris serve
+```
 
 The API listens on `127.0.0.1` only unless you pass `--host` (or set `IRIS_API_HOST`).
 It serves plain HTTP, so any other address puts the shared secret and your mail on the
 network unencrypted; `iris serve` warns when you do.
 
 Open the console at `http://localhost:8003` and pair the browser: in another shell with
-the same `IRIS_AUTH_SECRET`, `iris device pair` prints a one-time code to type there.
+the same `IRIS_AUTH_SECRET` (`export IRIS_AUTH_SECRET="$(cat .auth-secret)"`, not a
+fresh `openssl rand`), `iris device pair` prints a one-time code to type there.
 
 ## Day to day
 

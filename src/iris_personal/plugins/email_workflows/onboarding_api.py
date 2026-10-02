@@ -21,7 +21,9 @@ else null). A state is ``OnboardingState.as_dict`` plus ``sweep``
 ``rendered`` (each finished step in plain lines, the words the CLI prints). Its fields:
 ``step`` (the current one, ``complete`` at the end), ``status`` (``in_progress`` /
 ``waiting`` / ``done``), ``waiting_kind`` (``decision``: the owner decides;
-``blocked``: something outside setup first), ``waiting_for``, ``steps`` and each
+``blocked``: something outside setup first; ``activity``: a long step is running in
+the background -- poll by calling ``advance`` again, no answer needed), ``waiting_for``,
+``activity_id`` (set only while ``waiting_kind`` is ``activity``), ``steps`` and each
 finished step's ``results``.
 
 ``accept_defaults`` is ``--yes``: every decision's default except mailbox writes, which
@@ -35,7 +37,11 @@ Setup's confirmed action -- the mailbox-write approval -- is a row on the govern
 approval queue either way; opening these routes to a read-only console would let it
 answer that row here when it cannot in the Action Center.
 
-Long steps (the first fetch, discovery, the judge) run inside the request.
+The first fetch and the judge (issue #67) run in the background on the harness's
+Activity spine, not inside the request: ``advance``/``run`` return as soon as either is
+submitted (``waiting_kind: "activity"``), so ``until_waiting: true`` no longer blocks
+for minutes either. Discovery still runs inside the request -- it is a naming call per
+cluster, not per message, and stays fast enough not to need it.
 """
 
 from __future__ import annotations
@@ -49,6 +55,7 @@ from pydantic import BaseModel, Field
 
 from .onboarding import (
     STEPS,
+    ActivityJobs,
     Inputs,
     Onboarding,
     OnboardingDeps,
@@ -178,12 +185,27 @@ def runtime_deps(services: Any) -> OnboardingDeps:
     def narrate() -> Any:
         return make_narrative_llm_call(router) if router is not None else None
 
+    def activities() -> ActivityJobs | None:
+        # The runtime's shared Activity spine (the SAME runner the webui's Activity
+        # Feed and FileManager jobs use), reached the one way a plugin may: the typed
+        # HarnessServices field. None when the host has no activities wired (an older
+        # bootstrap, or a test double) -- fetch/classify then just run inline.
+        submit = getattr(services, "submit_activity", None)
+        if submit is None:
+            return None
+        from iris_harness.sdk.activities import ActivityStore
+
+        store = ActivityStore(db_path=data_dir / "activities.db")
+        store.ensure_schema()
+        return ActivityJobs(submit=submit, get=store.get)
+
     return OnboardingDeps(
         data_dir=data_dir,
         config_dir=services.config_dir,
         judge_llm=judge,
         naming_client=namer,
         narrate=narrate,
+        activities=activities,
         read_keyring=False,
     )
 

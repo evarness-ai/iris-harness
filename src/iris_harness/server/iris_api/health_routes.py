@@ -4,6 +4,7 @@
     GET    /health
     GET    /health/connectors
     GET    /health/doctor
+    POST   /health/doctor/pull-model
     GET    /health/incidents
     POST   /health/watch
     GET    /runtime/inventory
@@ -20,9 +21,14 @@ from collections.abc import Callable
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
 
 from iris_harness.server.iris_api.governance_routes import _env_flag
 from iris_harness.server.iris_api.write_guard import _may_write
+
+
+class PullModelBody(BaseModel):
+    model: str
 
 
 def _feedback_capture_enabled() -> bool:
@@ -130,6 +136,63 @@ def install_health_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
         from iris_harness.services.system.doctor import run_doctor
 
         return run_doctor(read_keyring=False).as_dict()
+
+    @app.post("/health/doctor/pull-model")
+    def pull_starter_model(body: PullModelBody) -> dict[str, Any]:
+        """Pull one missing starter model in the background (the System Check
+        screen's one write): every other fix stays the CLI's (``iris doctor
+        --fix``), but a download is safe and slow enough to be worth a progress
+        bar in the browser. Write-gated by IRIS_WEBUI_ALLOW_WRITES like any other
+        mutating route here (deny by default in ``main``'s ``_is_gated_write``).
+
+        Submits to the same Activity spine as everything else in the background
+        (FileManager jobs, email setup's fetch/judge): poll the returned
+        ``activity_id`` through the existing ``GET /activities``."""
+        from iris_harness.services.activities import ActivityOutcome
+        from iris_harness.services.system.doctor import (
+            DoctorFixError,
+            http_client,
+            pull_model,
+            run_doctor,
+        )
+
+        report = run_doctor(read_keyring=False)
+        missing = {m.name for m in report.missing_models}
+        if body.model not in missing:
+            raise HTTPException(
+                status_code=404,
+                detail=f"{body.model!r} is not a missing starter model",
+            )
+        rt = runtime()
+        root = report.ollama_url
+
+        def work(progress: Callable[[float, str], None]) -> ActivityOutcome:
+            def on_progress(event: Any) -> None:
+                frac = (
+                    event.completed / event.total
+                    if event.total and event.completed is not None
+                    else 0.0
+                )
+                progress(frac, event.status)
+
+            try:
+                with http_client() as client:
+                    pull_model(body.model, client=client, root=root, on_progress=on_progress)
+            except DoctorFixError as exc:
+                raise RuntimeError(str(exc)) from exc
+            return ActivityOutcome(result_summary=f"pulled {body.model}")
+
+        activity_id = (
+            rt._activity_notices()
+            .activities()
+            .submit(
+                kind="doctor.pull_model",
+                title=f"Pull {body.model}",
+                origin="api",
+                work=work,
+            )
+        )
+        return {"activity_id": activity_id}
 
     @app.get("/health/incidents")
     def health_incidents(open_only: bool = False, limit: int = 50) -> dict[str, Any]:

@@ -34,6 +34,7 @@ from iris_personal.email.provider_api import (
     EmailMessage,
     FetchResult,
     MailSyncStore,
+    ProgressFn,
     default_sync_store,
 )
 
@@ -189,6 +190,7 @@ class DemoMailProvider:
         store: MailSyncStore | None = None,
         max_messages: int = 100,
         cold_start_days: int = 30,
+        progress: ProgressFn | None = None,
     ) -> FetchResult:
         """Deliver the next ``max_messages`` of the corpus, oldest first. Idempotent: the
         cursor (in the store, like any provider's) remembers how far it got."""
@@ -202,6 +204,9 @@ class DemoMailProvider:
         persisted = s.upsert_many(messages)
         end = start + len(batch)
         s.set_cursor(DEMO_PROVIDER, account_id, CURSOR_KIND, str(end))
+        if progress is not None:
+            # In-memory, no network -- nothing to report mid-way through.
+            progress(1.0, f"fetched {len(batch)}")
         return FetchResult(
             account_id=account_id,
             fetched=persisted,

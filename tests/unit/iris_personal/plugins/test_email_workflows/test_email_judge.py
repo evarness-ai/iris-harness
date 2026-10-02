@@ -321,6 +321,29 @@ def test_a_run_records_rows_and_emits_email_judged(
     assert (report.judged, report.counts, report.waiting) == (1, {"bill": 1}, 0)
 
 
+def test_run_judge_reports_progress_per_candidate(
+    config: JudgeConfig, emails: EmailStore, store: JudgmentStore
+) -> None:
+    _queue(emails, store, 3)
+    calls: list[tuple[float, str]] = []
+
+    run_judge(
+        store,
+        emails,
+        config,
+        llm=_llm(_bill()),
+        fetch_body=_body(),
+        now=NOW,
+        progress=lambda f, m: calls.append((f, m)),
+    )
+
+    assert calls == [
+        (1 / 3, "judging 1/3"),
+        (2 / 3, "judging 2/3"),
+        (1.0, "judging 3/3"),
+    ]
+
+
 def test_over_the_cap_waits_and_waiting_drains_first_next_run(
     config: JudgeConfig, emails: EmailStore, store: JudgmentStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:

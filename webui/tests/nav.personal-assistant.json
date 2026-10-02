@@ -304,6 +304,19 @@
           }
         },
         {
+          "id": "system-check",
+          "label": "System Check",
+          "route": "/system-check",
+          "title": "System Check",
+          "subtitle": "Hardware, Ollama & the starter model — the install preflight (iris doctor)",
+          "icon": "list-checks",
+          "group": "system",
+          "order": 15,
+          "nav": true,
+          "plugin": null,
+          "status": null
+        },
+        {
           "id": "governance",
           "label": "Governance",
           "route": "/governance",

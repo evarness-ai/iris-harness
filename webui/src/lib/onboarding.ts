@@ -7,9 +7,12 @@
  *   POST /api/v1/email/onboarding/<id>/restart           -> {restarted}
  *
  * Every decision is the server's (onboarding.py); this module only carries it. The
- * POSTs are gated writes (R17): a control-paired device or IRIS_WEBUI_ALLOW_WRITES. The
- * long steps (fetch, discover, the judge) run inside the POST, so a call can take
- * minutes; each account has one write in flight at a time (see `useSetupWrite`). */
+ * POSTs are gated writes (R17): a control-paired device or IRIS_WEBUI_ALLOW_WRITES.
+ * Discovery still runs inside the POST (a naming call per cluster, fast); the first
+ * fetch and the judge instead submit to the harness's background Activity spine and
+ * return almost at once with `waiting_kind: "activity"` (issue #67) -- the screen
+ * polls (`useSetupBusy`'s interval) rather than waiting out a long-lived request, and
+ * each account still has one write in flight at a time (see `useSetupWrite`). */
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./http";
 
@@ -34,10 +37,14 @@ export interface SetupState {
   /** The current step, `complete` at the end. */
   step: string;
   status: "in_progress" | "waiting" | "done";
-  /** `decision`: the owner decides. `blocked`: something outside setup comes first. */
-  waiting_kind: "" | "decision" | "blocked";
+  /** `decision`: the owner decides. `blocked`: something outside setup comes first.
+   * `activity`: a long step (fetch, the judge) is running in the background --
+   * `waiting_for` carries its latest progress message; poll by advancing again. */
+  waiting_kind: "" | "decision" | "blocked" | "activity";
   waiting_for: string;
   approval_id: string | null;
+  /** Set only while `waiting_kind` is `activity`. */
+  activity_id: string | null;
   steps: SetupStep[];
   results: Record<string, Record<string, unknown>>;
   /** Each finished step in plain lines: the words the CLI prints. */

@@ -71,7 +71,9 @@ def _call(api: str | None, path: str, *, method: str = "GET", body: Any = None) 
             why = (
                 "IRIS_AUTH_SECRET is not set in this shell, so no credential was sent"
                 if expected_secret() is None
-                else "IRIS_AUTH_SECRET in this shell is not the secret the API runs with"
+                else "IRIS_AUTH_SECRET in this shell is not the secret the API runs with "
+                "(a common cause: re-running the generator command in each shell makes a "
+                "*different* secret each time -- write it to a file once and export that)"
             )
             raise _fail(f"the API at {base} refused the request (401): {why}.") from exc
         raise _fail(f"HTTP {exc.code} from {base}: {_detail(exc)}") from exc

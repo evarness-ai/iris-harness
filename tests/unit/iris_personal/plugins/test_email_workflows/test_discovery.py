@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
 from iris_personal.email.contracts import CategoryProposal, CategoryRepresentative
 from iris_personal.plugins.email_workflows.discovery import (
     ALLOWED_ROOTS,
+    NAMING_SYSTEM_PROMPT,
     CorpusRow,
+    LlamaServerClient,
     build_proposals,
     cluster_corpus,
     compute_cohesion,
@@ -470,6 +473,28 @@ def test_bootstrap_categories_no_naming_client_returns_unnamed(
         assert p.proposed_root is None
         assert p.proposed_branch is None
         assert p.proposed_leaf is None
+
+
+# ─── Token-budget regression (issue #68) ───────────────────────────────────
+
+
+def test_naming_prompt_asks_for_a_short_rationale() -> None:
+    """The actual root-cause fix: bound the rationale's length at the prompt, so it
+    cannot grow past the closing brace regardless of which client runs it."""
+    assert "12 words" in NAMING_SYSTEM_PROMPT
+    assert "RATIONALE" in NAMING_SYSTEM_PROMPT
+
+
+def test_llama_server_client_leaves_headroom_past_256() -> None:
+    """Defense in depth for the legacy path (`iris email bootstrap-categories`):
+    the cap that could truncate a verdict before its closing brace is raised."""
+    resp = MagicMock()
+    resp.json.return_value = {"choices": [{"message": {"content": "{}"}}]}
+    with patch(
+        "iris_personal.plugins.email_workflows.discovery.requests.post", return_value=resp
+    ) as post:
+        LlamaServerClient().complete_json("sys", "user")
+    assert post.call_args.kwargs["json"]["max_tokens"] > 256
 
 
 # ─── Embedder cache ─────────────────────────────────────────────────────────

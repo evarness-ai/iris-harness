@@ -10,9 +10,12 @@
  * Connecting a mailbox is its provider plugin's login at a terminal; the screen shows
  * that command with a copy button and never asks for a password itself.
  *
- * The long steps (fetch, discover, the judge) run inside the POST, for minutes at a
- * time, so each account has one request in flight: its buttons stay disabled until the
- * server answers, and a dropped connection re-reads the state the server kept. */
+ * Discovery still runs inside the POST (a naming call per cluster, fast): each account
+ * has one request in flight, its buttons stay disabled until the server answers, and a
+ * dropped connection re-reads the state the server kept. The first fetch and the judge
+ * (issue #67) instead run in the background on the harness's Activity spine --
+ * `waiting_kind: "activity"` -- so this screen polls (auto-readvances) rather than
+ * holding one request open for minutes. */
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -46,6 +49,7 @@ function statusTag(s: SetupState): { kind: TagKind; text: string } {
   if (s.status === "done") return { kind: "ok", text: "done" };
   if (s.waiting_kind === "decision") return { kind: "warn", text: "needs your decision" };
   if (s.waiting_kind === "blocked") return { kind: "bad", text: "waiting" };
+  if (s.waiting_kind === "activity") return { kind: "info", text: "working…" };
   return { kind: "info", text: "in progress" };
 }
 
@@ -344,6 +348,11 @@ function CurrentStep({
       <p className="mt-1 break-words text-sm text-fg-muted" data-testid="waiting-for">
         {s.waiting_for}
       </p>
+      {s.waiting_kind === "activity" && (
+        <p className="mt-1 text-xs text-fg-muted" data-testid="activity-polling">
+          Running in the background -- this updates on its own every couple of seconds.
+        </p>
+      )}
       {s.step === "connect" && s.waiting_kind === "blocked" && s.connect_command && (
         <>
           <p className="mt-2 text-xs text-fg-muted">
@@ -420,6 +429,19 @@ function AccountSetup({ s, canWrite }: { s: SetupState; canWrite: boolean }) {
     });
   };
 
+  // A background job (fetch, the judge) is running: poll by re-advancing every
+  // couple of seconds, same as the CLI's own poll loop, instead of waiting for a
+  // click. `sendRef` keeps the interval from being torn down and rebuilt on every
+  // render (only entering/leaving the activity wait should do that).
+  const sendRef = useRef(send);
+  sendRef.current = send;
+  const polling = canWrite && s.waiting_kind === "activity";
+  useEffect(() => {
+    if (!polling) return;
+    const id = window.setInterval(() => sendRef.current({ kind: "advance" }), 1500);
+    return () => window.clearInterval(id);
+  }, [polling]);
+
   const askRestart = () =>
     setConfirm({
       title: `Start ${s.account_id}'s setup over?`,
@@ -459,8 +481,8 @@ function AccountSetup({ s, canWrite }: { s: SetupState; canWrite: boolean }) {
             Working on <span className="font-semibold">{titleOf(s, s.step)}</span>… {elapsed}s
           </p>
           <p className="mt-1 text-xs text-fg-muted">
-            Fetching, finding categories and judging run inside this request and can take
-            minutes. Keep this page open; the buttons come back when IRIS answers.
+            Finding categories runs inside this request and can take a little while. Keep
+            this page open; the buttons come back when IRIS answers.
           </p>
         </div>
       )}

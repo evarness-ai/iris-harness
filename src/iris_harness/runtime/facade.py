@@ -373,6 +373,10 @@ class IrisRuntime:
     def startup(self) -> None:
         """Resume in-flight missions and start the heartbeat scheduler."""
         try:
+            self._reconcile_orphaned_activities()
+        except Exception:  # startup must not crash the app
+            logger.exception("activity reconciliation failed")
+        try:
             resumed = self.mission_engine.resume_pending()
             if resumed:
                 logger.info("resumed %d in-flight missions", len(resumed))
@@ -404,6 +408,18 @@ class IrisRuntime:
         except Exception:
             logger.exception("telegram poller failed to start")
         self._warm_models()
+
+    def _reconcile_orphaned_activities(self) -> None:
+        """Reap ``activities.db`` rows left ``queued``/``running`` by a process
+        that crashed instead of shutting down cleanly (ADR for the Activity spine's
+        orphan sweep). Runs once per runtime startup, before anything can submit a
+        new Activity — a per-request store (``GET /activities``) never does this
+        itself, or it would race a job this same process just started."""
+        from iris_harness.services.activities import ActivityStore
+
+        store = ActivityStore(db_path=self.data_dir / "activities.db")
+        store.ensure_schema()
+        store.reconcile_orphaned()
 
     def _seed_core_routines(self) -> None:
         """Seed the ``morning-digest`` routine on first boot (ADR-0122 §3, loop-proof D4).

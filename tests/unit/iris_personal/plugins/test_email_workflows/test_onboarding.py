@@ -30,10 +30,12 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import time
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -55,6 +57,7 @@ from iris_personal.plugins.email_workflows import cli_setup
 from iris_personal.plugins.email_workflows.demo.provider import DEMO_ACCOUNT, DemoMailProvider
 from iris_personal.plugins.email_workflows.judgments import JudgmentStore
 from iris_personal.plugins.email_workflows.onboarding import (
+    ACTIVITY,
     BLOCKED,
     COMPLETE,
     DECISION,
@@ -137,6 +140,60 @@ class CountingProvider:
 
     def __getattr__(self, attr: str) -> Any:
         return getattr(self.inner, attr)
+
+
+@dataclass
+class _FakeJob:
+    work: Callable[[Callable[[float, str], None]], Any]
+    status: str = "queued"
+    metadata: dict[str, Any] = field(default_factory=dict)
+    error: str = ""
+    progress_message: str = ""
+
+
+class FakeActivities:
+    """An ``OnboardingDeps.activities()`` double with no thread, no SQLite: ``submit``
+    only records the job, ``run`` executes it (the test decides when), ``get`` reads
+    back a ``SimpleNamespace`` shaped like ``iris_harness.services.activities.Activity``
+    (just the fields ``_run_long_step`` reads)."""
+
+    def __init__(self) -> None:
+        self.jobs: dict[str, _FakeJob] = {}
+        self._n = 0
+
+    def submit(self, *, kind: str, title: str, origin: str, work: Callable[..., Any]) -> str:
+        del kind, title, origin
+        self._n += 1
+        activity_id = f"act-{self._n}"
+        self.jobs[activity_id] = _FakeJob(work=work)
+        return activity_id
+
+    def get(self, activity_id: str) -> Any:
+        job = self.jobs.get(activity_id)
+        if job is None:
+            return None
+        return SimpleNamespace(
+            status=job.status,
+            metadata=job.metadata,
+            error=job.error,
+            progress_message=job.progress_message,
+        )
+
+    def run(self, activity_id: str) -> None:
+        """What the real ``ActivityRunner`` does in its worker thread, run here on the
+        test's own thread so the assertion right after ``run`` sees the result."""
+        job = self.jobs[activity_id]
+        job.status = "running"
+
+        def progress(frac: float, message: str = "") -> None:
+            job.progress_message = message
+
+        try:
+            outcome = job.work(progress)
+        except Exception as exc:  # noqa: BLE001 — mirrors ActivityRunner._run exactly
+            job.status, job.error = "failed", str(exc)
+            return
+        job.status, job.metadata = "completed", dict(outcome.metadata)
 
 
 @dataclass
@@ -617,6 +674,106 @@ def test_without_defaults_the_category_review_waits_for_the_owner(world: World) 
     assert state.step == "classify"
 
 
+# -- backgrounding fetch/classify onto the Activity spine (issue #67) ----------------
+
+
+def _advance_through_background_steps(world: World, fake: FakeActivities) -> Any:
+    """Drive ``advance`` the way a poller (the CLI, the webui) would: whenever a step
+    is waiting on an activity, run that activity to completion -- as if the background
+    thread just finished -- and poll once more, instead of looping forever."""
+    machine = world.machine()
+    inputs = Inputs(assume_defaults=True)
+    state = machine.advance(DEMO_ACCOUNT, inputs)
+    for _ in range(50):  # generous; the whole flow is 10 steps
+        if state.complete or state.status != "in_progress" and state.waiting_kind != ACTIVITY:
+            break
+        if state.waiting_kind == ACTIVITY:
+            assert state.activity_id is not None
+            fake.run(state.activity_id)
+        state = machine.advance(DEMO_ACCOUNT, inputs)
+    return state
+
+
+def test_backgrounded_fetch_and_classify_reach_the_same_label_approval_stop(
+    world: World,
+) -> None:
+    """Wiring ``activities`` must not change WHAT the flow computes, only HOW the long
+    steps run -- the same assertions as the synchronous flow test, reached by polling
+    a background job instead of running fetch/classify inline."""
+    fake = FakeActivities()
+    world.deps.activities = lambda: fake
+
+    state = _advance_through_background_steps(world, fake)
+
+    assert state.status == "waiting" and state.waiting_kind == DECISION
+    assert state.step == "label_approval"
+    assert state.activity_id is None
+    fetch = state.results["fetch"]
+    assert fetch["fetched"] == 200 and fetch["waiting_for_judge"] > 0
+    classify = state.results["classify"]
+    assert classify["judged"] == fetch["waiting_for_judge"] and world.judge.calls
+    assert classify["knn_classified"] + classify["knn_to_review"] > 0
+
+
+def test_fetch_activity_keeps_the_same_id_while_still_running(world: World) -> None:
+    fake = FakeActivities()
+    world.deps.activities = lambda: fake
+    machine = world.machine()
+    inputs = Inputs(assume_defaults=True)
+
+    state = machine.advance(DEMO_ACCOUNT, inputs)  # connect
+    assert state.step == "fetch"
+    state = machine.advance(DEMO_ACCOUNT, inputs)  # submits the fetch activity
+    assert state.status == "waiting" and state.waiting_kind == ACTIVITY
+    first_id = state.activity_id
+    assert first_id is not None and fake.jobs[first_id].status == "queued"
+
+    # Still queued/running: polling again must not resubmit a second activity.
+    state = machine.advance(DEMO_ACCOUNT, inputs)
+    assert state.activity_id == first_id and len(fake.jobs) == 1
+
+    fake.jobs[first_id].status = "running"
+    state = machine.advance(DEMO_ACCOUNT, inputs)
+    assert state.activity_id == first_id and state.waiting_kind == ACTIVITY
+
+    fake.run(first_id)
+    state = machine.advance(DEMO_ACCOUNT, inputs)
+    assert state.step == "discover" and state.activity_id is None
+    assert state.results["fetch"]["fetched"] == 200
+
+
+def test_a_failed_background_fetch_blocks_then_retries_fresh(world: World) -> None:
+    fake = FakeActivities()
+    world.deps.activities = lambda: fake
+    machine = world.machine()
+    inputs = Inputs(assume_defaults=True)
+
+    state = machine.advance(DEMO_ACCOUNT, inputs)  # connect (needs its own provider lookup)
+    assert state.step == "fetch"
+    # Now take the provider away so _do_fetch's own check raises when the activity runs
+    # -- ActivityRunner (here, FakeActivities.run) catches it and fails the row.
+    world.deps.provider_for = lambda _account: None
+    state = machine.advance(DEMO_ACCOUNT, inputs)  # submits the fetch activity
+    activity_id = state.activity_id
+    assert activity_id is not None
+    fake.run(activity_id)
+    assert fake.jobs[activity_id].status == "failed"
+
+    state = machine.advance(DEMO_ACCOUNT, inputs)
+    assert state.status == "waiting" and state.waiting_kind == BLOCKED
+    assert "no mail provider is mounted" in state.waiting_for
+    assert state.activity_id is None  # cleared -- a retry submits fresh, never re-polls this one
+
+    # The owner mounts the provider and runs setup again: a brand new activity, not
+    # the dead one.
+    world.deps.provider_for = lambda account: world.provider if account.startswith("demo") else None
+    state = machine.advance(DEMO_ACCOUNT, inputs)
+    assert state.waiting_kind == ACTIVITY and state.activity_id != activity_id
+    fake.run(state.activity_id)
+    state = machine.advance(DEMO_ACCOUNT, inputs)
+    assert state.step == "discover" and state.results["fetch"]["fetched"] == 200
+
+
 # -- connect ------------------------------------------------------------------------
 
 
@@ -1035,6 +1192,73 @@ def test_offered_providers_mount_only_when_a_command_asks(monkeypatch: pytest.Mo
     assert providers_module.mail_provider_for("fake:x@example.com") is not None
     assert providers_module.mount_cli_mail_providers() == ()  # already mounted: not rebuilt
     assert built == ["fake"]
+
+
+# -- cli_deps's own Activity spine (no running IrisRuntime to borrow one from) -------
+
+
+def test_cli_deps_activities_is_cached_and_actually_runs_a_job(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from iris_harness.sdk.activities import ActivityOutcome
+
+    monkeypatch.setenv("IRIS_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("IRIS_HOME", str(tmp_path))
+
+    deps = cli_setup.cli_deps(interactive=False)
+
+    jobs = deps.activities()
+    assert jobs is not None
+    assert deps.activities() is jobs  # same object: one ActivityRunner, not one per poll
+
+    activity_id = jobs.submit(
+        kind="test.job",
+        title="a test job",
+        origin="test",
+        work=lambda progress: ActivityOutcome(metadata={"ok": 1}),
+    )
+    activity = jobs.get(activity_id)
+    for _ in range(200):  # the real runner's worker thread; give it a moment
+        activity = jobs.get(activity_id)
+        if activity is not None and activity.status in ("completed", "failed"):
+            break
+        time.sleep(0.01)
+    assert activity is not None and activity.status == "completed"
+    assert activity.metadata == {"ok": 1}
+
+
+def test_runtime_deps_activities_uses_the_hosts_submit_activity(tmp_path: Path) -> None:
+    """``runtime_deps`` must reach the Activity spine only through the typed
+    ``HarnessServices.submit_activity`` field (never build its own runner) -- and
+    degrade to None, not raise, when an older/test host has none."""
+    from iris_personal.plugins.email_workflows.onboarding_api import runtime_deps
+
+    submitted: list[dict[str, Any]] = []
+
+    def fake_submit(**kw: Any) -> str:
+        submitted.append(kw)
+        return "act-from-host"
+
+    services = SimpleNamespace(
+        tier_router=None,
+        data_dir=tmp_path,
+        config_dir=tmp_path,
+        submit_activity=fake_submit,
+    )
+    deps = runtime_deps(services)
+    jobs = deps.activities()
+    assert jobs is not None
+    activity_id = jobs.submit(kind="k", title="t", origin="o", work=lambda progress: None)
+    assert activity_id == "act-from-host" and submitted[-1] == {
+        "kind": "k",
+        "title": "t",
+        "origin": "o",
+        "work": submitted[-1]["work"],
+    }
+    assert jobs.get("anything") is None  # a fresh store, nothing submitted into IT
+
+    no_spine = SimpleNamespace(tier_router=None, data_dir=tmp_path, config_dir=tmp_path)
+    assert runtime_deps(no_spine).activities() is None
 
 
 def test_audit_rows_carry_counts_never_content(world: World) -> None:

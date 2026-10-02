@@ -37,6 +37,7 @@ names:
     - AttachmentCandidate
     - EmailMessage
     - EmailAttachment
+    - ProgressFn
     - WriteTally
     - connect_account
     - default_sync_store

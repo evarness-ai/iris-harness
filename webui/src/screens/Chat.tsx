@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Plus, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   ChatMessage,
@@ -10,6 +10,7 @@ import {
   type PendingConfirmation,
 } from "@/components/chat/ChatMessage";
 import { Composer } from "@/components/chat/Composer";
+import { ChatMoreMenu } from "@/components/chat/ChatMoreMenu";
 import {
   dispatchSlashCommand,
   getChatStatus,
@@ -30,7 +31,6 @@ import {
   useOutstandingItems,
   useSessionMessages,
   useSlashCommands,
-  useSessions,
   useUpdateDueStatus,
   useCreateTask,
   useUpdateTaskStatus,
@@ -80,17 +80,6 @@ function pendingConfirmationFrom(
   };
 }
 
-function fmtWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function EmptyState() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
@@ -110,24 +99,6 @@ function shortDate(isoLike: string): string {
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-function dayKey(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "Unknown";
-  return d.toISOString().slice(0, 10);
-}
-
-function dayLabel(key: string): string {
-  if (key === "Unknown") return key;
-  const target = new Date(`${key}T00:00:00`);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffDays = Math.floor((today.getTime() - target.getTime()) / 86_400_000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  return target.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
-}
-
-/** Left rail: past sessions, newest-first — click to resume (Claude-style). */
 const SNOOZES: { action: SnoozeFor; label: string }[] = [
   { action: "10m", label: "10 min" },
   { action: "1h", label: "1 hour" },
@@ -221,112 +192,6 @@ function ReminderRow({ r }: { r: ReminderItem }) {
   );
 }
 
-function HistorySidebar({
-  active,
-  onSelect,
-  onNew,
-}: {
-  active: string;
-  onSelect: (id: string) => void;
-  onNew: () => void;
-}) {
-  const { data, isLoading, isError } = useSessions();
-  const sessions = data ?? [];
-  const [collapsedByDay, setCollapsedByDay] = useState<Record<string, boolean>>({});
-
-  const grouped = sessions.reduce<Record<string, typeof sessions>>((acc, s) => {
-    const key = dayKey(s.last_at || s.started_at);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(s);
-    return acc;
-  }, {});
-  const orderedDayKeys = Object.keys(grouped).sort((a, b) => (a < b ? 1 : -1));
-
-  useEffect(() => {
-    setCollapsedByDay((prev) => {
-      const next: Record<string, boolean> = {};
-      for (const key of orderedDayKeys) {
-        next[key] = prev[key] ?? false;
-      }
-      return next;
-    });
-  }, [sessions.length, orderedDayKeys.join("|")]);
-
-  return (
-    <aside className="hidden w-64 shrink-0 flex-col gap-2 md:flex">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="w-full justify-start"
-        onClick={onNew}
-      >
-        <Plus /> New chat
-      </Button>
-      <div className="flex-1 space-y-1 overflow-y-auto rounded-lg border border-border bg-bg p-1.5">
-        {isLoading && (
-          <div className="p-3 text-center text-xs text-fg-subtle">
-            Loading history…
-          </div>
-        )}
-        {isError && (
-          <div className="p-3 text-center text-xs text-danger">
-            API unavailable — start it with <code>iris serve</code>.
-          </div>
-        )}
-        {!isLoading && !isError && sessions.length === 0 && (
-          <div className="p-3 text-center text-xs text-fg-subtle">
-            No conversations yet.
-          </div>
-        )}
-        {orderedDayKeys.map((key) => {
-          const items = grouped[key] ?? [];
-          const collapsed = collapsedByDay[key] ?? false;
-          return (
-            <div key={key} className="space-y-1">
-              <button
-                type="button"
-                onClick={() =>
-                  setCollapsedByDay((prev) => ({
-                    ...prev,
-                    [key]: !collapsed,
-                  }))
-                }
-                className="flex w-full items-center justify-between rounded px-1.5 py-1 text-left text-[11px] font-medium uppercase tracking-wide text-fg-subtle hover:bg-surface"
-              >
-                <span>{dayLabel(key)}</span>
-                <span className="font-mono text-[10px]">{collapsed ? "+" : "-"}</span>
-              </button>
-              {!collapsed &&
-                items.map((s) => (
-                  <button
-                    key={s.session_id}
-                    type="button"
-                    onClick={() => onSelect(s.session_id)}
-                    title={s.title}
-                    className={`w-full rounded-md border-l-2 px-2.5 py-2 text-left transition-colors ${
-                      s.session_id === active
-                        ? "border-l-primary bg-primary/10"
-                        : "border-l-transparent hover:bg-surface"
-                    }`}
-                  >
-                    <div className="truncate text-[13px] text-fg">{s.title || "(untitled)"}</div>
-                    <div className="mt-0.5 flex items-center justify-between gap-2 font-mono text-[10px] text-fg-subtle">
-                      <span>{fmtWhen(s.last_at)}</span>
-                      <span>
-                        {s.turn_count} turn{s.turn_count !== 1 ? "s" : ""}
-                      </span>
-                    </div>
-                  </button>
-                ))}
-            </div>
-          );
-        })}
-      </div>
-    </aside>
-  );
-}
-
 export function ChatScreen() {
   const params = useParams();
   const navigate = useNavigate();
@@ -406,13 +271,24 @@ export function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Follow deep links / back-forward: when the URL's :sessionId changes, switch.
+  // Follow deep links, back-forward, and the nav sidebar's session list (which
+  // only navigates -- it has no access to this screen's own state): when the
+  // URL's :sessionId changes to a different session, switch to it the same way
+  // an in-screen control used to (this absorbed what was a separate
+  // `selectSession` callback, so every caller of a session switch is now just
+  // "change the URL" and gets the same reset).
   useEffect(() => {
     const target = params.sessionId;
-    if (target && target !== session) {
-      setActiveSession(target);
-      persistSession(target);
-    }
+    if (!target || target === session) return;
+    abortRef.current?.abort();
+    setFollowing(false);
+    setBusy(false);
+    hydratedRef.current = null; // force a re-hydrate from the chosen session
+    setActiveSession(target);
+    persistSession(target);
+    setMessages([]);
+    setHistoryIndex(-1);
+    setDraftBeforeHistory("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.sessionId]);
 
@@ -779,38 +655,52 @@ export function ChatScreen() {
     navigate(`/chat/${id}`);
   }, [navigate]);
 
-  const selectSession = useCallback(
-    (id: string) => {
-      if (id === session) return;
-      abortRef.current?.abort();
-      setFollowing(false);
-      setBusy(false);
-      hydratedRef.current = null; // force a re-hydrate from the chosen session
-      setActiveSession(id);
-      persistSession(id);
-      setMessages([]);
-      setHistoryIndex(-1);
-      setDraftBeforeHistory("");
-      navigate(`/chat/${id}`);
-    },
-    [session, navigate],
-  );
-
   return (
     /* Fills exactly what the shell has left — the history list and the message
        list inside are `flex-1 overflow-y-auto`, so they need a parent whose
        height is definite, not merely bounded below. The fixed `100dvh - 7.5rem`
        this replaced guessed the chrome above it and was 28px short once the
        target badge and the health banner joined the shell. */
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl gap-3">
-      <HistorySidebar
-        active={session}
-        onSelect={selectSession}
-        onNew={startNew}
-      />
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-3">
+        {/* Phone-only: everything below (session id, New chat, version/context,
+            Add task) moved here so the message list gets the screen. Desktop
+            keeps all of it inline below -- there's room, and a wide screen
+            reads a row faster than it reads a tap. Session history itself
+            moved further still, into the "Chat" nav entry (App.tsx's
+            NavList) -- not a phone/desktop split, just not this screen's
+            column to own once it's reachable from the sidebar on any width. */}
+        <div className="flex items-center justify-between gap-2 md:hidden">
+          <span className="min-w-0 truncate font-mono text-[11px] text-fg-subtle">
+            IRIS v{chatStatus?.iris_version ?? "-"} · {chatStatus?.model ?? "-"}
+          </span>
+          <ChatMoreMenu
+            session={session}
+            chatStatus={chatStatus}
+            onNewChat={startNew}
+            newChatDisabled={!messages.length}
+            addingTask={addingTask}
+            onToggleAddingTask={() => setAddingTask((v) => !v)}
+            newTaskTitle={newTaskTitle}
+            onNewTaskTitleChange={setNewTaskTitle}
+            onSubmitTask={(title) =>
+              createTask.mutate(
+                { title },
+                {
+                  onSuccess: () => {
+                    setNewTaskTitle("");
+                    setAddingTask(false);
+                    toast.success("Task added");
+                  },
+                  onError: (err) =>
+                    toast.error(err instanceof Error ? err.message : "could not add the task"),
+                },
+              )
+            }
+            creatingTask={createTask.isPending}
+          />
+        </div>
 
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
+        <div className="hidden items-center justify-between gap-2 md:flex">
           <span className="font-mono text-[11px] text-fg-subtle">
             session {session}
           </span>
@@ -825,15 +715,10 @@ export function ChatScreen() {
           </Button>
         </div>
 
-        {/* One line on a phone, where it wrapped to three and cost 62px.
-            `session` is dropped from it below `md`: the row directly above
-            already shows the id, so the old layout printed it twice on the
-            same screen. Scrolls sideways in its own box rather than wrapping,
-            so a long model name cannot grow it back. */}
-        <div className="rounded-lg border border-border bg-surface px-2.5 py-1 md:px-3 md:py-2">
-          <div className="flex items-center gap-x-2 overflow-x-auto whitespace-nowrap font-mono text-[10.5px] text-fg-subtle [scrollbar-width:none] md:flex-wrap md:gap-x-4 md:gap-y-1 md:overflow-visible md:whitespace-normal md:text-[11px]">
+        <div className="hidden rounded-lg border border-border bg-surface px-3 py-2 md:block">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-fg-subtle">
             <span>IRIS v{chatStatus?.iris_version ?? "-"}</span>
-            <span className="hidden md:inline">session {session}</span>
+            <span>session {session}</span>
             <span>{chatStatus?.provider ?? "-"}</span>
             <span>{chatStatus?.model ?? "-"}</span>
             <span>
@@ -843,16 +728,11 @@ export function ChatScreen() {
           </div>
         </div>
 
-        {/* Always rendered, unlike before: the panel used to appear only when
-            something was outstanding, which would have hidden "Add task"
-            exactly when the list was empty and you most wanted it. With
-            nothing outstanding it collapses to the one control. */}
-        {/* On a phone this keeps only its controls: the LIST moved to the
-            header bell, which counts these together with health alerts — one
-            number for "what wants me" rather than two badges disagreeing.
-            Add task stays, because the bell is a read surface and this is the
-            only place on the phone that creates a task. */}
-        <section className="rounded-lg border border-border bg-surface p-2.5 md:p-3">
+        {/* Desktop only now: the phone's "Add task" and the outstanding list
+            both live in ChatMoreMenu above (the list via the existing global
+            AttentionBell, which already covers this on a phone -- see its own
+            comment -- not duplicated here). */}
+        <section className="hidden rounded-lg border border-border bg-surface p-2.5 md:block md:p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="hidden md:block">
                 <p className="text-sm font-semibold text-fg">
@@ -1206,7 +1086,6 @@ export function ChatScreen() {
           slashCommands={slashCommands}
           onRecallHistory={recallHistory}
         />
-      </div>
     </div>
   );
 }

@@ -19,6 +19,10 @@ poetry install                 # add `-E ml` for the torch-backed embedders
 poetry run iris --help
 ```
 
+Or run `./install.sh`, which does the `poetry install` above and hands off to
+`iris setup` — a guided wizard for the auth secret and the optional add-ons
+(background services, Telegram pairing, email).
+
 ## Start with a plugin
 
 A plugin is a package with a `manifest.yaml` and a `setup(api)` that registers what it

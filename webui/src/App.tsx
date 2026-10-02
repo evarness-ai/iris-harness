@@ -8,6 +8,8 @@ import { HealthBanner } from "@/components/HealthBanner";
 import { TargetBadge, TargetDot } from "@/components/TargetBadge";
 import { AttentionBell } from "@/components/AttentionBell";
 import { BottomTabs } from "@/components/BottomTabs";
+import { SessionHistoryPanel } from "@/components/SessionHistoryPanel";
+import { newSession } from "@/lib/chat";
 import { useActionCount, useActivities, useActivityBadge, useWritesEnabled } from "@/lib/queries";
 import { findScreen, routeOf, unavailableFor, useNav, type NavGroup } from "@/lib/nav";
 import { ScreenUnavailable } from "@/components/ScreenUnavailable";
@@ -45,6 +47,7 @@ function useActivityCompletionToasts() {
 }
 
 const COLLAPSED_KEY = "iris.nav.collapsed";
+const CHAT_HISTORY_KEY = "iris.nav.chatHistoryOpen";
 
 function readCollapsed(): Set<string> {
   try {
@@ -52,6 +55,14 @@ function readCollapsed(): Set<string> {
     return new Set(raw ? (JSON.parse(raw) as string[]) : []);
   } catch {
     return new Set();
+  }
+}
+
+function readChatHistoryOpen(): boolean {
+  try {
+    return localStorage.getItem(CHAT_HISTORY_KEY) === "1";
+  } catch {
+    return false;
   }
 }
 
@@ -64,13 +75,24 @@ function CountBadge({ count }: { count: number }) {
   );
 }
 
-function NavList({ onPick }: { onPick?: () => void }) {
+function NavList({
+  onPick,
+  chatHistoryOpen,
+  setChatHistoryOpen,
+}: {
+  onPick?: () => void;
+  chatHistoryOpen: boolean;
+  setChatHistoryOpen: (value: boolean) => void;
+}) {
   const actionCount = useActionCount();
   const activityCount = useActivityBadge();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const nav = useNav();
   const activeGroup = nav.data ? findScreen(nav.data, pathname)?.screen.group : undefined;
   const [collapsed, setCollapsed] = useState<Set<string>>(readCollapsed);
+  const onChatRoute = pathname.startsWith("/chat");
+  const activeSessionId = pathname.match(/^\/chat\/([^/]+)/)?.[1] ?? "";
 
   const badgeFor = (path: string) =>
     path === "/actions" ? actionCount : path === "/activity" ? activityCount : 0;
@@ -93,6 +115,14 @@ function NavList({ onPick }: { onPick?: () => void }) {
   useEffect(() => {
     if (activeGroup) setGroupCollapsed(activeGroup, false);
   }, [activeGroup]);
+
+  // Entering Chat (not every session switch within it, since onChatRoute only
+  // flips on the way in) opens its history the same way an active group
+  // reopens above -- a manual collapse afterward sticks, same as a group's.
+  useEffect(() => {
+    if (onChatRoute) setChatHistoryOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onChatRoute]);
 
   const renderGroup = (group: NavGroup) => {
     const open = !group.label || !collapsed.has(group.id);
@@ -120,13 +150,12 @@ function NavList({ onPick }: { onPick?: () => void }) {
           <div className={`flex flex-col gap-0.5 ${group.label ? "mt-1" : ""}`}>
             {group.items.map((item) => {
               const Icon = iconFor(item.icon);
-              return (
+              const link = (
                 <NavLink
-                  key={item.route}
                   to={item.route}
                   onClick={onPick}
                   className={({ isActive }) =>
-                    `flex items-center gap-2.5 rounded-lg border-l-2 px-3 py-1.5 text-left text-sm transition-colors ${
+                    `flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border-l-2 px-3 py-1.5 text-left text-sm transition-colors ${
                       isActive
                         ? "border-l-primary bg-primary/10 font-medium text-primary"
                         : "border-l-transparent text-fg-muted hover:bg-surface hover:text-fg"
@@ -137,6 +166,36 @@ function NavList({ onPick }: { onPick?: () => void }) {
                   <span className="truncate">{item.label}</span>
                   <CountBadge count={badgeFor(item.route)} />
                 </NavLink>
+              );
+              // Chat alone gets an expand chevron: its session history nests
+              // right under it instead of living as its own column in the
+              // Chat screen (full width for the conversation there instead).
+              if (item.route !== "/chat") return <div key={item.route}>{link}</div>;
+              return (
+                <div key={item.route}>
+                  <div className="flex items-center">
+                    {link}
+                    <button
+                      type="button"
+                      onClick={() => setChatHistoryOpen(!chatHistoryOpen)}
+                      aria-expanded={chatHistoryOpen}
+                      aria-label={chatHistoryOpen ? "Hide chat history" : "Show chat history"}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-fg-subtle hover:bg-surface hover:text-fg"
+                    >
+                      <ChevronRight
+                        size={14}
+                        className={`transition-transform ${chatHistoryOpen ? "rotate-90" : ""}`}
+                      />
+                    </button>
+                  </div>
+                  {chatHistoryOpen && (
+                    <SessionHistoryPanel
+                      active={activeSessionId}
+                      onSelect={(id) => navigate(`/chat/${id}`)}
+                      onNew={() => navigate(`/chat/${newSession()}`)}
+                    />
+                  )}
+                </div>
               );
             })}
           </div>
@@ -182,11 +241,27 @@ export function AppLayout() {
   // API errors.
   const gated = nav.data !== undefined && routeOf(pathname) !== "/" && current === undefined;
 
+  // Owned here, not in NavList: the sidebar's own width (below) needs it too.
+  // Widens only while open, so every other screen's nav keeps its usual 212px.
+  const [chatHistoryOpen, setChatHistoryOpenState] = useState(readChatHistoryOpen);
+  const setChatHistoryOpen = (value: boolean) => {
+    setChatHistoryOpenState(value);
+    try {
+      localStorage.setItem(CHAT_HISTORY_KEY, value ? "1" : "0");
+    } catch {
+      // storage unavailable — the open/closed state just won't persist
+    }
+  };
+
   return (
-    <div className="min-h-[100dvh] bg-bg text-fg md:grid md:grid-cols-[212px_1fr]">
+    <div
+      className={`min-h-[100dvh] bg-bg text-fg md:grid ${
+        chatHistoryOpen ? "md:grid-cols-[280px_1fr]" : "md:grid-cols-[212px_1fr]"
+      }`}
+    >
       {/* Desktop sidebar */}
       <aside className="hidden border-r border-border bg-sidebar p-3 md:sticky md:top-0 md:block md:h-screen md:overflow-y-auto">
-        <NavList />
+        <NavList chatHistoryOpen={chatHistoryOpen} setChatHistoryOpen={setChatHistoryOpen} />
       </aside>
 
       {/* No mobile drawer: below `md` the bottom bar pins four routes and its

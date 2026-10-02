@@ -87,6 +87,13 @@ ollama pull qwen3.5:4b-q4_K_M
 Without it, `iris email setup`'s "Classify" step blocks with "no local email_judge
 model tier is configured" — the demo is unaffected, since it runs on a scripted model.
 
+## Guided setup: `iris setup`
+
+The steps above can also run as one guided wizard: `iris setup` walks through the
+preflight, the auth secret, and the optional add-ons (the background services, a
+Telegram pairing, email) in order, resuming where you left off if you stop partway.
+`iris setup --status` shows progress; `iris setup --reset` starts over.
+
 ## Next
 
 [Try the demo](demo.md): a synthetic mailbox, end to end, in a few seconds.

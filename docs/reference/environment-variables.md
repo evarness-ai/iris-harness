@@ -225,6 +225,7 @@ backends' own address variables, read wherever the harness talks to them.
     | `IRIS_VAULT_PASSPHRASE` | secret |  | next call | Passphrase from which the encrypted-file vault key is derived (scrypt) when IRIS_SECRET_BACKEND=vault; unset uses a keychain-held key. **Guarded.** |
     | `IRIS_WEBUI_ALLOW_WRITES` | bool | `off` | next call | Allows gated control writes from callers without a paired device (shared secret or no credentials); paired devices are judged by their own scope regardless. **Guarded.** |
     | `IRIS_WEBUI_DIST` | path | `/app/webui/dist` | restart | Directory the API serves the built web UI from; without an index.html there the UI is not served. |
+    | `IRIS_WEBUI_PORT` | int | `5181` | next call | Port the setup wizard's closing "open the web UI" hint shows; it reads this to reflect a custom port mapping but does not itself change which port the web UI binds to. |
     | `IRIS_WEB_PUSH_SUBJECT` | url | `https://github.com/evarness-ai/iris-harness` | next call | Contact subject (URL or mailto) sent in Web Push VAPID claims. |
     | `IRIS_WEB_PUSH_VAPID_PRIVATE_KEY` | secret |  | next call | PEM EC private key used to sign web push requests instead of the generated key file; changing it breaks existing subscriptions. **Guarded.** |
     | `IRIS_WIKI_INGEST` | bool | `off` | restart | When on, chat turns and classified emails are automatically ingested into wiki pages and pages are re-embedded at startup. |

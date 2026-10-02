@@ -74,6 +74,12 @@ export const router = createBrowserRouter([
   // Outside the shell on purpose: an unpaired browser lands here after a 401
   // (lib/http.ts), and the shell's own data calls would 401 again.
   { path: "pair", lazy: async () => ({ Component: (await import("./screens/Pair")).PairScreen }) },
+  // Outside the shell on purpose: the first thing a new install shows, not a
+  // screen inside the console you've already set up (own header, no sidebar).
+  {
+    path: "onboarding",
+    lazy: async () => ({ Component: (await import("./screens/Onboarding")).OnboardingScreen }),
+  },
   {
     element: <AppLayout />,
     children: [

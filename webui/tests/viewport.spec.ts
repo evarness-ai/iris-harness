@@ -242,7 +242,10 @@ test("Pulse keeps its section order", async ({ page }) => {
 /* Track 2 PR 7: a todo can be added from the phone. The control has to survive
  * the case it exists for — an empty list — because the outstanding panel used
  * to render only when something was already outstanding, which would have
- * hidden "Add task" exactly when you had nothing and most wanted it. */
+ * hidden "Add task" exactly when you had nothing and most wanted it.
+ *
+ * It now lives in Chat's "..." dropdown (ChatMoreMenu), not inline in the main
+ * view -- opening it first is the one thing every case here adds over before. */
 test.describe("adding a task from Chat", () => {
   test("the control is there when the list is empty", async ({ page }) => {
     await page.route("**/*", async (route) => {
@@ -264,7 +267,9 @@ test.describe("adding a task from Chat", () => {
     });
     await page.goto("/chat", { waitUntil: "networkidle" });
 
-    await expect(page.getByRole("button", { name: "Add task" })).toBeVisible();
+    await page.getByRole("button", { name: "Chat options" }).click();
+    const menu = page.getByRole("menu", { name: "Chat options" });
+    await expect(menu.getByRole("menuitem", { name: "Add task" })).toBeVisible();
   });
 
   test("it posts the title and clears itself", async ({ page }) => {
@@ -286,10 +291,12 @@ test.describe("adding a task from Chat", () => {
     });
     await page.goto("/chat", { waitUntil: "networkidle" });
 
-    await page.getByRole("button", { name: "Add task" }).click();
-    const field = page.getByLabel("New task");
+    await page.getByRole("button", { name: "Chat options" }).click();
+    const menu = page.getByRole("menu", { name: "Chat options" });
+    await menu.getByRole("menuitem", { name: "Add task" }).click();
+    const field = menu.getByLabel("New task");
     await field.fill("Book the dentist");
-    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await menu.getByRole("button", { name: "Add", exact: true }).click();
 
     await expect.poll(() => posted).toEqual(["Book the dentist"]);
     // The form closes on success, so the next tap starts from a clean field.
@@ -315,11 +322,43 @@ test.describe("adding a task from Chat", () => {
     });
     await page.goto("/chat", { waitUntil: "networkidle" });
 
-    await page.getByRole("button", { name: "Add task" }).click();
-    await page.getByLabel("New task").fill("   ");
-    await expect(page.getByRole("button", { name: "Add", exact: true })).toBeDisabled();
+    await page.getByRole("button", { name: "Chat options" }).click();
+    const menu = page.getByRole("menu", { name: "Chat options" });
+    await menu.getByRole("menuitem", { name: "Add task" }).click();
+    await menu.getByLabel("New task").fill("   ");
+    await expect(menu.getByRole("button", { name: "Add", exact: true })).toBeDisabled();
     expect(posted).toEqual([]);
   });
+});
+
+/* The nav's "Chat" entry nests session history under it (not its own column
+ * in the Chat screen) on desktop; a phone reaches the same control set via
+ * ChatMoreMenu's "..." instead, since the sidebar itself is desktop-only. */
+test("Chat history nests under the nav on desktop, and the \"...\" menu covers it on phone", async ({
+  page,
+  browser,
+}) => {
+  await stubApi(page);
+  await page.goto("/chat", { waitUntil: "networkidle" });
+  // The sidebar itself is desktop-only (see "the bar is phone-only..." above),
+  // so there's nothing chat-history-shaped to find at 390px -- the "..."
+  // dropdown is where a phone reaches New chat/status/Add task instead.
+  await expect(page.getByRole("button", { name: "Chat options" })).toBeVisible();
+  const trigger = page.getByRole("button", { name: "Chat options" });
+  const box = await trigger.boundingBox();
+  expect(box?.height ?? 0, "Chat options is a phone tap target").toBeGreaterThanOrEqual(44);
+  expect(box?.width ?? 0, "Chat options is a phone tap target").toBeGreaterThanOrEqual(44);
+
+  const desktop = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const wide = await desktop.newPage();
+  await stubApi(wide);
+  await wide.goto("/chat", { waitUntil: "networkidle" });
+  await expect(wide.getByRole("button", { name: "Chat options" })).toBeHidden();
+  // Auto-opened on entering /chat (same as an active group elsewhere in nav).
+  await expect(
+    wide.getByRole("navigation", { name: "Main" }).getByRole("button", { name: "New chat" }),
+  ).toBeVisible();
+  await desktop.close();
 });
 
 /* Add to Home Screen (Track 2b PR 8).

@@ -405,6 +405,18 @@ export const OVERRIDES: Record<string, unknown> = {
     ollama_url: "http://127.0.0.1:11434",
     fixable: true,
   },
+  "/health/setup": {
+    order: ["preflight", "home_secret", "services", "telegram", "email"],
+    mandatory: ["preflight", "home_secret"],
+    mandatory_done: true,
+    next_step: "email",
+    steps: {
+      preflight: { status: "done", at: "2026-09-24T10:00:00Z", detail: "" },
+      home_secret: { status: "done", at: "2026-09-24T10:00:05Z", detail: "" },
+      services: { status: "done", at: "2026-09-24T10:00:10Z", detail: "services started" },
+      telegram: { status: "skipped", at: "2026-09-24T10:00:12Z", detail: "declined" },
+    },
+  },
   "/cost": {
     recording: true,
     enforcing: true,

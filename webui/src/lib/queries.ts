@@ -51,6 +51,7 @@ import {
   runHealthWatch,
   getDoctorReport,
   pullStarterModel,
+  getSetupProgress,
   getHeartbeatRuns,
   getHeartbeats,
   getSettingsCatalog,
@@ -523,6 +524,16 @@ export function usePullStarterModel() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["activities"] });
     },
+  });
+}
+
+/* Setup (iris setup's own progress). Polled gently -- it only changes when the
+ * owner runs a step at a terminal. */
+export function useSetupProgress() {
+  return useQuery({
+    queryKey: ["setup"],
+    queryFn: getSetupProgress,
+    refetchInterval: 30_000,
   });
 }
 

@@ -5,6 +5,7 @@
     GET    /health/connectors
     GET    /health/doctor
     POST   /health/doctor/pull-model
+    GET    /health/setup
     GET    /health/incidents
     POST   /health/watch
     GET    /runtime/inventory
@@ -136,6 +137,14 @@ def install_health_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
         from iris_harness.services.system.doctor import run_doctor
 
         return run_doctor(read_keyring=False).as_dict()
+
+    @app.get("/health/setup")
+    def health_setup() -> dict[str, Any]:
+        """``iris setup``'s own progress (``$IRIS_HOME/setup.json``), for the web
+        UI's Setup screen. Read-only -- running or resuming a step is the CLI's."""
+        from iris_harness.services.system.setup_state import load_state
+
+        return load_state().as_dict()
 
     @app.post("/health/doctor/pull-model")
     def pull_starter_model(body: PullModelBody) -> dict[str, Any]:

@@ -949,6 +949,29 @@ export function pullStarterModel(model: string): Promise<{ activity_id: string }
   return postJSON<{ activity_id: string }>("/health/doctor/pull-model", { model });
 }
 
+// ---- Setup (iris setup's own progress) -----------------------------------
+
+export type SetupStepName = "preflight" | "home_secret" | "services" | "telegram" | "email";
+export type SetupStepStatus = "done" | "skipped" | "failed";
+
+export interface SetupStepRecord {
+  status: SetupStepStatus;
+  at: string;
+  detail: string;
+}
+
+export interface SetupProgress {
+  order: SetupStepName[];
+  mandatory: SetupStepName[];
+  mandatory_done: boolean;
+  next_step: SetupStepName | null;
+  steps: Partial<Record<SetupStepName, SetupStepRecord>>;
+}
+
+/** `iris setup`'s own progress (`$IRIS_HOME/setup.json`), read-only -- running or
+ * resuming a step stays the CLI's. */
+export const getSetupProgress = () => getJSON<SetupProgress>("/health/setup");
+
 // ---- Context health (ADR-0081) ------------------------------------------
 
 export interface ContextHealth {

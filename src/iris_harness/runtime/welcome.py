@@ -266,6 +266,26 @@ class FirstChatWelcome:
         )
 
 
+def mark_shown_by_setup() -> None:
+    """Record the welcome as already delivered by ``iris setup``'s closing screen.
+
+    A no-op once a marker already exists. Keeps ``FirstChatWelcome.ensure`` from
+    showing a second "you're all set" message on the first real chat after the
+    wizard's own closing screen just showed one.
+    """
+    if welcome_marker_path().exists():
+        return
+    outcome = WelcomeOutcome(
+        session_id="",
+        created=False,
+        response="",
+        at=datetime.now(UTC).isoformat(),
+        skipped=True,
+        skip_reason="shown by `iris setup`'s closing screen",
+    )
+    _write_marker(outcome, channel="cli-setup")
+
+
 def existing_conversations() -> int:
     """How many conversations this home already has, as the Sessions list counts them.
 
@@ -312,6 +332,7 @@ __all__ = [
     "capability_summaries",
     "existing_conversations",
     "load_wording",
+    "mark_shown_by_setup",
     "welcome_marker_path",
     "welcome_text",
 ]

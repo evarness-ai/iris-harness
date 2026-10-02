@@ -214,6 +214,53 @@ def test_health_doctor_serves_the_preflight_without_reading_the_keyring(
     assert body["missing_models"][0]["name"] == "qwen2.5:7b-instruct"
 
 
+# ── the setup wizard's own progress, for the web UI's Setup screen ──────────
+
+
+def test_health_setup_needs_the_bearer_token() -> None:
+    with TestClient(create_app(runtime=SimpleNamespace(), auto_start_runtime=False)) as client:
+        assert client.get("/health/setup").status_code == 401
+
+
+def test_health_setup_serves_recorded_progress(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("IRIS_HOME", str(tmp_path / "home"))
+    from iris_harness.services.system import setup_state
+
+    setup_state.record_step("preflight", "done")
+    setup_state.record_step("home_secret", "done")
+    setup_state.record_step("telegram", "skipped", detail="declined")
+
+    with TestClient(
+        create_app(runtime=SimpleNamespace(), auto_start_runtime=False), headers=auth_headers()
+    ) as client:
+        resp = client.get("/health/setup")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["mandatory_done"] is True
+    assert body["next_step"] == "services"
+    assert body["steps"]["preflight"]["status"] == "done"
+    assert body["steps"]["telegram"]["detail"] == "declined"
+
+
+def test_health_setup_on_a_fresh_home_is_all_unrecorded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("IRIS_HOME", str(tmp_path / "home"))
+    with TestClient(
+        create_app(runtime=SimpleNamespace(), auto_start_runtime=False), headers=auth_headers()
+    ) as client:
+        resp = client.get("/health/setup")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["steps"] == {}
+    assert body["mandatory_done"] is False
+    assert body["next_step"] == "preflight"
+
+
 # ── pulling a missing starter model (the System Check screen's one write) ───
 
 

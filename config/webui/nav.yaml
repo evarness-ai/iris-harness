@@ -177,6 +177,14 @@ screens:
     icon: list-checks
     group: system
     order: 15
+  - id: onboarding
+    label: Onboarding
+    route: /onboarding
+    title: Onboarding
+    subtitle: Progress through `iris setup` — preflight, secret, services, Telegram, email (read-only)
+    icon: list-checks
+    group: system
+    order: 16
   - id: governance
     label: Governance
     route: /governance

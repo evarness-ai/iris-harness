@@ -1512,6 +1512,16 @@ settings:
     tab: none
     editable: false
     not_editable_reason: path
+  IRIS_WEBUI_PORT:
+    kind: int
+    default: 5181
+    applies: now
+    label: Web UI port (display only)
+    description: Port the setup wizard's closing "open the web UI" hint shows; it reads this to
+      reflect a custom port mapping but does not itself change which port the web UI binds to.
+    tab: none
+    editable: false
+    not_editable_reason: display hint only, not a bind address
   IRIS_WEB_PUSH_SUBJECT:
     kind: url
     default: https://github.com/evarness-ai/iris-harness

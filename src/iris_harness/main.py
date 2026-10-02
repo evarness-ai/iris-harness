@@ -11,6 +11,7 @@ iris --stdio                  # JSON-RPC over stdin/stdout (portability bridge)
 iris sessions                 # list recent sessions
 iris status                   # check API health
 iris doctor                   # install preflight: can IRIS run here, what to fix
+iris setup                    # progressive first-run wizard (preflight -> email)
 iris serve                    # run the IRIS API (scheduled jobs + web console)
 iris auth copilot login       # device-flow OAuth for the Copilot backend
 iris auth copilot status      # show cached Copilot OAuth token state
@@ -260,6 +261,12 @@ app.command(name="doctor")(cmd_doctor)
 from iris_harness.cli.serve import cmd_serve  # noqa: E402
 
 app.command(name="serve")(cmd_serve)
+
+# `iris setup`: the progressive first-run wizard -- preflight, home & secret,
+# services, then the two optional steps (Telegram pairing, email).
+from iris_harness.cli.setup import cmd_setup  # noqa: E402
+
+app.command(name="setup")(cmd_setup)
 
 
 # ---------------------------------------------------------------------------

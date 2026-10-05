@@ -27,6 +27,16 @@ dependency; ~80 MB one-time download).
 (Note: RAG documents are a **separate** index — `iris_documents` in `data/chroma_docs`,
 owned by `src/iris_harness/services/rag/`, not this subsystem.)
 
+The RAG index follows the same rule (canonical store plus rebuildable projection), by a
+different route. The canonical chunk text and each chunk's classification live in
+`data/rag.db` (`DocumentStore`); the documents stay where the user keeps them;
+`iris_documents` only mirrors the stored chunks. If `data/chroma_docs` is lost or damaged,
+`iris docs reindex` (`reindex_all`) rebuilds it from `rag.db` without reading any source
+file. `iris docs sync` is not a rebuild: it skips files whose mtime or hash is unchanged, so
+it never refills an empty index. If `rag.db` is lost instead, re-run `iris docs add <path>`
+for each source; chunks ingested that way carry no classification stamp unless they go
+back through the ingest gate (`execute_rag_ingest`), which is what sets it.
+
 ## Components
 
 | Component | File | Role |

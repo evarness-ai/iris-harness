@@ -44,6 +44,7 @@ class RegistrationKind(StrEnum):
 
 
 TrustLevel = Literal["in-process", "mcp"]
+PluginParty = Literal["first-party", "trusted-third-party", "untrusted"]
 PluginFlavor = Literal["python", "declarative"]
 
 
@@ -504,6 +505,9 @@ class PluginManifest(BaseModel):
     # Default trust: in-process behind the fault boundary (decision 8). ``mcp``
     # runs the plugin out of process over the signed MCP bridge (M2+).
     trust: TrustLevel = "in-process"
+    # Provenance, independent of ``trust`` (how the plugin runs): who wrote it and how far
+    # the operator trusts them. Declaration only; nothing enforces it yet.
+    party: PluginParty = "first-party"
     provides: tuple[RegistrationKind, ...] = Field(default_factory=tuple)
     requires: PluginRequirements = Field(default_factory=PluginRequirements)
     uses: PluginUses = Field(default_factory=PluginUses)

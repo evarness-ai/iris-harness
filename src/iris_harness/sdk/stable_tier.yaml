@@ -76,6 +76,7 @@ manifest_fields:
   - cli
   - flavor
   - trust
+  - party
   - provides
   - requires
   - uses

@@ -198,7 +198,7 @@ def test_a_personal_turn_reaches_the_local_tier3_without_approval() -> None:
 def test_a_personal_turn_needs_approval_for_a_cloud_provider(tmp_path: Path) -> None:
     text = SHIPPED.read_text().replace(
         '    provider: "lmstudio"\n    model: "qwen/qwen3.6-35b-a3b"',
-        '    provider: "copilot"\n    model: "gpt-5-mini"',
+        '    provider: "anthropic"\n    model: "claude-haiku-4-5"',
     )
     router = _router_from(tmp_path, text)
     cfg = cast(CodingLLMConfig, router.get_llm_config("complex_task"))

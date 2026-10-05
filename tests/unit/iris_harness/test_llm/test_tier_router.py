@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
+from iris_harness.llm.errors import ConfigurationError
 from iris_harness.llm.model_metadata import ModelMetadata
-from iris_harness.llm.tier_router import ModelTier, TierRouter, model_tier_for
+from iris_harness.llm.tier_router import ModelTier, TierRouter, model_tier_for, provider_root_url
 
 
 def _patch_meta(meta: ModelMetadata | None):
@@ -221,12 +222,18 @@ def test_lmstudio_base_url_is_read_when_the_config_is_built(
     assert router.get_llm_config("general").base_url == "http://127.0.0.1:9/v1"
 
 
-def test_unknown_provider_falls_back_to_the_current_ollama_url(
+def test_unknown_provider_fails_closed_instead_of_dialing_ollama(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     router = _one_tier_router(tmp_path, "somethingelse")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")
-    assert router.get_llm_config("general").base_url == "http://127.0.0.1:9/v1"
+    with pytest.raises(ConfigurationError, match="somethingelse"):
+        router.get_llm_config("general")
+
+
+def test_unknown_provider_has_no_root_url() -> None:
+    with pytest.raises(ConfigurationError, match="typo"):
+        provider_root_url("typo")
 
 
 class _DownshiftEverything:

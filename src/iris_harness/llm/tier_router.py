@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 import yaml
 
+from iris_harness.llm.errors import ConfigurationError
 from iris_harness.llm.locality import (
     Locality,
     declared_localities,
@@ -164,12 +165,19 @@ _FIXED_BASE_URLS: dict[str, str] = {
 
 
 def _provider_base_url(provider: str) -> str:
-    """The base URL for ``provider``, read now; unknown providers fall back to Ollama."""
+    """The base URL for ``provider``, read now; an unknown provider is a ConfigurationError.
+
+    Never a default endpoint: a typo'd provider must not quietly resolve to a real
+    backend (it would dial the local Ollama while the tier is governed by the name).
+    """
     resolver = _ENV_BASE_URLS.get(provider)
     if resolver is not None:
         return resolver()
     fixed = _FIXED_BASE_URLS.get(provider)
-    return fixed if fixed is not None else _ollama_base_url()
+    if fixed is None:
+        known = ", ".join(sorted((*_ENV_BASE_URLS, *_FIXED_BASE_URLS)))
+        raise ConfigurationError(f"unknown model provider {provider!r}; expected one of: {known}")
+    return fixed
 
 
 def provider_root_url(provider: str) -> str:

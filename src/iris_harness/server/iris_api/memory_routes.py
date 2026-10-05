@@ -1105,6 +1105,7 @@ def install_memory_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
             "sources_added": result.sources_added,
             "sources_updated": result.sources_updated,
             "sources_skipped": result.sources_skipped,
+            "sources_denied": result.sources_denied,
             "chunks_indexed": result.chunks_indexed,
             "summary": result.summary(),
             "document": doc.to_payload() if doc is not None else None,

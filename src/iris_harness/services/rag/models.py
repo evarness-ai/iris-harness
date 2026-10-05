@@ -81,12 +81,21 @@ class IngestResult:
     sources_skipped: int = 0
     chunks_indexed: int = 0
     paths: tuple[str, ...] = field(default_factory=tuple)
+    # Classified sources whose edited content now classifies secret: not indexed, and
+    # their earlier chunks removed (secret content never enters RAG).
+    sources_denied: int = 0
 
     def summary(self) -> str:
-        return (
+        text = (
             f"{self.sources_added} added, {self.sources_updated} updated, "
             f"{self.sources_skipped} unchanged; {self.chunks_indexed} chunk(s) indexed"
         )
+        if self.sources_denied:
+            text += (
+                f"; {self.sources_denied} removed: now classified secret "
+                "(secret documents never enter RAG; use the vault)"
+            )
+        return text
 
 
 __all__ = [

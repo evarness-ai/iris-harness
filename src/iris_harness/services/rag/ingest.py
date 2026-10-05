@@ -30,6 +30,7 @@ from iris_harness.services.rag.loaders import extract_docx_text, extract_pdf_pag
 from iris_harness.services.rag.models import DocumentChunk, IngestResult, SourceKind
 from iris_harness.services.rag.obsidian import ParsedNote, context_line, parse_note
 from iris_harness.services.rag.ocr import OcrUnavailable, ocr_available, ocr_image
+from iris_harness.services.rag.sensitivity import classify, ratchet
 from iris_harness.services.rag.store import DocumentStore
 
 logger = logging.getLogger(__name__)
@@ -201,7 +202,16 @@ def ingest_path(
     call so retrieval can carry sensitivity through to egress gating. Passing
     ``"secret"`` raises :class:`SecretIngestError` — secret documents never
     enter RAG (the ingest gate should have denied them earlier; use the vault).
-    ``None`` (the default) keeps prior behavior byte-identical.
+    ``None`` (the default) leaves a first ingest unclassified, as before.
+
+    A source that already carries a classification stamp keeps being classified: when
+    its content changed, the new bytes are classified by the gate's rule
+    (``sensitivity.classify``: what the file domain knows, ratcheted with a fresh scan)
+    and ratcheted with the stamp it carries and with ``classification``. The label can
+    stay or rise, never fall, the same ratchet the gate applies whenever two sources
+    disagree; lowering one takes removing the source and passing the gate again. If the
+    result is ``secret`` the new content is not indexed and the source's earlier chunks
+    are removed (counted in ``sources_denied``).
     """
     if classification == "secret":
         raise SecretIngestError(
@@ -209,7 +219,7 @@ def ingest_path(
             "secret documents never enter the retrievable index; use the vault."
         )
     root = Path(path).expanduser().resolve()
-    added = updated = skipped = chunks_total = 0
+    added = updated = skipped = denied = chunks_total = 0
     touched: list[str] = []
 
     for file in _iter_files(root):
@@ -242,6 +252,24 @@ def ingest_path(
             )
             skipped += 1
             continue
+
+        # A classified source stays classified: its new content is classified again.
+        file_classification = classification
+        prior = store.chunk_classifications(sid) if existing is not None else set()
+        if prior:
+            scanned, _ = classify(file, source, raw=raw)
+            file_classification = ratchet(*prior, scanned, classification)
+            if file_classification == "secret":
+                logger.warning(
+                    "rag: %s now classifies secret; removed from the index "
+                    "(secret documents never enter RAG)",
+                    file,
+                )
+                store.delete_source(sid)
+                if index is not None:
+                    index.delete_source(sid)
+                denied += 1
+                continue
 
         loaded = _load(file, raw)
         if loaded is None:  # unreadable / image without OCR / empty scan
@@ -278,7 +306,7 @@ def ingest_path(
                         chunk_index=idx,
                         text=f"{ctx}\n\n{c.text}" if ctx and idx == 0 else c.text,
                         page=page,
-                        classification=classification,
+                        classification=file_classification,
                     )
                 )
         store.replace_chunks(sid, doc_chunks)
@@ -300,6 +328,7 @@ def ingest_path(
         sources_skipped=skipped,
         chunks_indexed=chunks_total,
         paths=tuple(touched),
+        sources_denied=denied,
     )
 
 
@@ -309,8 +338,12 @@ def sync_all(
     index: DocumentIndex | None = None,
     source: IngestSource | None = None,
 ) -> IngestResult:
-    """Re-ingest every registered source path (picks up external edits)."""
-    added = updated = skipped = chunks_total = 0
+    """Re-ingest every registered source path (picks up external edits).
+
+    An edited source that carries a classification stamp is classified again by
+    ``ingest_path``; see there.
+    """
+    added = updated = skipped = denied = chunks_total = 0
     touched: list[str] = []
     for registered in store.list_sources():
         r = ingest_path(
@@ -320,6 +353,7 @@ def sync_all(
         updated += r.sources_updated
         skipped += r.sources_skipped
         chunks_total += r.chunks_indexed
+        denied += r.sources_denied
         touched.extend(r.paths)
     return IngestResult(
         sources_added=added,
@@ -327,6 +361,7 @@ def sync_all(
         sources_skipped=skipped,
         chunks_indexed=chunks_total,
         paths=tuple(touched),
+        sources_denied=denied,
     )
 
 

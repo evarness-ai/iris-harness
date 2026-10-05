@@ -11,6 +11,10 @@ Nothing enters the retrievable index without passing through here:
   the file (TOCTOU guard): if the bytes changed since the proposal, or the
   re-scan says secret, it denies instead of ingesting.
 
+The classification rule itself lives in ``sensitivity``, shared with ``ingest``: a
+document the gate stamped is classified by the same rule again whenever an edit makes
+``sync_all`` (or any other re-ingest) index new content for it.
+
 Both functions are pure/injectable — the runtime wiring owns the confirmation
 stash and the Action Center task; this module owns the policy.
 """
@@ -18,28 +22,20 @@ stash and the Action Center task; this module owns the policy.
 from __future__ import annotations
 
 import hashlib
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from iris_harness.kernel.governance.file_scan import scan_file
 from iris_harness.services.rag.index import DocumentIndex
 from iris_harness.services.rag.ingest import ingest_path
-from iris_harness.services.rag.ingest_source import IngestSource, KnownFile
+from iris_harness.services.rag.ingest_source import IngestSource
 from iris_harness.services.rag.models import IngestResult
+from iris_harness.services.rag.sensitivity import classify, ratchet
 from iris_harness.services.rag.store import DocumentStore
-
-logger = logging.getLogger(__name__)
 
 _VAULT_REFUSAL_MESSAGE = (
     "secret documents never enter RAG; use the vault "
     "(`iris files vault add`) to store confidential content."
 )
-
-# Sensitivity ratchet: classification can only go UP when sources disagree.
-# Unknown labels rank as "personal" (defensive: never ratchet an odd label down).
-_CLASSIFICATION_ORDER = {"public": 0, "internal": 1, "personal": 2, "secret": 3}
-_UNKNOWN_RANK = _CLASSIFICATION_ORDER["personal"]
 
 
 class IngestDeniedError(RuntimeError):
@@ -63,45 +59,12 @@ class IngestProposal:
         return self.reason
 
 
-def _rank(classification: str) -> int:
-    return _CLASSIFICATION_ORDER.get(classification, _UNKNOWN_RANK)
-
-
-def _ratchet(*classifications: str | None) -> str:
-    """Return the most sensitive of the given classifications (missing → public)."""
-    present = [c for c in classifications if c]
-    if not present:
-        return "public"
-    return max(present, key=_rank)
-
-
 def _sha_file(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
         for block in iter(lambda: fh.read(1 << 20), b""):
             h.update(block)
     return h.hexdigest()
-
-
-def _known(source: IngestSource | None, resolved: Path) -> KnownFile | None:
-    if source is None:
-        return None
-    try:
-        return source.known_file(resolved)
-    except Exception as exc:  # the lookup is advisory, never fatal
-        logger.warning(
-            "rag: ingest source lookup failed (%s); classifying from the content scan alone",
-            type(exc).__name__,
-            exc_info=True,
-        )
-        return None
-
-
-def _classify(resolved: Path, source: IngestSource | None) -> tuple[str, KnownFile | None]:
-    """Classification = ratchet(what the file domain knows, fresh content scan)."""
-    row = _known(source, resolved)
-    scanned = scan_file(resolved).classification
-    return _ratchet(row.classification if row else None, scanned), row
 
 
 def propose_rag_ingest(path: str | Path, source: IngestSource | None = None) -> IngestProposal:
@@ -116,7 +79,7 @@ def propose_rag_ingest(path: str | Path, source: IngestSource | None = None) -> 
             f"cannot ingest {resolved}: not an existing file "
             "(point add_to_rag at a single readable file)."
         )
-    classification, row = _classify(resolved, source)
+    classification, row = classify(resolved, source)
     if classification == "secret":
         raise IngestDeniedError(
             f"denied: {resolved.name} is classified secret — {_VAULT_REFUSAL_MESSAGE}"
@@ -162,8 +125,8 @@ def execute_rag_ingest(
             f"denied: {resolved.name} changed since it was approved — "
             "the approval covered different content; propose again."
         )
-    classification, _ = _classify(resolved, source)
-    classification = _ratchet(classification, proposal.classification)
+    classification, _ = classify(resolved, source)
+    classification = ratchet(classification, proposal.classification)
     if classification == "secret":
         raise IngestDeniedError(
             f"denied: {resolved.name} now scans as secret — {_VAULT_REFUSAL_MESSAGE}"

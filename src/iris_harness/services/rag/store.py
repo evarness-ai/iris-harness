@@ -160,6 +160,19 @@ class DocumentStore:
             row = conn.execute("SELECT * FROM document_chunks WHERE id = ?", (chunk_id,)).fetchone()
         return _row_to_chunk(row) if row else None
 
+    def chunk_classifications(self, source_id: str) -> set[str]:
+        """The classification stamps a source's stored chunks carry (FMX8).
+
+        Empty when the source has no chunks or was ingested without classification.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT classification FROM document_chunks "
+                "WHERE source_id = ? AND classification IS NOT NULL",
+                (source_id,),
+            ).fetchall()
+        return {r["classification"] for r in rows}
+
     def count_chunks(self, source_id: str) -> int:
         with self._connect() as conn:
             row = conn.execute(

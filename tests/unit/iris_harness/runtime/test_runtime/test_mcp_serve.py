@@ -365,6 +365,25 @@ def test_a_plugin_tool_is_served_with_its_manifest_declaration(tmp_path: Path) -
     assert json.loads(stdout.getvalue())["result"]["isError"] is True
 
 
+def test_a_plugin_tool_that_raises_is_an_error_to_the_client(tmp_path: Path) -> None:
+    """Regression: the plugin's fault boundary answered with a sentence, so a client was
+    told a tool that raised had succeeded (``isError: false``)."""
+    world = _World(tmp_path)
+    registry = PluginRegistry()
+    registry.add_plugin(PluginRecord(name="notes", source="test", status=PluginStatus.LOADED))
+
+    def boom(args: dict[str, Any]) -> str:
+        raise RuntimeError("index missing")
+
+    registry.add_tool("notes", ToolSpec("find_note", "Find a note.", boom))
+    world.tools = registry.tools()
+
+    [result] = world.serve(("find_note", {}))
+
+    assert result["isError"] is True
+    assert _text(result).startswith("find_note is unavailable (plugin 'notes' raised RuntimeError")
+
+
 # -- where a result may go (owner's decision, 2026-09-30) ----------------------------------
 
 

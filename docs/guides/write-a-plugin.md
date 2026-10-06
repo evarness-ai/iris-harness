@@ -128,6 +128,25 @@ plugins:
 it provides, without starting anything. On a running IRIS, `iris plugins` shows each
 plugin's status and `iris plugins show NAME` its registrations.
 
+## Calling a web service
+
+Use `api.http` (a `GovernedHttp`), not `httpx` or `requests`, and declare the hosts in the
+manifest:
+
+```yaml
+egress:
+  hosts: [api.open-meteo.com]
+```
+
+```python
+reply = api.http.get("https://api.open-meteo.com/v1/forecast", params={"latitude": 52.5})
+```
+
+An undeclared host raises `EgressDenied` and nothing is sent; each request is a ledger row.
+Test it with `iris_harness.testing.fake_http` and lint it with `check_network_imports`
+([Test your plugin](test-your-plugin.md)); the design and its limits are in
+[plugin egress](../architecture/plugin-egress.md).
+
 ## What you may import
 
 Only the stable tier: `iris_harness.sdk`, `iris_harness.testing`, and the mail-provider

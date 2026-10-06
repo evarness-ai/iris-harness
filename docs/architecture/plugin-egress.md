@@ -50,10 +50,17 @@ the process (see "What this does not prove").
    Config, not code: no plugin name is hard-coded in the kernel.
 
 2. **A governed HTTP client** (`iris_harness.sdk.http`). A plugin gets one from
-   `api.http` (bound to its own name by the harness, by convention: the class is public, so
-   an in-process plugin can construct `GovernedHttp("other")` and be recorded under that name;
-   the real boundary is the out-of-process one) or, in a declarative plugin's function, from `current_http()` (bound to the
+   `api.http` (bound to its own name by the harness) or, in a declarative plugin's function, from `current_http()` (bound to the
    tool being run). Each request:
+   - is held to the call it is made inside: the harness stamps the running tool's plugin, run,
+     step and data class around every tool and capability call, and the client acts only for
+     that plugin. `GovernedHttp("other")` can be constructed (the class is a stable name), but
+     a request from a tool of another plugin is a recorded deny (`pre_egress`, attributed to
+     the plugin whose tool is running, `egress.plugin` = the name the client was built with),
+     so a plugin cannot borrow another's declaration or `open_web`. A request made with no
+     call in progress (a `threading.Thread` the tool started loses the call's context, as does
+     code run at import) is a recorded deny too: it has no run, parent call or data class to be
+     held to. Do the request on the tool's own thread;
    - fires a new kernel hook point `PRE_EGRESS`; the `plugin_egress` hook allows only a
      scheme/host/port the plugin declared and refuses a run whose data class is above the
      host's declared `data` (fail closed, no policy or no kernel means deny);
@@ -235,7 +242,9 @@ show` truthful and gives the debt list a name per file.
 
 **Stable-tier additions** (each is a public name a plugin or its CI needs):
 `sdk.http.GovernedHttp` (the client's type, for annotations), `sdk.http.EgressDenied`
-(what a denied call raises, a `PermissionError`), `sdk.http.current_http` (declarative
+(what a denied call raises: a `RuntimeError` subclass, deliberately not an `OSError`, so a
+plugin's `except OSError` around its network code cannot swallow a governance denial; it was a
+`PermissionError` before release, and the name is unchanged), `sdk.http.current_http` (declarative
 plugins have no `api`), `testing.fake_http` (the one injection point for tests),
 `testing.check_network_imports`, `testing.NetworkImportViolation` and
 `testing.NETWORK_MODULES` (the lint and what it reads). `PluginAPI.http` is an attribute of
@@ -268,7 +277,10 @@ An in-process plugin (`trust: in-process`) is a contract, not a sandbox. It runs
 harness's interpreter and can open its own socket, import `urllib`, or shell out. The
 governed client proves: *a call made through it* was declared, allowed and recorded, and a
 denied host was not contacted by it. The lint proves the plugin's *own source files*
-import no raw network library; it does not see dynamic imports, a dependency's own
+import (or use through an imported package: `urllib.request.urlopen`, `asyncio.open_connection`)
+no raw network library it names, and reports an unparsable file as a finding; it does not see
+dynamic imports, a library the list does not name (`paramiko`, `aiosmtplib`, `boto3`, `openai`,
+`redis`, ...), an event loop's own `create_connection`, a dependency's own
 network use, or `subprocess`. A ledger with no row for a host is therefore not proof the
 host was never contacted by a plugin; it is proof the governed client never contacted it.
 `no_network()` proves a test path made no socket in the test process.
@@ -276,7 +288,8 @@ host was never contacted by a plugin; it is proof the governed client never cont
 | Not enforced | Why, and what holds instead |
 |---|---|
 | A plugin opening its own socket, or shelling out | In-process code is a contract, not a sandbox; the lint sees only static imports. Boundary: the MCP rung's process isolation (#111-#114) |
-| `GovernedHttp("other")` from another plugin | The constructor is public (stable surface); the name is a convention, not a credential. Same boundary |
+| A plugin that bypasses the call scope | Inside a call the client acts only for the running tool's plugin (enforced). An in-process plugin that goes around the client altogether (own socket) is the row above |
+| A request made on a thread the tool started | Denied, not governed: it has no call scope. The plugin must request on the tool's thread |
 | The name lookup's own duration and the lookup's integrity | `getaddrinfo` has no timeout (the deadline starts at the connect); a resolver that lies about a public name is the operator's DNS concern. The returned addresses ARE checked |
 | A decoded chunk before the cap trips | The cap is checked per decoded chunk (a compressed chunk of up to 64 KiB can expand to tens of MiB at once), so memory can briefly exceed 10 MiB |
 | Ledger completeness | A request through the client with no `pre_egress` row is not sent; a request that does not go through the client leaves no row. A `post_egress` row that fails to write is logged and not retried |
@@ -292,6 +305,8 @@ the same `PRE_EGRESS` / `POST_EGRESS` rows for contacts a launch wrapper reports
 | Situation | Result | Rows |
 |---|---|---|
 | Host declared (scheme, port, data class fit) | request made | `pre_egress` allow, `post_egress` outcome |
+| Tool of plugin `evil` uses `GovernedHttp("weather")` or `("research")` | `EgressDenied`, no request | `pre_egress` deny, `tool_plugin: evil` |
+| No governed call in progress (a bare thread) | `EgressDenied`, no request | `pre_egress` deny |
 | Host not declared | `EgressDenied`, no request | `pre_egress` deny naming the host |
 | Plugin declares no `egress` | every host denied | `pre_egress` deny |
 | `open_web: true` | any host allowed | both rows |

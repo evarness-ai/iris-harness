@@ -21,7 +21,7 @@ First public release of the IRIS harness.
   contact through the SDK's governed HTTP client (#103b; see below). The host
   grammar refuses IP literals in any spelling, `localhost`, newlines, repeated dots,
   suffix-only wildcards (`*.com`) and over-long hosts; `iris plugins show` and
-  `--dump-config` print `none declared (the governed client contacts no host)` for a plugin
+  `--dump-config` print `none declared (raw network calls by this plugin are not governed)` for a plugin
   without one.
 
 - Governed outbound HTTP for plugins (issue #103, part 2): `api.http` (and
@@ -39,7 +39,14 @@ First public release of the IRIS harness.
   to a checked public address (the name is resolved once), records a malformed URL as a
   denial, and is not sent when its `pre_egress` ledger row cannot be written. A name an
   operator or attacker points at an internal address is refused; see
-  `docs/architecture/plugin-egress.md` for the limits.
+  `docs/architecture/plugin-egress.md` for the limits. A request is made only inside a
+  governed tool or capability call and acts only for the plugin whose tool is running (a
+  tool of plugin `evil` using `GovernedHttp("weather")` is denied and recorded against
+  `evil`); one made outside any call, such as from a thread the tool started, is denied.
+  `EgressDenied` is a `RuntimeError`, not an `OSError` (a stable name whose base changed
+  before release). `check_network_imports` also reports attribute use of an imported
+  package (`urllib.request.urlopen`), `asyncio.open_connection` / `start_server`, `httpcore`,
+  `h11` and `http.server`, and an unparsable file as a finding.
 
 ### Changed
 

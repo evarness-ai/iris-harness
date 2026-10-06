@@ -197,7 +197,9 @@ calls made through the client; an in-process plugin can still open its own socke
 entries: the registry is private and `services.tools` is
 a catalogue (`describe` only). Your plugin runs in the harness's process (`trust:
 in-process`), so this is a contract, not a sandbox -- reaching into private attributes or
-importing runtime internals is unsupported. `trust: mcp` is the real boundary.
+importing runtime internals is unsupported. `trust: mcp` is the real boundary. Inside a tool
+or capability call, `api.http` (and any `GovernedHttp` built with another name) acts only for the
+plugin whose tool is running; outside a call it is refused ([plugin egress](plugin-egress.md)).
 
 ## Supplying the owner's identity
 

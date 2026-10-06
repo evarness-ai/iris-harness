@@ -13,6 +13,14 @@ provider exception.
 from __future__ import annotations
 
 
+class ConfigurationError(ValueError):
+    """The configuration names something the harness cannot resolve (a typo'd provider).
+
+    Raised rather than defaulted: a misconfiguration must be loud, never quietly work
+    against a different backend than the one the owner wrote down.
+    """
+
+
 def friendly_llm_error(exc: Exception) -> str:
     """Return a user-readable error string from an LLM call exception."""
     name = type(exc).__name__

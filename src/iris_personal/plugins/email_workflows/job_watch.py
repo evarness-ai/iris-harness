@@ -164,11 +164,11 @@ def ollama_probe(
 
         from iris_harness.sdk.logging import log_egress
 
-        root = root_url()
-        if not root:
-            return False
-        url = f"{root.rstrip('/')}{path}"
         try:
+            root = root_url()
+            if not root:
+                return False
+            url = f"{root.rstrip('/')}{path}"
             log_egress(
                 destination=httpx.URL(url).netloc.decode(),
                 method="GET",
@@ -176,7 +176,7 @@ def ollama_probe(
                 purpose="health-probe",
             )
             return 200 <= httpx.get(url, timeout=timeout).status_code < 300
-        except Exception:  # noqa: BLE001 — any transport error means unreachable
+        except Exception:  # noqa: BLE001 — any failure means unreachable
             return False
 
     return probe

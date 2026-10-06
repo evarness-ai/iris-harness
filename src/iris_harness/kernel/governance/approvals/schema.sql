@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS approval_queue (
     items_json        TEXT,
     card_json         TEXT,
     caller            TEXT,
-    executed_at       TEXT
+    executed_at       TEXT,
+    call_id           TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_approval_pending ON approval_queue(status, timeout_at);

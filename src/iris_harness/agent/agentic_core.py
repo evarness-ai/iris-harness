@@ -1294,6 +1294,7 @@ class AgenticCore:
         read_approval: (
             Callable[[str], tuple[str, list[tuple[str, dict[str, Any]]]] | None] | None
         ) = None,
+        approval_call_id: Callable[[str], str | None] | None = None,
         budget_observer: Callable[[int, int], None] | None = None,
         reserve_tools: list[ToolSpec] | None = None,
         review_route: str | None = None,
@@ -1353,6 +1354,9 @@ class AgenticCore:
         # read. Narrow for the same reason as the link above; a resumed run uses it to
         # settle the approval its halted step was waiting on.
         self._read_approval = read_approval
+        # The call id of the attempt an approval held (``ApprovalRow.call_id``), so the
+        # approved re-execution can record it as ``held_call_id`` (#134).
+        self._approval_call_id = approval_call_id
         # The request this run is answering, and the title of the approval it halted on:
         # the approval card quotes the first, the chat message names the second.
         self._current_query: str | None = None
@@ -1981,6 +1985,9 @@ class AgenticCore:
             listed = "; ".join(f"{tool} {json.dumps(args, sort_keys=True)}" for tool, args in items)
             if status == "approved":
                 results = []
+                held_call_id = (
+                    self._approval_call_id(approval_id) if self._approval_call_id else None
+                )
                 for tool, args in items:
                     executed = self._execute_tool(
                         tool,
@@ -1990,6 +1997,7 @@ class AgenticCore:
                         step_id=seed.start_iteration - 1,
                         effects=effects,
                         approved_by=approval_id,
+                        held_call_id=held_call_id,
                     )
                     results.append(f"{tool}: {executed.observation}")
                     # The label the result earned carries into the resumed loop as a
@@ -2115,6 +2123,7 @@ class AgenticCore:
         asked_user: bool = False,
         effects: list[str] | None = None,
         approved_by: str | None = None,
+        held_call_id: str | None = None,
         halts: list[HookDecision] | None = None,
     ) -> _ToolStep:
         """Resolve the name the model wrote and run the tool through the governed runner.
@@ -2166,6 +2175,7 @@ class AgenticCore:
                 step_id=step_id,
                 asked_user=asked_user,
                 approved_by=approved_by,
+                held_call_id=held_call_id,
                 query=self._current_query,
             ),
             effects=effects,

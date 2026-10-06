@@ -26,7 +26,7 @@ a secret. It confirms the record to the runner in its decision's ``audit_metadat
 (``tool_payload.SIDE_EFFECT_ID``); a runner finding a high-risk call allowed without it
 refuses to run it, so a kernel built without this hook cannot run one either.
 
-The row's key is the post hook's (``<run_id>:<step_id>:<tool_call_id>``; the runner mints
+The row's key is the post hook's (``<run_id>:<step_id>:<call_id>``; the runner mints
 the call id before ``PRE_TOOL_USE`` and hands the same id to ``POST_TOOL_USE``). It holds
 the tool name and the effect -- never arguments, results or message text. Every row is
 written with no probe: a row still ``pending`` is a call that never settled, which may or may
@@ -48,8 +48,8 @@ from typing import TYPE_CHECKING
 
 from iris_harness.kernel.governance.hooks.tool_payload import (
     SIDE_EFFECT_ID,
-    TOOL_CALL_ID,
     TOOL_EFFECT,
+    call_id_of,
     tool_name_of,
 )
 from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
@@ -98,8 +98,7 @@ class PreToolUseLedgerHook:
             return self._deny(tool, "no side-effect ledger is configured")
 
         step_id = ctx.step_id or 0
-        tool_call_id = ctx.metadata.get(TOOL_CALL_ID)
-        key = side_effect_key(ctx.run_id, step_id, str(tool_call_id) if tool_call_id else None)
+        key = side_effect_key(ctx.run_id, step_id, call_id_of(ctx.metadata))
         try:
             self._ledger.record(
                 side_effect_id=key,

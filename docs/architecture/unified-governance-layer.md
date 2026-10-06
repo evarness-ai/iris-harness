@@ -352,6 +352,17 @@ public fields (`audit_view.PUBLIC_PAYLOAD_FIELDS`, so `model`, `provider` and `t
 reach `GET /governance/audit`, `iris governance audit` (its `by` column) and the trace); the stable `TurnAuditRow` exposes
 `caller` and `tool_plugin`.
 
+**Which call a row is about (#134, stage 1).** The runner mints one ULID `call_id` per call
+attempt (`foundation/ids.py`; `GovernedToolRunner.execute`, the three capability entry points
+and the MCP bridge's outbound calls), before `PRE_TOOL_USE`. `kernel._audit` stamps it, from
+the context's kernel-set metadata only, on every `pre_tool_use` / `post_tool_use` row of the
+call; the side-effect key is `<run_id>:<step_id>:<call_id>`; the session log's `tool.invoke.*`
+events carry it (beside the old `tool_call_id`, same value); and the approvals queue's one new
+nullable column, `call_id`, keeps a held attempt's id. The approved re-execution is a new call:
+its rows carry `held_call_id`. `call_id` and `held_call_id` are public payload fields (identifier
+only). Model calls and the general lane's builtin tools mint none yet. Design:
+`call-identity-and-audit-replay.md`.
+
 **Every model call in the turn, not only the loop's (2026-09-30).** One rule,
 `apply_turn_floor` (`kernel/governance/turn_label.py`), sets the label of every
 `PreLLMCall` in the turn: the loop, the shared client (`llm/client.py:901` -- curator
@@ -638,7 +649,7 @@ Each side-effect-producing tool call records:
 ```
 
 As built (2026-09-30): `PostToolUseLedgerHook` records every call whose declared effect is
-not `read`, keyed `<run_id>:<step_id>:<tool_call_id>`; the probe is the coding agent's
+not `read`, keyed `<run_id>:<step_id>:<call_id>` (the call id is a ULID the runner mints once per call attempt, #134); the probe is the coding agent's
 `TOOL_PROBE_MAP` entry, else the tool's declared `verify:`, else none (`ambiguous`)
 (`kernel/governance/plugins/post_tool_use_ledger.py`).
 

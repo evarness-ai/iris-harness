@@ -401,3 +401,84 @@ def test_cli_audit_table_has_a_by_column_naming_the_owner_or_model(ledger: Audit
     assert "qwen-test" in rows["pre_llm_call"]
     assert "mail" in rows["pre_tool_use"]
     assert ADDRESS not in out.output
+
+
+# ------------------------------------------------- which call a row is about (#134)
+
+CALL = "01JABCDEFGHJKMNPQRSTVWXYZ0"
+HELD = "01JABCDEFGHJKMNPQRSTVWXYZ1"
+
+
+def _call_rows(ledger: AuditLog) -> None:
+    _record(
+        ledger,
+        1,
+        "pre_tool_use",
+        run_id="r",
+        payload={
+            "session_id": "s-1",
+            "tool_name": "email_search",
+            "call_id": CALL,
+            "held_call_id": HELD,
+            # Never shown: argument text, and the old alias is not a public field.
+            "args": {"q": ADDRESS},
+            "tool_call_id": CALL,
+        },
+    )
+    _record(
+        ledger,
+        2,
+        "post_tool_use",
+        run_id="r",
+        payload={"session_id": "s-1", "tool_name": "email_search", "call_id": {"x": ADDRESS}},
+    )
+
+
+def test_audit_and_trace_show_the_call_id_as_an_identifier_only(
+    client: TestClient, ledger: AuditLog, tmp_path: Path
+) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "session-s-1.jsonl").write_text(
+        "\n".join(
+            json.dumps(e)
+            for e in (
+                {
+                    "kind": "user_message",
+                    "ts": _ts(0).isoformat(),
+                    "session_id": "s-1",
+                    "text": "x",
+                },
+                {
+                    "kind": "agent_response",
+                    "ts": _ts(10).isoformat(),
+                    "session_id": "s-1",
+                    "response": "y",
+                },
+            )
+        )
+        + "\n"
+    )
+    _call_rows(ledger)
+
+    audit = client.get("/governance/audit").json()
+    post_row, pre_row = audit["entries"]
+    assert (pre_row["call_id"], pre_row["held_call_id"]) == (CALL, HELD)
+    assert "call_id" not in post_row  # a non-string value is not an identifier
+    trace = client.get("/api/traces/s-1~0").json()
+    traced = {e["hook_point"]: e for e in trace["governance"]}
+    assert traced["pre_tool_use"]["call_id"] == CALL
+    assert ADDRESS not in json.dumps(audit) + json.dumps(trace)
+    for entry in audit["entries"] + trace["governance"]:
+        assert not {"args", "result", "tool_call_id"} & set(entry)
+
+
+def test_cli_audit_table_and_json_show_the_call_id(ledger: AuditLog) -> None:
+    _call_rows(ledger)
+    out = CliRunner().invoke(governance_app, ["audit"], env={"COLUMNS": "300"})
+    assert out.exit_code == 0, out.output
+    header = next(line for line in out.output.splitlines() if "hook" in line and "caller" in line)
+    assert " call " in header
+    assert CALL in out.output and ADDRESS not in out.output
+    as_json = CliRunner().invoke(governance_app, ["audit", "--json"])
+    assert as_json.exit_code == 0 and CALL in as_json.output and ADDRESS not in as_json.output

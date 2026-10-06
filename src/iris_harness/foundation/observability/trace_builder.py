@@ -91,6 +91,12 @@ _STAGE_META: dict[str, tuple[str, str, str]] = {
 _AGENT_SOURCES: dict[str, Callable[..., Any]] = {}
 
 
+def _call_id_of(payload: dict[str, Any]) -> Any:
+    """The call id of a ``tool.invoke.*`` event: ``call_id``, else the old ``tool_call_id``
+    (a session log written before #134 has only that)."""
+    return payload.get("call_id") or payload.get("tool_call_id")
+
+
 def register_agent_source(agent_type: str, handler: Callable[..., Any]) -> None:
     """Record ``handler`` as what answers ``agent_type`` (the latest registration wins)."""
     _AGENT_SOURCES[agent_type] = handler
@@ -674,10 +680,10 @@ def build_steps(turn: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 },
             )
         elif kind == "tool.invoke.start":
-            pending_tools[e.get("payload", {}).get("tool_call_id")] = e
+            pending_tools[_call_id_of(e.get("payload", {}))] = e
         elif kind == "tool.invoke.end":
             p = e.get("payload", {}) or {}
-            start = pending_tools.pop(p.get("tool_call_id"), None)
+            start = pending_tools.pop(_call_id_of(p), None)
             args = (start or {}).get("payload", {}).get("arguments") if start else None
             ok = p.get("ok", True)
             name = p.get("tool", "tool")
@@ -1051,12 +1057,12 @@ def _build_trace(session_id: str, idx: int, turn: list[dict[str, Any]]) -> dict[
     for e in turn:
         kind = e.get("kind")
         if kind == "tool.invoke.start":
-            pending_invokes[e.get("payload", {}).get("tool_call_id")] = e
+            pending_invokes[_call_id_of(e.get("payload", {}))] = e
         elif kind == "tool.invoke.end":
             # ReAct-loop tool call (research, stock_quote, …). Pair with its
-            # start by tool_call_id to recover args + timing.
+            # start by call id to recover args + timing.
             p = e.get("payload", {}) or {}
-            start = pending_invokes.pop(p.get("tool_call_id"), None)
+            start = pending_invokes.pop(_call_id_of(p), None)
             ts_dt = _parse_ts(e.get("ts", ""))
             node_id = f"tool{ti}"
             ti += 1

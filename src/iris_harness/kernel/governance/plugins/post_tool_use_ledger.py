@@ -13,10 +13,10 @@ Read from the context:
              result        : Any  -- its output; a mapped tool's id is read from it
     metadata tool_effect   : str  -- ``read`` calls are never recorded
              tool_verify   : str | None -- the declared probe, if any
-             tool_call_id  : str | None -- makes the row's key unique within the step
+             call_id       : str | None -- the call's ULID (#134); makes the row's key unique
     ctx      run_id, step_id
 
-The row's key is ``<run_id>:<step_id>:<tool_call_id>`` -- one row per call. A key that
+The row's key is ``<run_id>:<step_id>:<call_id>`` -- one row per call. A key that
 already holds a row (not this call's pre-record) is reported as a warning, never confirmed
 as recorded; a capability stream's items are one call and are settled once, at the end.
 
@@ -55,10 +55,10 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from iris_harness.kernel.governance.hooks.tool_payload import (
-    TOOL_CALL_ID,
     TOOL_EFFECT,
     TOOL_ERROR,
     TOOL_VERIFY,
+    call_id_of,
     result_of,
     tool_name_of,
 )
@@ -121,9 +121,9 @@ PRE_RECORDED = "pre_recorded"
 PARTIAL_STREAM = "PartialStream"
 
 
-def side_effect_key(run_id: str, step_id: int, tool_call_id: str | None) -> str:
+def side_effect_key(run_id: str, step_id: int, call_id: str | None) -> str:
     """The ledger key of one call: unique per run, step and call."""
-    return f"{run_id}:{step_id}:{tool_call_id or '-'}"
+    return f"{run_id}:{step_id}:{call_id or '-'}"
 
 
 def _mapped_subject(id_field: str, result: Any) -> str | None:
@@ -174,8 +174,7 @@ class PostToolUseLedgerHook:
             )
 
         step_id: int = ctx.step_id or 0
-        tool_call_id = ctx.metadata.get(TOOL_CALL_ID)
-        key = side_effect_key(ctx.run_id, step_id, str(tool_call_id) if tool_call_id else None)
+        key = side_effect_key(ctx.run_id, step_id, call_id_of(ctx.metadata))
         probe_name, subject, meta = self._probe_for(tool, ctx)
         if self._written_before(key):
             return self._settle(key, tool, probe_name, subject, meta, ctx)

@@ -39,6 +39,7 @@ import uuid as _uuid
 from typing import TYPE_CHECKING, Any
 
 from iris_harness.kernel.governance.approvals.store import ApprovalCard, ApprovalItem
+from iris_harness.kernel.governance.hooks.tool_payload import CALL_ID, HELD_CALL_ID
 from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
 
 if TYPE_CHECKING:
@@ -187,6 +188,9 @@ class DestructiveApprovalHook:
         assert self._queue is not None
         row = self._queue.get(approval_id)
         audit = {"tool_name": item.tool, "approval_id": approval_id, "caller": caller}
+        if row is not None and row.call_id:
+            # From the queue, not the caller: which attempt was held.
+            audit[HELD_CALL_ID] = row.call_id
         if row is None or row.status != "approved":
             status = "missing" if row is None else row.status
             return HookDecision(
@@ -256,6 +260,9 @@ class DestructiveApprovalHook:
                 if ctx.metadata.get("deferred_executor") is True
                 else None
             ),
+            # The id of THIS (held) attempt: the approved re-execution is a new call, and
+            # records this one as its ``held_call_id`` (#134).
+            call_id=_metadata_str(ctx, CALL_ID),
         )
         row = self._queue.get(approval_id)
         if row is not None and self._router is not None:

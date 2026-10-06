@@ -149,6 +149,7 @@ class _Row:
         self.session_id = None
         self.approval_id = "approval-1"
         self.run_id = "run-approved"
+        self.call_id = None  # the held attempt's id (#134); this row has none
 
 
 @pytest.mark.parametrize(

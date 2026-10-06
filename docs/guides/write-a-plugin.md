@@ -77,6 +77,12 @@ Every registration is wrapped in one fault boundary: a failing plugin shows up a
 degraded or failed `plugin:<name>` row in System Health instead of taking the process
 down.
 
+A heartbeat's schedule can also live in the shipped `config/heartbeats.yaml`, keyed by the
+handler name you register. Give that entry `plugin: <your plugin name>`: on a harness where
+your plugin is not mounted the job is then skipped quietly (one startup line, shown as
+unavailable in the app), while a missing handler with your plugin mounted, or with no
+`plugin:` at all, logs a warning.
+
 ## Run it in your IRIS
 
 IRIS finds plugins in this order: built in, then installed packages (entry-point group

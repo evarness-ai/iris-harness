@@ -153,6 +153,10 @@ class SkillRequirements(BaseModel):
 
     python: str = Field(default=">=3.12", min_length=1)
     packages: tuple[str, ...] = Field(default_factory=tuple)
+    # The ``iris-harness`` extra that installs ``packages`` (e.g. ``email``), when a plain
+    # install lacks them. Only names the fix in the one line logged for a skill left
+    # unavailable by a missing package; it gates nothing itself.
+    extra: str | None = Field(default=None)
     env_vars: tuple[str, ...] = Field(default_factory=tuple)
     config_files: tuple[str, ...] = Field(default_factory=tuple)
     agents: tuple[str, ...] = Field(default_factory=tuple)

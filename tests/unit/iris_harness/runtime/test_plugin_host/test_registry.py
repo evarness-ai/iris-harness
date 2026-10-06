@@ -164,3 +164,31 @@ def test_describe_lists_registrations_by_kind() -> None:
         RegistrationKind.TOOL.value,
         RegistrationKind.CONFIRMATION_EXECUTOR.value,
     }
+
+
+def test_unmounted_reason_explains_a_plugin_that_is_not_serving() -> None:
+    registry = PluginRegistry()
+    registry.add_plugin(PluginRecord(name="up", source="builtin:up", status=PluginStatus.LOADED))
+    registry.add_plugin(
+        PluginRecord(
+            name="hurt", source="builtin:hurt", status=PluginStatus.DEGRADED, last_error="x"
+        )
+    )
+    registry.add_plugin(
+        PluginRecord(
+            name="down",
+            source="builtin:down",
+            status=PluginStatus.FAILED,
+            load_error="required package not installed: google-api-python-client",
+        )
+    )
+    registry.add_plugin(
+        PluginRecord(name="off", source="builtin:off", status=PluginStatus.DISABLED)
+    )
+    assert registry.unmounted_reason("up") is None
+    assert registry.unmounted_reason("hurt") is None  # mounted, merely degraded
+    assert registry.unmounted_reason("down") == (
+        "required package not installed: google-api-python-client"
+    )
+    assert registry.unmounted_reason("off") == "disabled"
+    assert registry.unmounted_reason("never_listed") is not None

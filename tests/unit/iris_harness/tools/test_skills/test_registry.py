@@ -200,12 +200,15 @@ def test_discover_isolates_a_skill_whose_import_fails(tmp_path: Path, caplog) ->
         registry.discover()  # per-turn re-discovery must not repeat the warning
 
     assert [p.manifest.name for p in packages] == ["z_fine"]
-    (failed_dir, reason), = registry.load_failures.items()
+    ((failed_dir, reason),) = registry.load_failures.items()
     assert failed_dir.name == "a_broken"
     assert reason == "ModuleNotFoundError: No module named 'no_such_optional_dependency_xyz'"
-    skipped = [r for r in caplog.records if "skipped" in r.getMessage()]
+    skipped = [r for r in caplog.records if "failed to load" in r.getMessage()]
     assert len(skipped) == 1
-    assert skipped[0].exc_info is None
+    # A genuine fault keeps its traceback (#110 follow-up): the one-line reason is for the
+    # `iris skills list` status, the log carries the stack an operator needs to fix it.
+    assert skipped[0].levelname == "ERROR"
+    assert skipped[0].exc_info is not None
 
 
 def test_missing_declared_package_blocks_the_skill_without_importing_it(tmp_path: Path) -> None:
@@ -226,7 +229,13 @@ def test_shipped_gmail_inbox_declares_its_google_dependency() -> None:
     manifest = load_skill_manifest(
         Path(__file__).resolve().parents[5] / "config" / "skills" / "email" / "gmail-inbox"
     )
-    assert "google-api-python-client" in manifest.requires.packages
+    # Every distribution its import chain (gmail_fetch -> gmail_oauth) needs, not one of them.
+    assert set(manifest.requires.packages) >= {
+        "google-api-python-client",
+        "google-auth",
+        "google-auth-oauthlib",
+    }
+    assert manifest.requires.extra == "email"
 
 
 def test_shipped_skills_on_a_core_only_install(monkeypatch) -> None:  # type: ignore[no-untyped-def]

@@ -45,7 +45,8 @@ def _policy() -> PluginEgressPolicy:
         ("weather", "https", "a.b.cdn.example.org", 443, True),
         ("weather", "https", "cdn.example.org", 443, False),  # the apex is not a subdomain
         ("weather", "https", "xcdn.example.org", 443, False),
-        ("weather", "http", "localhost", 8080, True),
+        # a local-network name is refused even if a rule names it (a manifest cannot declare one)
+        ("weather", "http", "localhost", 8080, False),
         ("fetcher", "https", "anything.example", 443, True),
         ("fetcher", "ftp", "anything.example", 21, False),
         ("quiet", "https", "api.open-meteo.com", 443, False),  # declares nothing: closed

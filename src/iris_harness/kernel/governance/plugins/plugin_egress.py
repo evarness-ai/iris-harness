@@ -91,6 +91,8 @@ class PluginEgressOutcomeHook:
         egress = _egress(ctx)
         error = egress.get("error")
         ended = f"failed ({error})" if error else f"-> {egress.get('status')}"
+        if egress.get("aborted"):
+            ended += f", cut off: {egress['aborted']}"
         return HookDecision(
             outcome="allow",
             reason=(

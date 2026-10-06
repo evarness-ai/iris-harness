@@ -86,6 +86,17 @@ def is_ip_literal(host: str) -> bool:
     return True
 
 
+#: Names that mean "this machine or this network" by convention (RFC 6761, RFC 6762, common
+#: resolver defaults), never a public service. Refused as a request's target even under
+#: ``open_web``, and as a declared host.
+INTERNAL_NAME_SUFFIXES: Final[tuple[str, ...]] = ("localhost", "local", "internal", "localdomain")
+
+
+def is_internal_name(host: str) -> bool:
+    """Is ``host`` (already normalised: lower-case, no trailing dot) a local-by-convention name?"""
+    return any(host == s or host.endswith("." + s) for s in INTERNAL_NAME_SUFFIXES)
+
+
 def normalize_host_pattern(value: str) -> str:
     """A declared host: an exact DNS name, or ``*.suffix`` for any subdomain of ``suffix``.
 
@@ -94,9 +105,9 @@ def normalize_host_pattern(value: str) -> str:
     must decode), at most one trailing dot (dropped), labels of at most 63 and a name of at
     most 253 characters. A bare ``*`` is refused: "any host" is ``open_web: true``, which says
     so out loud. Refused outright, fail closed: IP literals in any spelling (dotted, short,
-    hex, octal, IPv6), ``localhost``, and numeric last labels, which a resolver may read as an
-    address; and a wildcard whose base is a single label (``*.com``). A wildcard over a
-    multi-label public suffix (``*.co.uk``) is not caught: the repo ships no public-suffix
+    hex, octal, IPv6), ``localhost`` and the local-network suffixes, and numeric last
+    labels, which a resolver may read as an address; and a wildcard whose base is a single
+    label (``*.com``). A wildcard over a multi-label public suffix (``*.co.uk``) is not caught: the repo ships no public-suffix
     list (docs/architecture/plugin-egress.md).
     """
     if not value or not value.isascii() or any(c.isspace() or not c.isprintable() for c in value):
@@ -125,8 +136,12 @@ def normalize_host_pattern(value: str) -> str:
                 label.encode("ascii").decode("idna")
             except UnicodeError:
                 raise _refuse(value, f"label {label!r} is not valid punycode") from None
-    if body == "localhost" or body.endswith(".localhost"):
-        raise _refuse(value, "localhost is not a host a plugin may declare")
+    if is_internal_name(body):
+        raise _refuse(
+            value,
+            "localhost and the local-network names (.local, .internal, .localdomain) are not "
+            "hosts a plugin may declare",
+        )
     if _HEX_OR_OCTAL_NUMBER.fullmatch(labels[-1]):
         raise _refuse(value, "an IP address (in any spelling) is not a declarable host")
     try:
@@ -207,6 +222,12 @@ class PluginEgressPolicy:
         if is_ip_literal(host):
             return EgressVerdict(
                 False, f"{host} is an IP address; a plugin may contact only a declared host name"
+            )
+        if is_internal_name(host):
+            # Even under open_web: these name this machine or the local network, whatever
+            # the declaration says (a name an attacker can aim at a service on the host).
+            return EgressVerdict(
+                False, f"{host} is a local-network name; a plugin may not contact it"
             )
         declaration = self.plugins.get(plugin)
         if declaration is None:
@@ -342,6 +363,8 @@ __all__ = [
     "current_egress_scope",
     "egress_policy",
     "egress_scope",
+    "INTERNAL_NAME_SUFFIXES",
+    "is_internal_name",
     "is_ip_literal",
     "normalize_host",
     "normalize_host_pattern",

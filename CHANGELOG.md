@@ -33,6 +33,13 @@ First public release of the IRIS harness.
   `EgressDenied`. This governs calls made through that client only: it does not stop a plugin
   that opens its own socket, and no shipped plugin uses the client yet. Also new:
   `testing.fake_http`, `testing.check_network_imports` and a conformance check `egress`.
+  Each request has one total time budget (default 10 s, at most 60) and a 10 MiB decoded-body
+  cap, ignores proxy and netrc environment variables, refuses `Host` and `Proxy-*` headers and
+  names such as `localhost`, `*.local` and `*.internal` (even under `open_web`), connects only
+  to a checked public address (the name is resolved once), records a malformed URL as a
+  denial, and is not sent when its `pre_egress` ledger row cannot be written. A name an
+  operator or attacker points at an internal address is refused; see
+  `docs/architecture/plugin-egress.md` for the limits.
 
 ### Changed
 

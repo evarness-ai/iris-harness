@@ -50,15 +50,20 @@ the process (see "What this does not prove").
    Config, not code: no plugin name is hard-coded in the kernel.
 
 2. **A governed HTTP client** (`iris_harness.sdk.http`). A plugin gets one from
-   `api.http` (bound to its own name by the harness; the plugin cannot claim another's
-   identity) or, in a declarative plugin's function, from `current_http()` (bound to the
+   `api.http` (bound to its own name by the harness, by convention: the class is public, so
+   an in-process plugin can construct `GovernedHttp("other")` and be recorded under that name;
+   the real boundary is the out-of-process one) or, in a declarative plugin's function, from `current_http()` (bound to the
    tool being run). Each request:
    - fires a new kernel hook point `PRE_EGRESS`; the `plugin_egress` hook allows only a
      scheme/host/port the plugin declared and refuses a run whose data class is above the
      host's declared `data` (fail closed, no policy or no kernel means deny);
    - runs the owner-PII shadow observation over what leaves (same `egress` column the
      network tools use; shadow only, like the column itself, ADR-0125);
-   - makes the request (redirects are not followed; each hop is a new, governed call);
+   - makes the request: redirects are not followed (each hop is a new, governed call); the
+     environment is not read (`trust_env=False`: no proxy variables, netrc or CA-bundle
+     variables); a `Host` or `Proxy-*` header is refused with a recorded deny; the name is
+     resolved once and the connection goes to the address that was checked (below); the whole
+     transfer has one time budget and the decoded body a size cap (below);
    - fires `POST_EGRESS`, which records the outcome.
 
    The ledger rows carry host, port, scheme, method, the declared data class, the plugin
@@ -109,8 +114,40 @@ most, ASCII, no whitespace or repeated dots). A request whose host is an IP lite
 spelling, or not a valid host name, is denied by the policy even for `open_web: true`, with a
 `pre_egress` row; it is never sent.
 
+Names that mean this machine or the local network are refused as a request's target even
+for `open_web: true` (and cannot be declared): `localhost`, `*.localhost`, `*.local`,
+`*.internal`, `*.localdomain`, with or without a trailing dot.
+
 Known gap: the repo ships no public-suffix list, so a wildcard over a multi-label public
 suffix (`*.co.uk`) is accepted. Review such a declaration by eye until a list is added.
+
+## What a request may reach, and how much it may take
+
+A name that passes the policy can still resolve to an address inside the owner's machine or
+network (an attacker-chosen name pointing at `127.0.0.1` or the cloud metadata address; a
+name that answers with a public address first and an internal one later: DNS rebinding). The
+check therefore sits at the connection (`runtime/egress_transport.py`): the name is resolved
+**once**; if any answer is loopback, private (RFC 1918, `fc00::/7`), link-local
+(`169.254.0.0/16`, `fe80::/10`), shared (`100.64.0.0/10`), unspecified (`0.0.0.0/8`, `::`),
+multicast or reserved, or an IPv6 form embedding such an IPv4 address (v4-mapped, NAT64,
+6to4), the connection is refused; otherwise it goes to the address that was checked, with the
+TLS server name, certificate verification and `Host` header still those of the host name. A
+refusal is a `post_egress` row (`error: EgressDenied`, `aborted: address`) and raises
+`EgressDenied`; nothing was sent. The check runs on the real transport only (`fake_http`
+replaces the transport, so there is no socket to check).
+
+Bounds: the whole request has one wall-clock budget, enforced on every socket operation and
+between body chunks (`timeout` seconds, default 10, at most 60; `None`, zero, negative or NaN
+mean the default; this is a total, where httpx's own timeout is per operation), and the
+decoded body is read up to 10 MiB (fixed: not manifest-configurable). Either limit ends the
+request with a `post_egress` row (`error: EgressDenied`, `aborted: max_bytes | deadline`,
+`bytes_in` = the decoded bytes actually read) and an `EgressDenied` with a fixed message.
+The returned response holds the decoded body, without `Content-Encoding` and length headers.
+
+A request whose URL cannot be parsed is a `pre_egress` deny row (`malformed: the URL is not
+valid`) and an `EgressDenied` with a fixed message: the URL is never echoed. A request whose
+`pre_egress` row cannot be written is not sent: the kernel withdraws the allow at that one
+hook point (a failed ledger write elsewhere still never raises).
 
 ## Record identity (issue #134)
 
@@ -160,8 +197,8 @@ that path. What is and is not covered:
   through `iris_harness.sdk.content.wrap_external_content(body, source=...)` first. The
   governed client does not do it for the plugin, because the same body may be JSON the
   plugin parses; wrapping is a decision about prose.
-- The client never wraps, redacts or caps a response; `fake_http` bodies are returned
-  untouched. A plugin that needs redaction beyond the floor's tripwire waits for the
+- The client never wraps or redacts a response (it does cap its size, below); `fake_http`
+  bodies are returned untouched. A plugin that needs redaction beyond the floor's tripwire waits for the
   redaction helpers being consolidated separately; this design adds none.
 
 ## Decisions
@@ -236,6 +273,15 @@ network use, or `subprocess`. A ledger with no row for a host is therefore not p
 host was never contacted by a plugin; it is proof the governed client never contacted it.
 `no_network()` proves a test path made no socket in the test process.
 
+| Not enforced | Why, and what holds instead |
+|---|---|
+| A plugin opening its own socket, or shelling out | In-process code is a contract, not a sandbox; the lint sees only static imports. Boundary: the MCP rung's process isolation (#111-#114) |
+| `GovernedHttp("other")` from another plugin | The constructor is public (stable surface); the name is a convention, not a credential. Same boundary |
+| The name lookup's own duration and the lookup's integrity | `getaddrinfo` has no timeout (the deadline starts at the connect); a resolver that lies about a public name is the operator's DNS concern. The returned addresses ARE checked |
+| A decoded chunk before the cap trips | The cap is checked per decoded chunk (a compressed chunk of up to 64 KiB can expand to tens of MiB at once), so memory can briefly exceed 10 MiB |
+| Ledger completeness | A request through the client with no `pre_egress` row is not sent; a request that does not go through the client leaves no row. A `post_egress` row that fails to write is logged and not retried |
+| A wildcard over a multi-label public suffix (`*.co.uk`) | No public-suffix list ships |
+
 OS-level enforcement (a launch wrapper, proxy environment, sandbox profile or network
 namespace) belongs to the MCP rung, which isolates the process. #111-#114 build on this
 design: the same manifest `egress` block, compiled by the same `PluginEgressPolicy`, and
@@ -253,4 +299,9 @@ the same `PRE_EGRESS` / `POST_EGRESS` rows for contacts a launch wrapper reports
 | First-party vs untrusted | same policy | same rows |
 | No policy or kernel bound | denied (fail closed) | none possible; raises |
 | `fake_http` active | transport faked, everything else as production | both rows |
+| Host resolves to an internal address (any answer) | `EgressDenied`, no connection | `post_egress` with `aborted: address` |
+| `localhost`, `*.local`, `*.internal`, ... | denied, even for `open_web` | `pre_egress` deny |
+| Body over 10 MiB decoded, or past the time budget | `EgressDenied`, cut off | `post_egress` with `aborted`, `bytes_in` |
+| `Host` / `Proxy-*` header, or an unparsable URL | `EgressDenied`, no request | `pre_egress` deny |
+| `pre_egress` ledger write fails | `EgressDenied`, no request | none (logged) |
 | `no_network()` active, real transport | the socket is refused; outcome row records the error | both rows |

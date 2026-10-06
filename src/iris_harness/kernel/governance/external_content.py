@@ -90,6 +90,27 @@ MAX_REDACTIONS = 64
 #: tells the reader the text was altered, and the span count is in the ledger row.
 SHORT_MARKER = "[~]"
 
+#: What the owner is told, once, when an answer or a brief they are reading holds the marker
+#: (issue #139): the text is third-party text the floor cut a span out of, said plainly. It
+#: names no pattern; ``iris governance redactions`` lists which rule matched, by id only.
+REDACTION_NOTICE = (
+    "Note: part of that text was withheld because it looked like instructions aimed at me "
+    "rather than content (it shows as the redacted marker). `iris governance redactions` "
+    "lists which rule matched; it never shows the text."
+)
+
+
+def add_redaction_notice(text: str) -> str:
+    """``text`` with :data:`REDACTION_NOTICE` appended once, when it shows the marker.
+
+    Idempotent, and unchanged when there is no marker, so every sink that shows the owner
+    third-party text can call it without coordinating with the others.
+    """
+    if MARKER not in text or REDACTION_NOTICE in text:
+        return text
+    return f"{text.rstrip()}\n\n{REDACTION_NOTICE}"
+
+
 #: The tag that wraps an external result.
 ENVELOPE_TAG = "external_content"
 
@@ -252,6 +273,9 @@ class ScanResult:
     text: str
     ids: tuple[str, ...]
     spans: int
+    # Ids the owner allowed (``external_content_allow``) that matched here and were kept: the
+    # floor records them on its row so the allow-list's effect is visible.
+    allowed: tuple[str, ...] = ()
 
     @property
     def matched(self) -> bool:
@@ -293,8 +317,13 @@ def _redact(text: str, patterns: tuple[FloorPattern, ...]) -> tuple[str, list[st
     return "".join(out), ids, len(merged)
 
 
-def scan(text: str) -> ScanResult:
+def scan(text: str, *, allow: frozenset[str] = frozenset()) -> ScanResult:
     """``text`` with every tripwire match replaced by :data:`MARKER`.
+
+    ``allow`` is the pattern ids the owner allowed for this text's source
+    (``external_content_allow.allowed_ids``): those phrase patterns are not redacted, and the
+    ones that matched are reported in ``allowed``. A hidden-character pattern is never
+    allowed, whatever ``allow`` holds.
 
     The character patterns run on the text as it came; the phrase patterns run on it with
     zero-width characters folded out. The text is returned unchanged (the very same
@@ -304,17 +333,20 @@ def scan(text: str) -> ScanResult:
     """
     hidden = tuple(p for p in PATTERNS if p.id in _HIDDEN_IDS)
     phrases = tuple(p for p in PATTERNS if p.id not in _HIDDEN_IDS)
+    kept = tuple(p for p in phrases if p.id in allow)
+    phrases = tuple(p for p in phrases if p.id not in allow)
     after_hidden, hidden_ids, hidden_spans = _redact(text, hidden)
     folded = _FOLD_RE.sub("", after_hidden)
+    used = tuple(p.id for p in kept if p.regex.search(folded))
     after_phrases, phrase_ids, phrase_spans = _redact(folded, phrases)
     rewritten = phrase_spans > 0
     spans = hidden_spans + phrase_spans
     if spans == 0:
-        return ScanResult(text, (), 0)
+        return ScanResult(text, (), 0, used)
     # A phrase match rewrites the folded text; with none, only the hidden redactions apply.
     out = after_phrases if rewritten else after_hidden
     ids = (*hidden_ids, *phrase_ids)
-    return ScanResult(out, ids, spans)
+    return ScanResult(out, ids, spans, used)
 
 
 #: Longest ``source`` / ``tool`` label that is logged or written to the ledger.
@@ -346,8 +378,23 @@ def redact_text(text: str, *, source: str, tool: str | None = None, caller: str 
     """
     if not text or not floor_enabled():
         return text
-    found = scan(text)
+    from iris_harness.kernel.governance.external_content_allow import (
+        allowed_ids,
+        scope_for_label,
+    )
+
+    found = scan(text, allow=allowed_ids(scope_for_label(source), tool))
     if not found.matched:
+        if found.allowed:
+            # The owner's allow-list kept a match: record that it did (issue #139).
+            _audit(
+                tool=clean_label(tool) if tool is not None else None,
+                source=clean_label(source),
+                caller=caller,
+                ids=(),
+                spans=0,
+                allowed=found.allowed,
+            )
         return text
     source = clean_label(source)
     tool = clean_label(tool) if tool is not None else None
@@ -358,11 +405,26 @@ def redact_text(text: str, *, source: str, tool: str | None = None, caller: str 
         source,
         f" via {tool}" if tool else "",
     )
-    _audit(tool=tool, source=source, caller=caller, ids=found.ids, spans=found.spans)
+    _audit(
+        tool=tool,
+        source=source,
+        caller=caller,
+        ids=found.ids,
+        spans=found.spans,
+        allowed=found.allowed,
+    )
     return found.text
 
 
-def _audit(*, tool: str | None, source: str, caller: str, ids: tuple[str, ...], spans: int) -> None:
+def _audit(
+    *,
+    tool: str | None,
+    source: str,
+    caller: str,
+    ids: tuple[str, ...],
+    spans: int,
+    allowed: tuple[str, ...] = (),
+) -> None:
     """One ledger row, in the shape the floor hook writes. Never raises."""
     try:
         from iris_harness.foundation.observability.session_log import current_session_id
@@ -376,6 +438,8 @@ def _audit(*, tool: str | None, source: str, caller: str, ids: tuple[str, ...], 
             "marked": False,
             "caller": caller,
         }
+        if allowed:
+            payload["allowed"] = sorted(allowed)
         session_id = current_session_id()
         if session_id is not None:
             payload["session_id"] = session_id
@@ -385,9 +449,13 @@ def _audit(*, tool: str | None, source: str, caller: str, ids: tuple[str, ...], 
             agent_type="core",
             hook_point="post_tool_use",
             plugin="external_content_floor",
-            decision="transform",
-            severity="warn",
-            reason=f"external_content_floor: redacted {spans} instruction-like span(s)",
+            decision="transform" if spans else "allow",
+            severity="warn" if spans else "info",
+            reason=(
+                f"external_content_floor: redacted {spans} instruction-like span(s)"
+                if spans
+                else "external_content_floor: kept text the owner's allow-list covers"
+            ),
             payload=payload,
         )
     except Exception:  # noqa: BLE001 - an audit write never breaks the caller
@@ -418,16 +486,19 @@ def wrap(text: str, *, source: str, tool: str) -> str:
     )
 
 
-def wrap_scanned(text: str, *, source: str, tool: str) -> str:
+def wrap_scanned(text: str, *, source: str, tool: str, allow: frozenset[str] = frozenset()) -> str:
     """``text`` with instruction-like spans redacted, inside the envelope, wrapped once.
 
     The one implementation behind ``sdk.content.wrap_external_content`` and
     ``ToolResult.for_model``: text that already carries an envelope is unwrapped first,
     scanned again and wrapped once more, so the result has ONE envelope whose ``source``
     and ``tool`` are the ones given (an envelope's own claimed source never survives).
+    ``allow`` is the owner's allowed pattern ids (``external_content_allow``), passed only by
+    a caller whose scope the harness stamped (``for_model``); the SDK's helper, whose label a
+    plugin chooses, never passes it.
     """
     bare = unwrap(text) if text.lstrip().startswith(f"<{ENVELOPE_TAG} ") else text
-    return wrap(scan(bare).text, source=source, tool=tool)
+    return wrap(scan(bare, allow=allow).text, source=source, tool=tool)
 
 
 def unwrap(text: str) -> str:
@@ -449,10 +520,12 @@ __all__ = [
     "EXTERNAL_CONTENT_FLOOR_FLAG",
     "MARKER",
     "MAX_REDACTIONS",
+    "REDACTION_NOTICE",
     "SHORT_MARKER",
     "PATTERNS",
     "FloorPattern",
     "ScanResult",
+    "add_redaction_notice",
     "clean_label",
     "floor_enabled",
     "redact_text",

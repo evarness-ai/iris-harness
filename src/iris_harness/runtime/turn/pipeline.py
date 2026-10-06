@@ -25,6 +25,7 @@ from iris_harness.runtime.turn.stages import (
     execute,
     guard,
     intercept,
+    notice,
     opener,
     plan,
     record,
@@ -52,6 +53,7 @@ STAGES: tuple[tuple[str, Stage], ...] = (
     ("execute", execute.run),
     ("curate", curate.run),
     ("guard", guard.run),
+    ("notice", notice.run),
     ("record", record.run),
 )
 
@@ -73,6 +75,7 @@ STAGE_AUDIENCE: dict[str, str] = {
     "execute": "generated",
     "curate": "generated",
     "guard": "handled",
+    "notice": "all",
     "record": "all",
 }
 
@@ -125,6 +128,7 @@ STAGE_AGENTS: dict[str, str] = {
     "execute": "agent_executor",
     "curate": "response_curator",
     "guard": "governance",
+    "notice": "governance",
     "record": "turn_capture",
 }
 

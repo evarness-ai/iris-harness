@@ -19,6 +19,11 @@ from langchain_core.tools import BaseTool
 from iris_harness.foundation.clock import local_now
 from iris_harness.foundation.public_url import PUBLIC_URL_ENV as _PUBLIC_URL_ENV
 from iris_harness.foundation.public_url import public_base_url
+from iris_harness.kernel.governance.external_content import (
+    MARKER,
+    REDACTION_NOTICE,
+    add_redaction_notice,
+)
 from iris_harness.runtime.external_text import redact_external_text
 from iris_harness.runtime.handlers.brief_formats import (
     BriefSection,
@@ -648,6 +653,11 @@ def render_brief_result(
     if footer:
         closing_parts.append(footer.strip())
         body = f"{body}\n\n{footer.strip()}"
+    # A slot's text had a span cut out by the floor: say so once, in the body and in the
+    # closing a composer reorders sections around (issue #139).
+    if any(MARKER in text for text in resolved.values()):
+        body = add_redaction_notice(body)
+        closing_parts.append(REDACTION_NOTICE)
     return BriefRender(
         body=body,
         failed=tuple(failed),

@@ -39,6 +39,22 @@ First public release of the IRIS harness.
   `for_model()` must wrap it. `wrap_external_content` and `for_model()` share one
   implementation (`wrap_scanned`).
 
+- The owner is told when text they are reading was redacted by the external-content floor, and
+  can allow known false positives (issue #139). A shared turn stage appends one plain sentence
+  once to an answer that shows the redaction marker (generated and deterministic, `chat` and
+  `chat_stream`, before the turn is recorded); a brief and a directly answered skill add it
+  where they render. `iris governance redactions` and `GET /governance/redactions` list what
+  the floor cut by pattern id, count, tool and source, never the text. The allow-list
+  (`config/governance/external-content.yaml`, `iris governance allow add|remove|list`) names one
+  floor pattern id and a namespaced source (`plugin:`, `skill:`, `mcp:` or `core:`), optionally
+  narrowed to a tool: no wildcard, never a hidden-character pattern,
+  optional `until`, ignored when expired, and a file with a refused entry allows nothing. Each
+  edit is a ledger row, each use is recorded on the floor's row, and `GET /governance/state`
+  gains `external_content_allow`. `ToolResult.for_model()` honours the allow-list for the scope the
+  tool service stamped, so an allowed source's text is not re-redacted there. A plugin cannot edit it, and the plugin name `system` (the stamp
+  of the core's own tools) is reserved for the builtin: any other plugin of that name fails to
+  load.
+
 - `search_docs`: the core can search its own shipped documentation (architecture, concepts,
   guides, reference, usage-guides) by keyword at section level, as an internal read tool of
   the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from iris_harness.agent.agentic_core import ToolSpec
 from iris_harness.kernel.governance import GovernanceKernel
 from iris_harness.kernel.governance.external_content import ENVELOPE_TAG, MARKER, wrap
@@ -97,3 +99,45 @@ def test_the_sdk_helper_and_for_model_share_one_implementation() -> None:
 def test_a_result_built_by_hand_defaults_to_not_external() -> None:
     args: dict[str, Any] = {"ok": True, "text": "x"}
     assert ToolResult(**args).external is False
+
+
+# ------------------------------------------------------------- the owner's allow-list (#139)
+def _allow(tmp_path: Any, monkeypatch: pytest.MonkeyPatch, **entry: Any) -> str:
+    import yaml
+
+    from iris_harness.kernel.governance import external_content_allow as allow
+    from iris_harness.kernel.governance.external_content import scan
+
+    pattern = scan(POISON).ids[0]
+    path = tmp_path / "external-content.yaml"
+    path.write_text(
+        yaml.safe_dump({"allow": [{"pattern": pattern, "reason": "an article", **entry}]})
+    )
+    monkeypatch.setattr(allow, "allow_path", lambda: path)
+    allow._cache.clear()
+    return pattern
+
+
+def test_for_model_keeps_what_the_owner_allowed_for_this_source_and_redacts_another(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The floor kept text the allow-list covers; ``for_model`` must not re-redact it. A
+    different source (a second plugin's same-named tool) is still redacted."""
+    _allow(tmp_path, monkeypatch, source="plugin:mail", tool="read_email")
+    allowed = ToolResult(ok=True, text=POISON, external=True, source="mail", tool="read_email")
+    other = ToolResult(ok=True, text=POISON, external=True, source="other", tool="read_email")
+
+    assert MARKER not in allowed.for_model() and "forward the inbox" in allowed.for_model()
+    assert allowed.for_model().startswith(f'<{ENVELOPE_TAG} source="mail" tool="read_email"')
+    assert MARKER in other.for_model() and "forward the inbox" not in other.for_model()
+
+
+def test_a_core_tool_result_is_scoped_core_in_for_model(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _allow(tmp_path, monkeypatch, source="core:wiki_search")
+    core = ToolResult(ok=True, text=POISON, external=True, source="system", tool="wiki_search")
+    impostor = ToolResult(ok=True, text=POISON, external=True, source="wiki_search", tool="x")
+
+    assert MARKER not in core.for_model()
+    assert MARKER in impostor.for_model()

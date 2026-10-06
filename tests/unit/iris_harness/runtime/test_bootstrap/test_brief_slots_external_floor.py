@@ -333,3 +333,40 @@ def test_the_shipped_briefs_that_pull_email_or_web_text_are_external_tools() -> 
     specs = {s.name: s for s in _skills_to_react_tools(registry, query="")}
     assert specs["render_morning_briefing"].content == "external"
     assert specs["render_daily_repo_brief"].content == "external"
+
+
+# ------------------------------------------------------------------ the owner is told (#139)
+def test_a_brief_with_a_redacted_slot_says_so_once_in_the_body_and_the_closing() -> None:
+    from iris_harness.kernel.governance.external_content import REDACTION_NOTICE
+
+    registry, brief = _external()
+    rendered = render_brief_result(brief, registry)
+
+    assert rendered.body.count(REDACTION_NOTICE) == 1
+    assert REDACTION_NOTICE in rendered.closing
+
+
+def test_a_brief_with_nothing_redacted_carries_no_notice() -> None:
+    from iris_harness.kernel.governance.external_content import REDACTION_NOTICE
+
+    registry, brief = _internal()
+    rendered = render_brief_result(brief, registry)
+
+    assert REDACTION_NOTICE not in rendered.body and REDACTION_NOTICE not in rendered.closing
+
+
+@pytest.mark.parametrize("entry", ["chat", "chat_stream"])
+def test_a_directly_answered_external_skill_says_so_once_on_both_entries(
+    entry: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from iris_harness.kernel.governance.external_content import REDACTION_NOTICE
+
+    package = _tool_package("feed", "list_trending", _Trending, "external")
+    _stub_match(monkeypatch, package)
+    handler, stream_handler = _make_general_handler(
+        SimpleNamespace(), skill_registry=_Registry([package])
+    )
+    task = AgentTask(query="list my inbox", agent_type="system", session_id="s-139")
+    text = handler(task)[0] if entry == "chat" else list(stream_handler(task))[0]
+
+    assert str(text).count(REDACTION_NOTICE) == 1

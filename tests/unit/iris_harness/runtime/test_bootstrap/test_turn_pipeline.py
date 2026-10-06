@@ -34,6 +34,7 @@ def test_stage_order_is_the_design() -> None:
         "execute",
         "curate",
         "guard",
+        "notice",
         "record",
     ]
 

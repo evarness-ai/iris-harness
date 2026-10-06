@@ -1,6 +1,6 @@
 """The stages of a turn, one module each (OSS plan decision 9).
 
-    screen → intercept → classify → resolve → route → plan → execute → curate → guard → record
+    screen → intercept → classify → resolve → route → plan → execute → curate → guard → notice → record
 
 Each stage serves some turns (``pipeline.STAGE_AUDIENCE``): a deterministic handler's
 answer skips the model path and goes to ``guard`` and ``record``; nothing breaks out.

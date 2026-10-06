@@ -34,9 +34,11 @@ external result to a model itself marks it with ``external_content.wrap``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any
 
 from iris_harness.kernel.governance.external_content import clean_label, scan, wrap
+from iris_harness.kernel.governance.external_content_allow import allowed_ids, scope_source
 from iris_harness.kernel.governance.hooks.tool_payload import (
     RESULT,
     TOOL_ERROR,
@@ -75,10 +77,13 @@ class ExternalContentFloorHook:
         source = _source(ctx.payload, tool)
         # Labels reach the log and the audit row: an MCP-supplied tool name must not carry a newline.
         audit: dict[str, Any] = {"tool": clean_label(tool), "source": clean_label(source)}
+        # The patterns the owner allowed for this call's scope (issue #139): the namespaced
+        # source the harness stamped (never a name a plugin chose), and the tool.
+        allow = allowed_ids(scope_source(ctx.payload.get(TOOL_PLUGIN), tool), tool)
 
         fields = ctx.payload.get("fields")
         if isinstance(fields, dict) and fields:
-            return self._typed(ctx, fields, audit)
+            return self._typed(ctx, fields, audit, allow)
 
         result = result_of(ctx.payload)
         caller = ctx.metadata.get("caller")
@@ -87,26 +92,33 @@ class ExternalContentFloorHook:
             isinstance(caller, str) and caller.startswith(_CODE_CALLERS)
         )
         if isinstance(result, str):
-            return self._text(ctx, result, audit, wrap_it=wrapped)
+            return self._text(ctx, result, audit, wrap_it=wrapped, allow=allow)
         if isinstance(result, (dict, list)):
-            return self._structured(ctx, result, audit, wrap_it=wrapped)
+            return self._structured(ctx, result, audit, wrap_it=wrapped, allow=allow)
         return HookDecision(outcome="allow", reason="external_content_floor: no text result")
 
     # -- a capability result: typed fields, redacted field by field ------------------------
     def _typed(
-        self, ctx: HookContext, fields: dict[Any, Any], audit: dict[str, Any]
+        self,
+        ctx: HookContext,
+        fields: dict[Any, Any],
+        audit: dict[str, Any],
+        allow: frozenset[str],
     ) -> HookDecision:
         new_fields: dict[Any, Any] = {}
         ids: list[str] = []
+        used: list[str] = []
         spans = 0
         for path, text in fields.items():
             if not isinstance(text, str):
                 new_fields[path] = text
                 continue
-            found = scan(text)
+            found = scan(text, allow=allow)
             new_fields[path] = found.text
             spans += found.spans
             ids.extend(i for i in found.ids if i not in ids)
+            used.extend(i for i in found.allowed if i not in used)
+        audit = _with_allowed(audit, used)
         if spans == 0:
             return HookDecision(
                 outcome="allow",
@@ -119,11 +131,18 @@ class ExternalContentFloorHook:
 
     # -- a tool's text result --------------------------------------------------------------
     def _text(
-        self, ctx: HookContext, text: str, audit: dict[str, Any], *, wrap_it: bool
+        self,
+        ctx: HookContext,
+        text: str,
+        audit: dict[str, Any],
+        *,
+        wrap_it: bool,
+        allow: frozenset[str],
     ) -> HookDecision:
         if not text.strip():
             return HookDecision(outcome="allow", reason="external_content_floor: no text")
-        found = scan(text)
+        found = scan(text, allow=allow)
+        audit = _with_allowed(audit, found.allowed)
         out = (
             wrap(found.text, source=audit["source"], tool=audit["tool"]) if wrap_it else found.text
         )
@@ -145,9 +164,16 @@ class ExternalContentFloorHook:
 
     # -- an MCP bridge result: structured, its text parts are what a model reads ------------
     def _structured(
-        self, ctx: HookContext, result: Any, audit: dict[str, Any], *, wrap_it: bool
+        self,
+        ctx: HookContext,
+        result: Any,
+        audit: dict[str, Any],
+        *,
+        wrap_it: bool,
+        allow: frozenset[str],
     ) -> HookDecision:
         ids: list[str] = []
+        used: list[str] = []
         spans = 0
         wrapped_any = False
 
@@ -156,9 +182,10 @@ class ExternalContentFloorHook:
             if isinstance(node, str):
                 if not node.strip():
                     return node
-                found = scan(node)
+                found = scan(node, allow=allow)
                 spans += found.spans
                 ids.extend(i for i in found.ids if i not in ids)
+                used.extend(i for i in found.allowed if i not in used)
                 text = found.text
                 # The text of an MCP content item (``{"type": "text", "text": ...}``), or of a
                 # server that answers in a bare ``content`` / ``result`` field, is what a model
@@ -176,6 +203,7 @@ class ExternalContentFloorHook:
             return node
 
         new_result = walk(result, None, None)
+        audit = _with_allowed(audit, used)
         if spans == 0 and not wrapped_any:
             return HookDecision(
                 outcome="allow",
@@ -191,6 +219,11 @@ class ExternalContentFloorHook:
             transformed_payload=payload,
             audit_metadata={**audit, "marked": True, "spans": 0},
         )
+
+
+def _with_allowed(audit: dict[str, Any], used: Sequence[str]) -> dict[str, Any]:
+    """``audit`` with the allow-listed pattern ids that matched and were kept, when any did."""
+    return {**audit, "allowed": sorted(used)} if used else audit
 
 
 def _redacted(

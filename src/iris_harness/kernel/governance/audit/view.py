@@ -65,4 +65,44 @@ def audit_view(
     }
 
 
-__all__ = ["MAX_LIMIT", "audit_entry", "audit_view"]
+#: The plugin name the floor's rows carry (``ExternalContentFloorHook.name``).
+FLOOR_PLUGIN = "external_content_floor"
+
+
+def redaction_view(log: AuditLog, *, limit: int = 100) -> dict[str, Any]:
+    """What the external-content floor redacted or the owner's allow-list kept, newest first.
+
+    One entry per ledger row of the floor that cut a span (``patterns``) or kept an allowed
+    match (``allowed``): when, the tool and source, the pattern ids and the span count, who
+    called, and which turn (``session_id``). Ids and counts only: the ledger never holds the
+    text, and neither does this view (issue #139).
+    """
+    import json
+
+    capped = max(1, min(limit, MAX_LIMIT))
+    entries: list[dict[str, Any]] = []
+    for row in reversed(log.query(plugin=FLOOR_PLUGIN)):
+        try:
+            payload = json.loads(row.payload_json)
+        except ValueError:
+            continue
+        if not isinstance(payload, dict) or not (payload.get("patterns") or payload.get("allowed")):
+            continue
+        entries.append(
+            {
+                "ts": row.ts,
+                "tool": payload.get("tool"),
+                "source": payload.get("source"),
+                "patterns": list(payload.get("patterns") or []),
+                "spans": payload.get("spans", 0),
+                "allowed": list(payload.get("allowed") or []),
+                "caller": payload.get("caller"),
+                "session_id": payload.get("session_id"),
+            }
+        )
+        if len(entries) >= capped:
+            break
+    return {"count": len(entries), "audit_db": str(log.db_path), "entries": entries}
+
+
+__all__ = ["FLOOR_PLUGIN", "MAX_LIMIT", "audit_entry", "audit_view", "redaction_view"]

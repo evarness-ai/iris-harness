@@ -31,7 +31,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from iris_harness.foundation.process_state import track_globals
 
@@ -71,13 +71,18 @@ class IngestSource(Protocol):
         """Record that RAG indexed ``doc``. Never raises into the ingest."""
 
 
+#: Why RAG stopped holding a file. A closed set on purpose: widening it later is
+#: compatible, narrowing it would break every source that matched on a value.
+RemovalReason = Literal["denied", "removed"]
+
+
 @dataclass(frozen=True)
 class RemovedDocument:
     """One file RAG no longer holds, as the file domain needs to see it."""
 
     path: Path
     source_id: str  # RAG's id for this source, the one ``IndexedDocument`` carried
-    reason: str  # "denied" (ingest refused it) | "removed" (the owner removed it)
+    reason: RemovalReason  # "denied" (ingest refused it) | "removed" (the owner removed it)
     classification: str | None = None  # the label that caused a denial ("secret"), else None
 
 
@@ -94,7 +99,7 @@ def report_removed(
     path: Path,
     *,
     source_id: str,
-    reason: str,
+    reason: RemovalReason,
     classification: str | None = None,
 ) -> None:
     """Tell the file domain RAG no longer holds ``path``. Advisory: never raises.
@@ -137,6 +142,7 @@ __all__ = [
     "IngestSource",
     "KnownFile",
     "RemovalAwareIngestSource",
+    "RemovalReason",
     "RemovedDocument",
     "current_ingest_source",
     "register_ingest_source",

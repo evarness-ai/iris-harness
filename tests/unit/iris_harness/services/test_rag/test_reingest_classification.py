@@ -366,3 +366,79 @@ def test_a_source_that_raises_on_removal_never_breaks_ingest(
     result = sync_all(store=store, index=None, source=Raising())
 
     assert result.sources_denied == 1 and store.list_sources() == []
+
+
+# ─── the gate's own denials of an already-indexed file (review of PR 128) ─────────────
+
+
+def _approved_then_relabelled_secret(
+    f: Path, store: DocumentStore, index: object | None = None
+) -> tuple[object, RemovalSource]:
+    """Index ``f``, approve a re-ingest, then have the file domain relabel it secret."""
+    _gated(f, _PUBLIC_TEXT, store)
+    proposal = propose_rag_ingest(f)
+    source = RemovalSource()
+    source.known[f.resolve()] = KnownFile(classification="secret")
+    return proposal, source
+
+
+def test_gate_scan_denial_of_an_indexed_file_drops_its_chunks_and_tells_the_domain(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    """The byte-scan denial in ``execute_rag_ingest`` is not only the never-indexed case.
+
+    A file RAG already holds can reach it (the domain now says secret); it raised before
+    ``ingest_path``, so the old chunks stayed searchable and the catalog kept "indexed".
+    """
+    from iris_harness.services.rag.ingest_gate import IngestDeniedError
+
+    f = tmp_path / "notes.md"
+    proposal, source = _approved_then_relabelled_secret(f, store)
+    assert store.count_chunks(_source_id(f.resolve())) > 0
+
+    with pytest.raises(IngestDeniedError, match="now scans as secret"):
+        execute_rag_ingest(proposal, store=store, index=None, source=source)  # type: ignore[arg-type]
+
+    assert store.get_source(_source_id(f.resolve())) is None
+    assert search_documents("mitochondria", store=store, index=None) == []
+    assert [(d.path, d.reason, d.classification) for d in source.removed] == [
+        (f.resolve(), "denied", "secret")
+    ]
+    assert source.removed[0].source_id == _source_id(f.resolve())
+
+
+def test_gate_scan_denial_of_a_never_indexed_file_still_tells_the_domain(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    """Same as ``ingest_path``'s denial: the catalog may hold what RAG never did."""
+    from iris_harness.services.rag.ingest_gate import IngestDeniedError
+
+    f = tmp_path / "notes.md"
+    f.write_text(_PUBLIC_TEXT)
+    proposal = propose_rag_ingest(f)
+    source = RemovalSource()
+    source.known[f.resolve()] = KnownFile(classification="secret")
+
+    with pytest.raises(IngestDeniedError):
+        execute_rag_ingest(proposal, store=store, index=None, source=source)
+
+    assert [d.reason for d in source.removed] == ["denied"]
+
+
+def test_gate_changed_since_approved_leaves_the_held_document_alone(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    """A TOCTOU refusal says nothing about the held (approved) content: it stays, unreported."""
+    from iris_harness.services.rag.ingest_gate import IngestDeniedError
+
+    f = tmp_path / "notes.md"
+    _gated(f, _PUBLIC_TEXT, store)
+    proposal = propose_rag_ingest(f)
+    _edit(f, _PUBLIC_EDIT)
+    source = RemovalSource()
+
+    with pytest.raises(IngestDeniedError, match="changed since"):
+        execute_rag_ingest(proposal, store=store, index=None, source=source)
+
+    assert store.count_chunks(_source_id(f.resolve())) > 0
+    assert source.removed == []

@@ -7,8 +7,9 @@ no), the owner approves, and `execute_rag_ingest` runs it and returns an
 `IngestResult`.
 
 A plugin that owns where documents come from registers an `IngestSource` (the files
-it knows, as `KnownFile` / `IndexedDocument`; one that also implements `record_removed` is told when
-RAG denies or drops a file, as `RemovedDocument`) with `register_ingest_source`, and a
+it knows, as `KnownFile` / `IndexedDocument`; one that also implements `record_removed` is
+told when RAG denies or drops a file, as `RemovedDocument`, whose `reason` is `"denied"` or
+`"removed"`) with `register_ingest_source`, and a
 `DocumentCatalog` (what the owner sees listed, as `RagDocument`) with
 `register_document_catalog`.
 """

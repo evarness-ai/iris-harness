@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from iris_harness.services.rag.index import DocumentIndex
-from iris_harness.services.rag.ingest import ingest_path
+from iris_harness.services.rag.ingest import deny_secret_source, ingest_path
 from iris_harness.services.rag.ingest_source import IngestSource
 from iris_harness.services.rag.models import IngestResult
 from iris_harness.services.rag.sensitivity import classify, ratchet
@@ -129,6 +129,11 @@ def execute_rag_ingest(
     classification, _ = classify(resolved, source)
     classification = ratchet(classification, proposal.classification)
     if classification == "secret":
+        # The same denial ingest_path makes: a file RAG already holds must not stay
+        # searchable (or "indexed" in the domain's catalog) once it scans as secret.
+        deny_secret_source(
+            resolved, store=store, index=index, source=source, classification=classification
+        )
         raise IngestDeniedError(
             f"denied: {resolved.name} now scans as secret — {_VAULT_REFUSAL_MESSAGE}"
         )

@@ -19,6 +19,7 @@ from iris_harness.foundation.auth import auth_headers
 from iris_harness.server.iris_api import memory_routes
 from iris_harness.server.iris_api.main import create_app
 from iris_harness.services.rag.documents import (
+    RagDocument,
     register_document_catalog,
     registered_document_catalog,
 )
@@ -347,3 +348,49 @@ def test_delete_is_reported_to_the_source(client: TestClient) -> None:
     assert client.delete(f"/rag/documents/{up['document']['file_id']}").status_code == 200
 
     assert [(d.path.name, d.reason) for d in rec.removed] == [("temp.md", "removed")]
+
+
+class _OneDocumentCatalog:
+    """A file domain's catalog that lists a document RAG's own store never held."""
+
+    def __init__(self, doc: RagDocument) -> None:
+        self.doc = doc
+        self.forgotten: list[str] = []
+
+    def list_documents(self) -> list[RagDocument]:
+        return [self.doc]
+
+    def get_document(self, file_id: str) -> RagDocument | None:
+        return self.doc if file_id == self.doc.file_id else None
+
+    def forget_document(self, file_id: str) -> None:
+        self.forgotten.append(file_id)
+
+
+def test_delete_of_a_catalog_only_document_is_reported_like_a_denial_would_be(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """RAG's store holds nothing for it, but the catalog listed it: tell the source anyway."""
+    path = tmp_path / "elsewhere" / "held.md"
+    doc = RagDocument(
+        file_id="rag_abc",
+        filename="held.md",
+        kind="file",
+        classification=None,
+        byte_size=None,
+        location_tier=None,
+        storage_path=str(path),
+        created_at="",
+        updated_at="",
+    )
+    catalog = _OneDocumentCatalog(doc)
+    register_document_catalog(catalog)  # the fixture restores the previous catalog
+    rec = _RemovalRecorder()
+    register_ingest_source(rec)
+
+    assert client.delete("/rag/documents/rag_abc").status_code == 200
+
+    assert catalog.forgotten == ["rag_abc"]
+    assert [(d.path, d.reason, d.source_id) for d in rec.removed] == [
+        (path, "removed", _source_id(path.resolve()))
+    ]

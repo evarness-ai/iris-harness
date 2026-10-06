@@ -170,6 +170,32 @@ def _default_kind(file: Path) -> SourceKind:
     return "file"
 
 
+def deny_secret_source(
+    file: Path,
+    *,
+    store: DocumentStore,
+    index: DocumentIndex | None,
+    source: IngestSource | None,
+    classification: str,
+) -> None:
+    """The one denial: ``file`` classifies secret, so RAG must not hold any of it.
+
+    Removes any earlier chunks and tells the file domain, even with no earlier RAG
+    record: its own catalog may still say "indexed" (or carry a lower label) for what
+    RAG now refuses. Used by ``ingest_path`` and by the ingest gate's own denials, so
+    a denial means the same thing whichever of them reaches it.
+    """
+    logger.warning(
+        "rag: %s classifies secret; not indexed (secret documents never enter RAG)", file
+    )
+    sid = _source_id(file)
+    if store.get_source(sid) is not None:
+        store.delete_source(sid)
+        if index is not None:
+            index.delete_source(sid)
+    report_removed(source, file, source_id=sid, reason="denied", classification=classification)
+
+
 def ingest_path(
     path: str | Path,
     *,
@@ -255,18 +281,12 @@ def ingest_path(
             existing.classification if existing is not None else None, scanned, classification
         )
         if file_classification == "secret":
-            logger.warning(
-                "rag: %s classifies secret; not indexed (secret documents never enter RAG)",
+            deny_secret_source(
                 file,
-            )
-            if existing is not None:
-                store.delete_source(sid)
-                if index is not None:
-                    index.delete_source(sid)
-            # Tell the file domain even with no earlier RAG record: its own catalog may
-            # still say "indexed" (or carry a lower label) for what RAG now refuses.
-            report_removed(
-                source, file, source_id=sid, reason="denied", classification=file_classification
+                store=store,
+                index=index,
+                source=source,
+                classification=file_classification,
             )
             denied += 1
             continue

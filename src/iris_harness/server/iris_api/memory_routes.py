@@ -73,7 +73,7 @@ from iris_harness.runtime import IrisRuntime
 from iris_harness.server.iris_api.runtime_access import runtime_or_503 as _runtime_or_503
 from iris_harness.services.rag.documents import DocumentCatalog, document_catalog
 from iris_harness.services.rag.index import DocumentIndex
-from iris_harness.services.rag.ingest import ingest_path
+from iris_harness.services.rag.ingest import _source_id, ingest_path
 from iris_harness.services.rag.ingest_source import current_ingest_source, report_removed
 from iris_harness.services.rag.retrieve import search_documents
 from iris_harness.services.rag.store import DocumentStore
@@ -1132,9 +1132,14 @@ def install_memory_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
         if source is not None:
             index.delete_source(source.id)
             store.delete_source(source.id)
-            report_removed(
-                current_ingest_source(), Path(path), source_id=source.id, reason="removed"
-            )
+        # Tell the file domain even when RAG's own store held nothing: its catalog listed
+        # this document, so it may still say "indexed" (the same rule ingest's denial follows).
+        report_removed(
+            current_ingest_source(),
+            Path(path),
+            source_id=source.id if source is not None else _source_id(Path(path).resolve()),
+            reason="removed",
+        )
         catalog.forget_document(file_id)
 
         # ADR-0067: only unlink on-disk bytes IRIS itself created (uploads under

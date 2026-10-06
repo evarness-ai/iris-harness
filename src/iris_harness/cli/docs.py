@@ -83,18 +83,26 @@ def cmd_sync() -> None:
 
 
 @docs_app.command("reindex")
-def cmd_reindex() -> None:
+def cmd_reindex(
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force", help="Rebuild even if the chunk store is empty (empties the index)."
+        ),
+    ] = False,
+) -> None:
     """Rebuild the vector index from the stored chunks (after a lost or damaged index).
 
     Reads no source file: the chunk store is canonical, the vector index only mirrors it.
     `sync` cannot do this, since it skips files that have not changed.
+    Refuses when the store is empty but the index is not, unless --force.
     """
     from iris_harness.services.rag.ingest import reindex_all
 
     store, index = _store_and_index()
     try:
-        count = reindex_all(store=store, index=index)  # type: ignore[arg-type]
-    except RuntimeError as exc:
+        count = reindex_all(store=store, index=index, force=force)  # type: ignore[arg-type]
+    except Exception as exc:
         print_error(str(exc))
         raise typer.Exit(1) from exc
     console.print(f"  [bold green]✓[/bold green]  rebuilt the vector index: {count} chunk(s)")

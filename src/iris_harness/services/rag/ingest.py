@@ -364,7 +364,11 @@ def sync_all(
     )
 
 
-def reindex_all(*, store: DocumentStore, index: DocumentIndex) -> int:
+class EmptyStoreRefused(RuntimeError):
+    """A rebuild would wipe a populated index because the store has no chunks."""
+
+
+def reindex_all(*, store: DocumentStore, index: DocumentIndex, force: bool = False) -> int:
     """Rebuild the vector index from the store's chunks; return how many were indexed.
 
     The repair for a lost, corrupted or drifted ``chroma_docs``: the store holds the
@@ -372,9 +376,24 @@ def reindex_all(*, store: DocumentStore, index: DocumentIndex) -> int:
     ``sync_all`` cannot do this job, because it skips every file whose mtime or content
     hash is unchanged and so never re-populates an empty index. Reads no source file.
     Raises ``RuntimeError`` when the index is unavailable (nothing to rebuild into).
+
+    Safety rule: a rebuild makes the index equal to the store, so an empty store (a wrong
+    ``IRIS_DATA_DIR``, a fresh or lost ``rag.db``) would delete every vector. When the
+    store has zero chunks but the index does not, raises ``EmptyStoreRefused`` unless
+    ``force=True``. The rule lives here so every caller (CLI, SDK, API) gets it.
+
+    Race: a chunk a running server ingests while the rebuild runs can be absent from the
+    snapshot and so be dropped from the index until the next ``sync``; see
+    ``docs/architecture/memory-subsystem.md``.
     """
     if not index.is_ready:
         raise RuntimeError("document index unavailable; cannot rebuild it")
+    if not force and store.count_all_chunks() == 0 and index.count() > 0:
+        raise EmptyStoreRefused(
+            f"the chunk store is empty but the index holds {index.count()} entries; a rebuild "
+            "would delete them all. Check IRIS_DATA_DIR points at the right rag.db, or "
+            "re-run with --force to empty the index deliberately"
+        )
     return index.rebuild(store.iter_chunks())
 
 
@@ -383,6 +402,7 @@ __all__ = [
     "ingest_path",
     "sync_all",
     "reindex_all",
+    "EmptyStoreRefused",
     "TEXT_SUFFIXES",
     "PDF_SUFFIXES",
     "IMAGE_SUFFIXES",

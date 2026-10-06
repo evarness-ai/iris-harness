@@ -182,13 +182,24 @@ class DocumentStore:
     def iter_chunks(self) -> Iterable[DocumentChunk]:
         """Every stored chunk, in a stable order (source, then position).
 
-        The canonical chunk set the vector index is rebuilt from.
+        The canonical chunk set the vector index is rebuilt from. The rows are read in
+        one ``fetchall()`` and the connection is closed before the first chunk is
+        yielded; only the row-to-chunk conversion is lazy. That is deliberate: a cursor
+        held open for a rebuild would keep a read transaction on ``rag.db`` across every
+        embedding upsert (slow), which can block a running server's writes. Memory cost
+        is one row per chunk (text only, no vectors), which is small next to the index.
         """
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT * FROM document_chunks ORDER BY source_id, chunk_index"
             ).fetchall()
         return (_row_to_chunk(r) for r in rows)
+
+    def count_all_chunks(self) -> int:
+        """Total number of stored chunks across every source."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM document_chunks").fetchone()
+        return int(row["n"])
 
     def count_chunks(self, source_id: str) -> int:
         with self._connect() as conn:

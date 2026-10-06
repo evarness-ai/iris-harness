@@ -29,6 +29,10 @@ class DocumentSource:
     tags: tuple[str, ...] = field(default_factory=tuple)
     links: tuple[str, ...] = field(default_factory=tuple)  # outgoing [[wikilinks]]
     mtime: float = 0.0  # filesystem mtime at last sync (incremental skip)
+    # Sensitivity of the source (FMX8), kept per source so it outlives any one set of
+    # chunks (an empty re-ingest keeps it). Every ingest sets it; None = a source
+    # indexed before classification existed, labelled on its next sync.
+    classification: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,9 +46,8 @@ class DocumentChunk:
     chunk_index: int
     text: str
     page: int | None = None  # 1-based page number for PDF sources
-    # Sensitivity of the source document at ingest time (FMX8). None = legacy
-    # chunk ingested before classification threading; downstream egress gating
-    # treats it as unclassified.
+    # The source's sensitivity at ingest time (FMX8). None = legacy chunk ingested
+    # before classification; downstream egress gating treats it as unclassified.
     classification: str | None = None
 
 
@@ -81,12 +84,21 @@ class IngestResult:
     sources_skipped: int = 0
     chunks_indexed: int = 0
     paths: tuple[str, ...] = field(default_factory=tuple)
+    # Files that classified secret: not indexed, and any earlier chunks of theirs
+    # removed (secret content never enters RAG).
+    sources_denied: int = 0
 
     def summary(self) -> str:
-        return (
+        text = (
             f"{self.sources_added} added, {self.sources_updated} updated, "
             f"{self.sources_skipped} unchanged; {self.chunks_indexed} chunk(s) indexed"
         )
+        if self.sources_denied:
+            text += (
+                f"; {self.sources_denied} refused: classified secret "
+                "(secret documents never enter RAG; use the vault)"
+            )
+        return text
 
 
 __all__ = [

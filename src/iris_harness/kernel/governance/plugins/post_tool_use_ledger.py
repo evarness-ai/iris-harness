@@ -29,7 +29,18 @@ Which probe verifies it, in order:
 3. No probe: ``run_probe`` answers ``ambiguous``, so resume asks the owner to approve
    before the call is retried.
 
-The hook always returns ``allow`` — it is an observer, not a gatekeeper.
+A high-risk call (``pre_tool_use_ledger``) already has its row, written before it ran: this
+hook then *settles* that row instead of inserting -- ``completed`` when the tool returned,
+``error`` when it raised (``tool_error`` metadata: the exception class name, never the
+message) -- and sets the probe and its subject when the result named the effect
+(``SideEffectLedger.finalize``). A capability stream is settled once, at its end
+(``stream_end``): ``completed``, or ``error`` when it stopped part-way (the class of what
+stopped it). This hook runs before every ``POST_TOOL_USE`` hook that can withhold a result,
+so a call whose result is then denied is still settled: it ran. The row stays ``pending``
+only if the process never got here.
+
+The hook always returns ``allow`` — it is an observer, not a gatekeeper. The call has run by
+now, so a failed write is a warning, never a refusal.
 """
 
 from __future__ import annotations
@@ -41,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 from iris_harness.kernel.governance.hooks.tool_payload import (
     TOOL_CALL_ID,
     TOOL_EFFECT,
+    TOOL_ERROR,
     TOOL_VERIFY,
     result_of,
     tool_name_of,
@@ -95,6 +107,13 @@ TOOL_PROBE_MAP: dict[str, tuple[str, str, _MetaExtractor]] = {
 }
 
 
+#: ``probe_metadata`` flag of a row written before its call ran (``pre_tool_use_ledger``).
+PRE_RECORDED = "pre_recorded"
+
+#: The ``error`` of a stream that ended part-way when no exception class was handed on.
+PARTIAL_STREAM = "PartialStream"
+
+
 def side_effect_key(run_id: str, step_id: int, tool_call_id: str | None) -> str:
     """The ledger key of one call: unique per run, step and call."""
     return f"{run_id}:{step_id}:{tool_call_id or '-'}"
@@ -140,6 +159,8 @@ class PostToolUseLedgerHook:
         tool_call_id = ctx.metadata.get(TOOL_CALL_ID)
         key = side_effect_key(ctx.run_id, step_id, str(tool_call_id) if tool_call_id else None)
         probe_name, subject, meta = self._probe_for(tool, ctx)
+        if self._written_before(key):
+            return self._settle(key, tool, probe_name, subject, meta, ctx)
         try:
             self._ledger.record(
                 side_effect_id=key,
@@ -166,6 +187,75 @@ class PostToolUseLedgerHook:
             outcome="allow",
             reason=f"post_tool_use_ledger: recorded {tool} side effect",
             audit_metadata={"side_effect_id": key, "probe": probe_name or "none"},
+        )
+
+    def _written_before(self, key: str) -> bool:
+        """Whether ``key`` is a row ``PreToolUseLedgerHook`` wrote before the call ran.
+
+        A ledger that cannot be read answers no: the insert below is then tried, as it
+        always was, and is a no-op on a key already there (``record``).
+        """
+        try:
+            row = self._ledger.get(key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "post_tool_use_ledger: could not read the ledger row %s (%s)",
+                key,
+                type(exc).__name__,
+            )
+            return False
+        return row is not None and row.probe_metadata.get(PRE_RECORDED) is True
+
+    def _settle(
+        self,
+        key: str,
+        tool: str,
+        probe_name: str,
+        subject: str | None,
+        meta: dict[str, Any],
+        ctx: HookContext,
+    ) -> HookDecision:
+        """Settle the row ``PreToolUseLedgerHook`` wrote before the call ran."""
+        if ctx.payload.get("stream_item") is not None:
+            # An item of a stream: the stream is one call, settled at its end.
+            return HookDecision(outcome="allow", reason="post_tool_use_ledger: stream item")
+        error = ctx.metadata.get(TOOL_ERROR)
+        if not (isinstance(error, str) and error) and ctx.payload.get("stream_partial") is True:
+            # A stream that stopped part-way, with no exception the runner could name.
+            error = PARTIAL_STREAM
+        status = "error" if isinstance(error, str) and error else "completed"
+        update: dict[str, Any] = {}
+        if status == "completed" and probe_name != NO_PROBE:
+            # The row was written with no probe; now the call has returned, the declared
+            # probe (subject: the row's key) or the mapped one (subject: the effect's id).
+            update = {
+                "verification_probe": probe_name,
+                "probe_metadata": {**meta, "subject": subject or key},
+            }
+        try:
+            self._ledger.finalize(
+                key,
+                status=status,
+                error=error if status == "error" else None,
+                **update,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "post_tool_use_ledger: could not settle %s for run=%s tool=%s (%s)",
+                key,
+                ctx.run_id,
+                tool,
+                type(exc).__name__,
+            )
+            return HookDecision(
+                outcome="allow",
+                reason=f"post_tool_use_ledger: could not settle {tool}",
+                severity="warn",
+            )
+        return HookDecision(
+            outcome="allow",
+            reason=f"post_tool_use_ledger: settled {tool} as {status}",
+            audit_metadata={"side_effect_id": key, "status": status},
         )
 
     @staticmethod

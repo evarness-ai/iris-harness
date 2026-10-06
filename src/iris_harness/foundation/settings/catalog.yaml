@@ -782,21 +782,25 @@ settings:
     guard_reason: Turns the secret-redaction guard on or off.
   IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER:
     kind: bool
-    default: false
+    default: true
     applies: restart
     label: Side-effect ledger
-    description: When on, the governance kernel records tool side effects in a SideEffectLedger
-      database (default ~/.local/share/iris/side_effects.db).
+    description: On by default. The governance kernel records every non-read tool call's side
+      effect in the side-effect ledger (side_effects.db in the governance data dir, $IRIS_HOME/governance
+      when IRIS_HOME is set, else ~/.local/share/iris), and writes a destructive tool's or
+      a pinned write's row before the call runs. Off, those high-risk calls are denied, since
+      none may run without a durable record.
     tab: guards
     guarded: true
-    guard_reason: Turning it off stops governance recording of side effects.
+    guard_reason: Turning it off stops governance recording of side effects and denies every
+      destructive tool and pinned write.
   IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH:
     kind: path
     default: null
     applies: restart
     label: Side-effect ledger DB path
-    description: SQLite path for the governance side-effect ledger when IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER
-      is on; unset uses the ledger's default (~/.local/share/iris/side_effects.db per docstring).
+    description: SQLite path for the governance side-effect ledger; unset uses side_effects.db
+      in the governance data dir ($IRIS_HOME/governance when IRIS_HOME is set, else ~/.local/share/iris).
     tab: none
     editable: false
     not_editable_reason: path

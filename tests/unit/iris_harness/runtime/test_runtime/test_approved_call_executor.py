@@ -37,6 +37,8 @@ from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.caller_policy import register_caller_policy
 from iris_harness.kernel.governance.plugins import DestructiveApprovalHook, ToolPolicyHook
 from iris_harness.kernel.governance.plugins.caller_policy import CallerPolicyHook
+from iris_harness.kernel.governance.side_effects import SideEffectLedger
+from iris_harness.kernel.governance.wiring import register_side_effect_ledger
 from iris_harness.runtime.harness_services import HarnessServices
 from iris_harness.runtime.plugin_host.api import PluginAPI
 from iris_harness.runtime.plugin_host.harness_topics import GuardedEventBus
@@ -66,6 +68,9 @@ class _World:
             DestructiveApprovalHook(approval_queue=self.queue),
         ):
             self.kernel.register(hook)
+        # A destructive call or pinned write runs only once its row is in the ledger (#73).
+        self.ledger = SideEffectLedger(tmp_path / "side_effects.db")
+        register_side_effect_ledger(self.kernel, self.ledger)
         self.kernel.init_lock()
         register_caller_policy(
             lambda caller, tool: "narrowed" if (caller, tool) in self.denied else None
@@ -81,6 +86,7 @@ class _World:
             self._tool("send_it", "write", "approval"),
             self._tool("wipe", "destructive", "approval"),
             self._tool("broken", "write", "once", fail=True),
+            self._tool("wipe_broken", "destructive", "approval", fail=True),
         ]
 
     def _tool(self, name: str, effect: str, confirm: str, *, fail: bool = False) -> ToolSpec:
@@ -654,3 +660,88 @@ def test_a_plugin_tool_that_raises_is_not_ok_for_a_code_caller(world: _World) ->
     assert not result.ok and not result.held
     # The caller is told the boundary's sentence, as before; only ``ok`` changed.
     assert result.text.startswith("flaky_read is unavailable (plugin 'flaky' raised RuntimeError")
+
+
+# ── the side-effect ledger's pre-execution row (issue #73) ──────────────────────
+
+
+def _rows(world: _World, approval_id: str) -> list[Any]:
+    row = world.queue.get(approval_id)
+    assert row is not None and row.run_id is not None
+    return world.ledger.list_by_run(row.run_id)
+
+
+@pytest.mark.parametrize("tool", ["send_it", "wipe"])
+def test_an_approved_high_risk_call_is_recorded_before_it_runs_and_settled(
+    world: _World, tool: str
+) -> None:
+    """ToolService's executor: a pinned write or destructive tool leaves its row first."""
+    approval_id = world.queued(tool)
+    world.approve(approval_id, executor=world.service)
+
+    assert world.ran == [(tool, {"text": "milk"})]
+    rows = _rows(world, approval_id)
+    assert [(r.tool, r.status, r.error) for r in rows] == [(tool, "completed", None)]
+    assert rows[0].probe_metadata["pre_recorded"] is True
+    assert rows[0].completed_at is not None
+
+
+def test_a_high_risk_call_that_raises_is_settled_as_an_error_by_class_only(
+    world: _World,
+) -> None:
+    approval_id = world.queued("wipe_broken")
+    outcome = world.approve(approval_id, executor=world.service)
+
+    assert outcome.executed and world.ran == [("wipe_broken", {"text": "milk"})]
+    rows = _rows(world, approval_id)
+    assert [(r.status, r.error) for r in rows] == [("error", "RuntimeError")]
+    # Never the message: it carried an address.
+    assert "someone@example.com" not in json.dumps(rows[0].probe_metadata)
+    assert "disk full" not in (rows[0].error or "")
+
+
+def test_a_plain_write_keeps_its_post_only_row(world: _World) -> None:
+    """A code caller's confirm-once write is approved per call by who calls it, not by
+    what it is: it is not high-risk, so its row is written after the call, as before."""
+    approval_id = world.queued("add_note")
+    world.approve(approval_id, executor=world.service)
+
+    rows = _rows(world, approval_id)
+    assert [(r.tool, r.status) for r in rows] == [("add_note", "pending")]
+    assert "pre_recorded" not in rows[0].probe_metadata
+
+
+def test_a_high_risk_call_with_no_ledger_runs_nothing(tmp_path: Path) -> None:
+    """Fail closed: the approved call is denied when its row cannot be written."""
+    world = _World(tmp_path)
+    world.kernel = GovernanceKernel(audit_log=world.audit)
+    for hook in (
+        CallerPolicyHook(),
+        ToolPolicyHook(),
+        DestructiveApprovalHook(approval_queue=world.queue),
+    ):
+        world.kernel.register(hook)
+    register_side_effect_ledger(world.kernel, None)
+    world.kernel.init_lock()
+    try:
+        approval_id = world.queued("wipe")
+        outcome = world.approve(approval_id, executor=world.service)
+    finally:
+        register_caller_policy(None)
+
+    assert world.ran == [] and not outcome.executed
+    assert [o["status"] for o in world.outcomes()] == ["denied"]
+    assert "needs a durable record before it runs" in outcome.detail
+
+
+def test_a_plugin_s_api_tools_call_takes_the_same_path(world: _World) -> None:
+    """``api.tools`` is the bound ToolService: the approved call leaves its row first."""
+    api = world.plugin_api("p", PluginRegistry())
+    assert api.tools is not None
+    with session_scope("chat-1"):
+        held = api.tools.call("wipe", {"text": "milk"})
+    assert held.held and held.approval_id is not None
+    world.approve(held.approval_id, executor=world.service)
+
+    rows = _rows(world, held.approval_id)
+    assert [(r.tool, r.status) for r in rows] == [("wipe", "completed")]

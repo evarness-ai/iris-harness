@@ -54,7 +54,11 @@ _GOVERNANCE_FLAGS: tuple[tuple[str, str, bool], ...] = (
     ("IRIS_GOVERNANCE_REDACTION_ENABLED", "Secret redaction", False),
     ("IRIS_GOVERNANCE_LOOP_DETECT_ENABLED", "Loop detection", False),
     ("IRIS_GOVERNANCE_COST_LIMITER_ENABLED", "Cost limiter", False),
-    ("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "Side-effect ledger", False),
+    (
+        "IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER",
+        "Side-effect ledger (off denies destructive tools)",
+        True,
+    ),
     ("IRIS_GOVERNANCE_PROMPT_GUARD", "Prompt / threat guard", False),
     ("IRIS_GOVERNANCE_INPUT_SAFETY", "Input safety screen", False),
 )

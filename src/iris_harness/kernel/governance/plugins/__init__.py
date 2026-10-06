@@ -31,6 +31,7 @@ from iris_harness.kernel.governance.plugins.persona_surface import (
     PersonaSurface,
 )
 from iris_harness.kernel.governance.plugins.post_tool_use_ledger import PostToolUseLedgerHook
+from iris_harness.kernel.governance.plugins.pre_tool_use_ledger import PreToolUseLedgerHook
 from iris_harness.kernel.governance.plugins.redaction import RedactionFilterHook
 from iris_harness.kernel.governance.plugins.tool_policy import ToolPolicyHook
 
@@ -53,6 +54,7 @@ __all__ = [
     "PersonaSurface",
     "OutputClassifierHook",
     "PostToolUseLedgerHook",
+    "PreToolUseLedgerHook",
     "RedactionFilterHook",
     "ToolPolicyHook",
 ]

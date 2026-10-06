@@ -215,7 +215,7 @@ Every LLM call, tool invocation, and step transition fires a hook. Hooks are man
 |---|---|---|---|
 | `PreClassify` | 10 | Before classifying input | Tag content with `public/internal/personal/secret` |
 | `PreLLMCall` | — | Before any LLM call | Egress gate, redaction, cost check |
-| `PreToolUse` | 20 | Before tool execution | Persona allowlist, fs_jail, network_egress, credential broker resolves `vault://` |
+| `PreToolUse` | 20 | Before tool execution | Persona allowlist, fs_jail, network_egress, credential broker resolves `vault://`; a high-risk call's side-effect ledger row is written last |
 | `PostToolUse` | 40 | After tool returns | Side-effect ledger; reclassify output |
 | `PostStep` | — | After each ReAct step | Evaluator signals (loops, drift, step cap) |
 | `PreResponse` | — | **Defined but NOT fired** | (see note) |

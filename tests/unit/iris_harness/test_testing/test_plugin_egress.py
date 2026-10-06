@@ -263,6 +263,30 @@ def test_a_malformed_request_is_refused_and_still_leaves_a_row() -> None:
     assert "credentials" in rows[0].reason and "pw" not in rows[0].reason
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/x",
+        "https://[::1]/x",
+        "https://2130706433/x",
+        "https://api.open-meteo.com../x",
+    ],
+)
+def test_an_address_or_odd_host_is_denied_not_crashed_even_with_open_web(url: str) -> None:
+    """An IP-literal or non-canonical request host fails closed, with a row, even open_web."""
+    for egress in ({"open_web": True}, _DECLARED):
+        with fake_http({}) as sent:
+            with harness(
+                plugins=[_weather(_manifest(egress=egress))],
+                fake_model={"default": {"content": "hi"}},
+            ) as h:
+                with pytest.raises(EgressDenied):
+                    GovernedHttp("weather").get(url)
+                rows = _rows(h, "pre_egress")
+        assert sent == []
+        assert [r.decision for r in rows] == ["deny"]
+
+
 def _twice_plugin() -> Any:
     def twice(api: PluginAPI) -> None:
         http = api.http

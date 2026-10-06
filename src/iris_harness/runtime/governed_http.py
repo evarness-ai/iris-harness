@@ -197,11 +197,19 @@ class GovernedHttp:
         # travel in the hook context's METADATA: the kernel's audit write stamps them onto
         # every row from there, so the payload (and the plugin) never names them.
         ids = _Ids(new_ulid(), scope.tool_call_id if scope else None)
+        bad_host = ""
+        try:
+            shown = normalize_host(host) if host else ""
+        except ValueError:
+            # Not a host name (an IPv6 literal, stray whitespace, repeated dots): still a
+            # record, denied below. Shown ASCII-escaped and bounded, never trusted.
+            shown = host.encode("ascii", "backslashreplace").decode()[:253].lower()
+            bad_host = "the host is not a valid host name"
         # Only what addresses the host: no path, query, header or body (the ledger's rule).
         egress: dict[str, Any] = {
             "plugin": self._plugin,
             "scheme": target.scheme,
-            "host": normalize_host(host) if host else "",
+            "host": shown,
             "port": port,
             "method": request.method,
         }
@@ -210,6 +218,8 @@ class GovernedHttp:
         # refusal is a ledger row and never silence.
         if not host or target.scheme not in ("http", "https"):
             egress["malformed"] = f"not an http(s) URL with a host ({target.scheme or 'no scheme'})"
+        elif bad_host:
+            egress["malformed"] = bad_host
         elif target.userinfo:
             # Credentials in the address would be sent where the ledger cannot see them.
             egress["malformed"] = "a URL with credentials in it is not sent"

@@ -104,6 +104,11 @@ included). Refused outright, fail closed, and an owner may relax it later: IP li
 spelling (dotted, short `127.1`, hex, octal, IPv6), `localhost`, any name whose last label is
 numeric, and a wildcard whose base is a single label (`*.com`).
 
+The host of a request is held to the same rules before it is compared (one trailing dot at
+most, ASCII, no whitespace or repeated dots). A request whose host is an IP literal in any
+spelling, or not a valid host name, is denied by the policy even for `open_web: true`, with a
+`pre_egress` row; it is never sent.
+
 Known gap: the repo ships no public-suffix list, so a wildcard over a multi-label public
 suffix (`*.co.uk`) is accepted. Review such a declaration by eye until a list is added.
 

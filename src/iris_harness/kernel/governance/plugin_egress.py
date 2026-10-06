@@ -40,21 +40,6 @@ SCHEMES: Final[tuple[str, ...]] = ("http", "https")
 _LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
 
-def normalize_host(value: str) -> str:
-    """A host as compared: lower-case, no trailing dot. Raises ``ValueError`` if it is not one.
-
-    A host is a DNS name or an IP literal, with no scheme, port, path, userinfo or
-    whitespace: those are separate declarations (``schemes``, ``ports``).
-    """
-    host = value.strip().lower().rstrip(".")
-    if not host or any(c in host for c in "/:@?#[] \t"):
-        raise ValueError(
-            f"{value!r} is not a host (no scheme, port, path or userinfo; use `ports` and "
-            "`schemes` to say those)"
-        )
-    return host
-
-
 MAX_LABEL_LENGTH: Final = 63
 MAX_HOST_LENGTH: Final = 253
 MAX_HOSTS_PER_PLUGIN: Final = 256
@@ -66,6 +51,39 @@ _HEX_OR_OCTAL_NUMBER = re.compile(r"0x[0-9a-f]*|[0-9]+", re.ASCII)
 
 def _refuse(value: str, why: str) -> ValueError:
     return ValueError(f"{value!r}: {why}")
+
+
+def normalize_host(value: str) -> str:
+    """A request's host as compared: the same rules as a declared host, minus the wildcard.
+
+    ASCII only, no whitespace or control character, lower-case, at most one trailing dot
+    (dropped), no empty label (so no repeated dots), labels and name within the DNS limits.
+    Raises ``ValueError`` for anything else, including an IPv6 literal (it has no DNS-label
+    form). An IPv4 literal passes here; :meth:`PluginEgressPolicy.decide` refuses it.
+    """
+    if not value or not value.isascii() or any(c.isspace() or not c.isprintable() for c in value):
+        raise _refuse(value, "is not a host (ASCII only, no whitespace or control characters)")
+    host = value.lower()
+    if host.endswith("."):
+        host = host[:-1]
+    if not host or len(host) > MAX_HOST_LENGTH:
+        raise _refuse(value, f"is empty or longer than {MAX_HOST_LENGTH} characters")
+    for label in host.split("."):
+        if len(label) > MAX_LABEL_LENGTH or not _DECLARED_LABEL.fullmatch(label):
+            raise _refuse(value, "is not a host name (letters, digits and hyphens per label)")
+    return host
+
+
+def is_ip_literal(host: str) -> bool:
+    """Is ``host`` an address in any spelling a resolver or client might read as one?"""
+    last = host.rsplit(".", 1)[-1]
+    if _HEX_OR_OCTAL_NUMBER.fullmatch(last):
+        return True
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return True
 
 
 def normalize_host_pattern(value: str) -> str:
@@ -182,6 +200,14 @@ class PluginEgressPolicy:
     ) -> EgressVerdict:
         """May ``plugin`` send ``classification`` data to ``scheme://host:port``?"""
         scheme = scheme.lower()
+        try:
+            host = normalize_host(host)
+        except ValueError:
+            return EgressVerdict(False, f"{host!r} is not a valid host name")
+        if is_ip_literal(host):
+            return EgressVerdict(
+                False, f"{host} is an IP address; a plugin may contact only a declared host name"
+            )
         declaration = self.plugins.get(plugin)
         if declaration is None:
             return EgressVerdict(False, f"plugin {plugin!r} has no mounted manifest")
@@ -316,6 +342,7 @@ __all__ = [
     "current_egress_scope",
     "egress_policy",
     "egress_scope",
+    "is_ip_literal",
     "normalize_host",
     "normalize_host_pattern",
     "register_egress_policy",

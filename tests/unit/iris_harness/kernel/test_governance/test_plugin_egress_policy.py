@@ -171,3 +171,59 @@ def test_punycode_labels_must_decode() -> None:
         normalize_host_pattern("xn--9.example")
     with pytest.raises(ValueError):
         normalize_host_pattern("b\u00fccher.example")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        "api.open-meteo.com..",  # more than one trailing dot
+        "api..open-meteo.com",  # repeated dots
+        "api.open-meteo.com\n",
+        " api.open-meteo.com",
+        "api.open-meteo.com\x00",
+        "api.éxample.org",  # not ASCII
+        "::1",
+        "a" * 64 + ".example.org",
+    ],
+)
+def test_request_host_follows_the_declared_host_rules(bad: str) -> None:
+    from iris_harness.kernel.governance.plugin_egress import normalize_host
+
+    with pytest.raises(ValueError):
+        normalize_host(bad)
+
+
+def test_request_host_drops_one_trailing_dot_and_lowercases() -> None:
+    from iris_harness.kernel.governance.plugin_egress import normalize_host
+
+    assert normalize_host("API.Open-Meteo.com.") == "api.open-meteo.com"
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "127.0.0.1",
+        "127.1",
+        "0x7f000001",
+        "2130706433",
+        "::1",
+        "api.open-meteo.com..",
+        "api..open-meteo.com",
+        "api.open-meteo.com\n",
+    ],
+)
+def test_decide_denies_an_address_or_malformed_host_even_for_open_web(host: str) -> None:
+    policy = PluginEgressPolicy(
+        {
+            "fetcher": PluginEgress(open_web=True),
+            "ips": PluginEgress(hosts=(HostRule("api.open-meteo.com"),)),
+        }
+    )
+    for plugin in ("fetcher", "ips"):
+        verdict = policy.decide(plugin, scheme="https", host=host, port=443)
+        assert not verdict.allowed
+
+
+def test_decide_matches_a_host_written_with_one_trailing_dot() -> None:
+    assert _policy().decide("weather", scheme="https", host="api.open-meteo.com.", port=443).allowed

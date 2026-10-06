@@ -714,7 +714,10 @@ def test_every_answer_says_what_was_withheld_and_what_is_pending(tree: Path) -> 
     _write(tree / "docs/guides/leaky.md", f"# L\n\n{SECRET_TEXT}\n")
     for query in ("tier routing", "nonexistentwordzzz"):
         out = _search(tree, query=query)
-        assert "1 documents withheld (secret/personal/over scan budget), 0 not yet scanned" in out
+        assert (
+            "1 documents withheld (secret, personal, bad frontmatter, non-UTF8, over scan budget), 0 files skipped (hardlink, oversize, unreadable), 0 not yet scanned"
+            in out
+        )
 
 
 def test_twelve_hostile_documents_never_block_a_call_and_converge(
@@ -731,9 +734,7 @@ def test_twelve_hostile_documents_never_block_a_call_and_converge(
         out = _search(tree, query="tier routing")
         assert time.perf_counter() - start < 5
         assert " not yet scanned" in out
-        pending.append(
-            int(out.rsplit("withheld (secret/personal/over scan budget), ", 1)[1].split()[0])
-        )
+        pending.append(int(out.rsplit("unreadable), ", 1)[1].split()[0]))
         if pending[-1] == 0:
             break
     assert pending[0] > 0 and pending[-1] == 0, pending
@@ -782,3 +783,129 @@ def test_a_hard_linked_file_is_refused(tree: Path, tmp_path: Path) -> None:
     # a file whose other name is inside the tree is refused as well: nlink > 1
     os.link(tree / "docs/guides/setup.md", tree / "docs/guides/setup2.md")
     assert "docs/guides/setup" not in _search(tree, query="poetry install")
+
+
+# ------------------------------------------------------------- round 3 review findings
+def _slow_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    real = corpus_mod.scan_text
+
+    def slow(text: str):  # type: ignore[no-untyped-def]
+        time.sleep(0.003)
+        return real(text)
+
+    monkeypatch.setattr(corpus_mod, "scan_text", slow)
+
+
+def _short_lines_with_secret_at(n: int) -> str:
+    lines = [f"line {i} filler" for i in range(60)]
+    lines[n] = SECRET_TEXT.replace("\n", " ")
+    return "# D\n\n" + "\n".join(lines) + "\n"
+
+
+def test_resume_is_not_valid_across_a_changed_chunk_size(tree: Path, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Call 1 scans a prefix in small chunks and is interrupted; call 2 uses a wider chunk
+    size. A chunk index means different text at the two sizes, so the prefix is rescanned."""
+    assert scan_text(SECRET_TEXT.replace("\n", " ")).is_secret
+    _write(tree / "docs/guides/late.md", _short_lines_with_secret_at(40))
+    _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1, scan_chunk_chars=200)
+    corpus_mod._CACHE.clear()
+    corpus_mod._PROGRESS.clear()
+    _slow_scan(monkeypatch)
+    _search(tree, query="filler")
+    assert any(v[1][0] > 0 for v in corpus_mod._PROGRESS.values())  # a partial scan exists
+    monkeypatch.undo()
+    _write_config(tmp_path, monkeypatch, ROOTS, scan_chunk_chars=4000)  # widened
+    out = _search(tree, query="filler")
+    assert "docs/guides/late.md" not in out and "BEGIN" not in out
+
+
+def _rewrite_in_place(path: Path, new: str) -> None:
+    st = path.stat()
+    assert len(new.encode()) == st.st_size
+    with open(path, "r+b") as fh:
+        fh.write(new.encode())
+    os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))  # put the mtime back
+
+
+def test_a_same_size_rewrite_with_the_mtime_restored_is_not_served_stale(tree: Path) -> None:
+    token = "w" * len(SECRET_TEXT)
+    clean = f"# T\n\n## S\n\n{token}\n"
+    bad = f"# T\n\n## S\n\n{SECRET_TEXT}\n"
+    path = _write(tree / "docs/guides/swap.md", clean)
+    assert "docs/guides/swap.md" in _search(tree, query=token)  # cached clean
+    _rewrite_in_place(path, bad)
+    assert scan_text(SECRET_TEXT).is_secret
+    out = _search(tree, query="begin rsa miieowibaakcqea")
+    assert "docs/guides/swap.md" not in out and "MIIEow" not in out
+    assert "1 documents withheld" in out
+
+
+def test_a_partially_scanned_document_rewritten_in_place_is_rescanned(
+    tree: Path, tmp_path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    flat = SECRET_TEXT.replace("\n", " ")
+    assert scan_text(flat).is_secret
+    lines = [f"line {i} filler" for i in range(60)]
+    lines[1] = "w" * len(flat)
+    path = _write(tree / "docs/guides/part.md", "# P\n\n" + "\n".join(lines) + "\n")
+    _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1, scan_chunk_chars=200)
+    corpus_mod._CACHE.clear()
+    corpus_mod._PROGRESS.clear()
+    _slow_scan(monkeypatch)
+    _search(tree, query="filler")
+    assert any(v[1][0] > 0 for v in corpus_mod._PROGRESS.values())  # interrupted partway
+    lines[1] = flat  # same size; the secret sits in a chunk that was already scanned clean
+    _rewrite_in_place(path, "# P\n\n" + "\n".join(lines) + "\n")
+    monkeypatch.undo()
+    _write_config(tmp_path, monkeypatch, ROOTS, scan_chunk_chars=200)
+    out = _search(tree, query="filler")
+    assert "docs/guides/part.md" not in out and "BEGIN RSA" not in out
+
+
+@pytest.mark.parametrize("exc", [RecursionError, MemoryError])
+def test_the_frontmatter_check_never_raises_into_the_search(tree: Path, monkeypatch, exc) -> None:  # type: ignore[no-untyped-def]
+    def boom(text: str) -> bool:
+        raise exc()
+
+    monkeypatch.setattr(corpus_mod, "_check_frontmatter", boom)
+    _write(tree / "docs/guides/f.md", f"---\ntitle: x\n---\n# F\n\n{CANARY}\n")
+    out = _search(tree, query=CANARY)  # must not raise
+    _no_canary(out)
+    assert "withheld" in out
+
+
+def test_a_245_deep_frontmatter_at_a_shallow_recursion_limit_is_withheld() -> None:
+    import inspect
+    import sys
+
+    deep = "---\nx: " + "[" * 245 + "]" * 245 + "\n---\n# T\n"
+    old = sys.getrecursionlimit()
+    sys.setrecursionlimit(len(inspect.stack()) + 120)
+    try:
+        assert corpus_mod._frontmatter_withheld(deep) is True  # no RecursionError escapes
+    finally:
+        sys.setrecursionlimit(old)
+
+
+def test_skipped_and_unreadable_files_are_counted_never_silent(tree: Path, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # a `cp -al` style copy: every file hard-linked, so every file is refused
+    copy = tmp_path / "copy"
+    for src in (tree / "docs").rglob("*.md"):
+        dst = copy / src.relative_to(tree)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        os.link(src, dst)
+    out = search_docs_in({"query": "tier"}, base=copy)
+    assert "0 docs searched" in out and "5 files skipped (hardlink, oversize, unreadable)" in out
+    import shutil
+
+    shutil.rmtree(copy)  # the originals are single-linked again
+    # oversize
+    _write(tree / "docs/guides/big.md", "# B\n\n" + "x" * 3000)
+    _write_config(tmp_path, monkeypatch, ROOTS, max_file_bytes=2000)
+    assert "1 files skipped" in _search(tree, query="tier")
+    # non-UTF8 and bad frontmatter are counted as withheld
+    _write_config(tmp_path, monkeypatch, ROOTS)
+    (tree / "docs/guides/big.md").unlink()
+    (tree / "docs/guides/bin.md").write_bytes(b"# B\n\n\xff\xfe\x00 bytes\n")
+    _write(tree / "docs/guides/fm.md", "---\nclassification: [unclosed\n---\n# F\n")
+    assert "2 documents withheld" in _search(tree, query="tier")

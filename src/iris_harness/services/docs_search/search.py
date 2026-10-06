@@ -123,7 +123,8 @@ def render(corpus: Corpus, query: str, section: str, limit: int | None, config: 
     shown = f'"{" ".join(terms)}"'
     searched = f"{len(corpus.docs)} docs searched"
     status = (
-        f"{corpus.dropped} documents withheld (secret/personal/over scan budget), "
+        f"{corpus.dropped} documents withheld (secret, personal, bad frontmatter, non-UTF8, "
+        f"over scan budget), {corpus.skipped} files skipped (hardlink, oversize, unreadable), "
         f"{corpus.pending} not yet scanned"
     )
     if not hits:

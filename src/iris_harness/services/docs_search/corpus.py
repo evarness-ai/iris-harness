@@ -24,6 +24,7 @@ Nothing a caller passes (the query, a section filter) is ever used as a path.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -103,7 +104,8 @@ class Doc:
 class Corpus:
     docs: list[Doc] = field(default_factory=list)
     roots_missing: bool = True  # no allow-listed root exists on this install
-    dropped: int = 0  # documents withheld (secret/personal, over the scan budget, unreadable)
+    dropped: int = 0  # documents withheld (secret/personal, frontmatter, non-UTF8, scan budget)
+    skipped: int = 0  # allowed-type files refused before reading (hardlink, oversize, unreadable)
     pending: int = 0  # documents not scanned yet this call (scan time ran out); next call
     truncated: bool = False  # a cap stopped the walk
 
@@ -285,6 +287,15 @@ def read_contained(
 
 
 def _frontmatter_withheld(text: str) -> bool:
+    """:func:`_check_frontmatter`, never raising: a structure too deep for the parser or the
+    walk (``RecursionError``, ``MemoryError``) withholds the document like any other doubt."""
+    try:
+        return _check_frontmatter(text)
+    except (RecursionError, MemoryError):
+        return True
+
+
+def _check_frontmatter(text: str) -> bool:
     """Whether the document opens with frontmatter that must keep it out (fail closed).
 
     Same shape as the identity loader's ``_split_frontmatter`` (``yaml.safe_load`` between
@@ -474,13 +485,18 @@ def _scan_verdict(text: str, limits: Limits, corpus_deadline: float, resume: lis
     return "ok"
 
 
-# (real path) -> ((dev, ino, mtime_ns, size), Doc | None); a changed file is re-read and
-# re-scanned, and a document withheld once (secret, or scan budget exhausted) stays withheld
-# without being scanned again.
-_CACHE: dict[str, tuple[tuple[int, int, int, int], Doc | None]] = {}
-# (real path) -> (file key, chunks scanned clean so far) for a document the call's scan time
-# interrupted; dropped when the file changes or the scan finishes.
-_PROGRESS: dict[str, tuple[tuple[int, int, int, int], list[int]]] = {}
+# A file's identity for the caches: stat fields AND the sha256 of the bytes read, plus the
+# chunk size the scan used. stat alone is defeatable (a same-size rewrite with mtime put
+# back), and a verdict reached at one chunk size is not evidence at another.
+_Key = tuple[int, int, int, int, str, int]
+
+# (real path) -> (key, Doc | None); a changed file is re-read and re-scanned, and a document
+# withheld once (secret, or scan budget exhausted) stays withheld without being scanned again.
+_CACHE: dict[str, tuple[_Key, Doc | None]] = {}
+# (real path) -> (key, chunks scanned clean so far) for a document the call's scan time
+# interrupted. Resumed only on an identical key (same bytes, same chunk size, so a chunk
+# index means the same text); dropped when the scan finishes.
+_PROGRESS: dict[str, tuple[_Key, list[int]]] = {}
 
 
 def build_corpus(config: Config, base: Path | None = None) -> Corpus:
@@ -525,15 +541,25 @@ def build_corpus(config: Config, base: Path | None = None) -> Corpus:
                 if len(corpus.docs) >= limits.max_files or total >= limits.max_total_bytes:
                     corpus.truncated = True
                     return corpus
+                if path.suffix.lower() not in config.extensions:
+                    continue
                 read = read_contained(path, root, config.extensions, limits.max_file_bytes)
                 if read is None:
+                    corpus.skipped += 1  # hardlink, oversize, swapped, unreadable: not silent
                     continue
                 data, st, real = read
                 if total + len(data) > limits.max_total_bytes:
                     corpus.truncated = True
                     return corpus
                 total += len(data)
-                key = (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size)
+                key: _Key = (
+                    st.st_dev,
+                    st.st_ino,
+                    st.st_mtime_ns,
+                    st.st_size,
+                    hashlib.sha256(data).hexdigest(),
+                    limits.scan_chunk_chars,
+                )
                 cached = _CACHE.get(real)
                 if cached is not None and cached[0] == key:
                     doc = cached[1]

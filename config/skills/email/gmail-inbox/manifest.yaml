@@ -21,6 +21,10 @@ tools:
       and the new sync cursor. Idempotent — re-running is a no-op when
       no new mail has arrived.
     governor_route: email/read
+    # Derived from the mailbox pipeline: external as a class (owner decision, issue #104). Some
+    # tools return free text (senders, subjects), the rest only counts, ids or status today; the
+    # declaration keeps a later change that adds free text from skipping the floor.
+    content: external
     args:
       - name: account_id
         type: string

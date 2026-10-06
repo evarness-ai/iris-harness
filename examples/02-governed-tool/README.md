@@ -5,7 +5,7 @@ each is governed; the code only does the work.
 
 | Tool | Declaration | What governance does |
 |---|---|---|
-| `list_notes` | `effect: read`, `content: external` | Runs freely; other people wrote the notes, so every result is scanned for injected instructions before the model sees it. |
+| `list_notes` | `effect: read`, `content: external` | Runs freely; other people wrote the notes, so every result reaches the model inside an `<external_content>` envelope with instruction-like text redacted (the always-on floor). |
 | `pin_note` | `effect: write`, `confirm: once` | A change. In chat the model asks the owner once before making it; called from code, with nobody to ask, it is held for the owner's approval. |
 | `remove_note` | `effect: destructive` | Nothing is removed until the owner approves the exact call. The approval card is filled in by the plugin's `describe` ("Remove 1 note / Marcus: Dentist moved the check-up to 14:30."). |
 

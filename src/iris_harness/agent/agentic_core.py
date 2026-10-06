@@ -45,6 +45,7 @@ from iris_harness.kernel.governance.disclosure import (
     DISCLOSURE_STYLE_GUARDRAIL,
     is_architecture_disclosure,
 )
+from iris_harness.kernel.governance.external_content import unwrap
 from iris_harness.kernel.governance.hooks.tool_payload import ToolContent, ToolSendsTo
 from iris_harness.kernel.governance.plugins.destructive_approval import card_title
 from iris_harness.kernel.governance.plugins.output_classifier import more_restrictive
@@ -650,9 +651,11 @@ def _usable_observation(observation: str | None) -> str:
     """*observation* as something the user can be shown, or "" when it is not one.
 
     Tool error/usage messages are not answers, and model-facing context headers are
-    internal markup, so the first is refused and the second stripped.
+    internal markup, so the first is refused and the second stripped. So is the
+    untrusted-content envelope an external result arrives in (``external_content``),
+    which is read from inside, never shown.
     """
-    obs = (observation or "").strip()
+    obs = unwrap((observation or "").strip()).strip()
     if not obs or obs.lower() == "none" or obs.startswith(_HARNESS_NOTES):
         return ""
     low = obs.lower()
@@ -2332,8 +2335,10 @@ class AgenticCore:
         tool_args_hash = _hash_action_input(step.action_input) if step.action else None
         tool_args_text = _render_action_input(step.action_input) if step.action else None
         tool_error: str | None = None
-        if step.observation and step.observation.startswith("Error:"):
-            tool_error = step.observation
+        # An external result's envelope is the harness's markup, not the tool's text.
+        observed = unwrap(step.observation) if step.observation else step.observation
+        if observed and observed.startswith("Error:"):
+            tool_error = observed
         ctx = HookContext(
             hook_point=HookPoint.POST_STEP,
             run_id=run_id,

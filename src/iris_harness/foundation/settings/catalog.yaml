@@ -758,6 +758,20 @@ settings:
     tab: guards
     guarded: true
     guard_reason: Toggles the prompt-injection guard on inbound and retrieved content.
+  IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR:
+    kind: bool
+    default: true
+    applies: restart
+    label: External-content floor
+    description: 'On by default. Text a tool, capability or MCP server declares `content: external`
+      (a web page, a feed, an email, a retrieved document) reaches the model inside an untrusted-content
+      envelope, and a small set of deterministic patterns (instruction overrides, chat-template and
+      tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger row.
+      No model, no weights, no network. Plain boolean: on is unset, blank, 1, true, yes or on; off is only 0, false, no or off (anything else stays on).
+      The model guard (IRIS_GOVERNANCE_PROMPT_GUARD) is separate and stays opt-in.'
+    tab: guards
+    guarded: true
+    guard_reason: Turning it off lets text a third party wrote reach the model unmarked and unscanned.
   IRIS_GOVERNANCE_INPUT_SAFETY:
     kind: bool
     default: false

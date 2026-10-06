@@ -42,7 +42,7 @@ provides: [tool]
 tools:
   weather_now:
     effect: read        # read | write (asks once per run) | destructive (approved per call)
-    content: internal   # external: a third party wrote it; scanned for injected instructions
+    content: internal   # external: a third party wrote it; marked untrusted and tripwire-scanned by default (governance.md)
 ```
 
 ```python
@@ -61,7 +61,19 @@ def setup(api: PluginAPI) -> None:
 A tool must be declared under `tools:` with its effect, or the plugin is refused when
 it mounts. The declaration is what the governance kernel enforces: a `write` tool asks
 the owner once before the first write of a run, a `destructive` one waits for approval
-on every call, and an `external` tool's result is scanned before the model sees it.
+on every call, and an `external` tool's result reaches the model inside an untrusted-content envelope with
+instruction-like text redacted (the always-on floor; the optional model guard adds a
+classifier). See [governance](../concepts/governance.md#the-external-content-floor).
+
+Code that calls an `external` tool through `api.tools` gets the redaction but not the
+envelope (it may show the text to the owner). If you put that text into a prompt of your own,
+mark it with the same implementation the kernel uses:
+
+```python
+from iris_harness.sdk.content import wrap_external_content
+
+prompt = f"Summarise:\n{wrap_external_content(result.text, source='my_plugin', tool='fetch')}"
+```
 
 ## The six registration kinds
 

@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iris_harness.kernel.governance.threat.config import ThreatDetectionConfig
+from iris_harness.kernel.governance.threat.config import (
+    RemovedConfigKeyError,
+    ThreatDetectionConfig,
+)
 
 
 def _repo_config() -> Path:
@@ -19,7 +22,7 @@ def test_packaged_config_loads_and_matches_decisions() -> None:
     cfg = ThreatDetectionConfig.from_yaml(_repo_config())
 
     assert cfg.enabled is True
-    assert cfg.fail_mode == "closed"
+    assert not hasattr(cfg, "fail_mode")  # parsed once, read by nothing: removed
     assert cfg.mode == "shadow"  # shadow-first rollout
     # D1
     assert cfg.backend.prompt_guard.provider == "transformers"
@@ -73,3 +76,18 @@ def test_non_mapping_file_is_rejected(tmp_path: Path) -> None:
     p.write_text("- a\n- b\n", encoding="utf-8")
     with pytest.raises(ValueError):
         ThreatDetectionConfig.from_yaml(p)
+
+
+def test_fail_mode_is_not_a_config_key(tmp_path: Path) -> None:
+    """It was parsed and read by nothing, so a "closed" in the file promised what never
+    happened. The packaged file no longer carries it, and a file that does fails loudly
+    (as ``scan_tools`` does) instead of being accepted and ignored."""
+    packaged = yaml.safe_load(_repo_config().read_text(encoding="utf-8"))
+    assert "fail_mode" not in packaged
+    p = tmp_path / "old.yaml"
+    p.write_text("version: 1\nfail_mode: closed\n", encoding="utf-8")
+    with pytest.raises(
+        RemovedConfigKeyError, match=r"`fail_mode` key was removed.*delete that line"
+    ) as err:
+        ThreatDetectionConfig.from_yaml(p)
+    assert str(p) in str(err.value)  # names the file as well as the key

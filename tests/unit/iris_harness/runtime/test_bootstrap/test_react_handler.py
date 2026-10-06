@@ -107,6 +107,29 @@ def test_skills_to_react_tools_dedupes_repeat_names() -> None:
     assert len(specs) == 1
 
 
+def test_a_skill_tool_is_internal_unless_its_manifest_declares_it_external() -> None:
+    """The injection guard scans ``content: external`` results; a skill tool reaches it
+    only through the declaration, so the adapter must carry it onto the ToolSpec."""
+    registry = _StubRegistry()
+    assert [s.content for s in _skills_to_react_tools(registry)] == ["internal"]
+
+    package = registry._packages[0]
+    declared = package.manifest.tools[0].model_copy(update={"content": "external"})
+    external = package.model_copy(
+        update={"manifest": package.manifest.model_copy(update={"tools": (declared,)})}
+    )
+    registry._packages = (external,)
+    assert [s.content for s in _skills_to_react_tools(registry)] == ["external"]
+
+
+def test_the_shipped_web_fetch_skill_declares_its_output_external() -> None:
+    """``fetch_web_content`` returns feed items, headlines and repo descriptions."""
+    repo_root = Path(__file__).resolve().parents[5]
+    registry = SkillRegistry(repo_root=repo_root)
+    spec = next(s for s in _skills_to_react_tools(registry) if s.name == "fetch_web_content")
+    assert spec.content == "external"
+
+
 class _StubTierRouter:
     def get_llm_config(self, intent: str):
         from iris_harness.llm.client import CodingLLMConfig

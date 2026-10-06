@@ -299,7 +299,7 @@ def test_by_default_a_confirm_only_pinned_write_is_pre_recorded_and_settled(
 def test_a_plain_write_with_the_flag_on_is_still_recorded_after_the_call(
     tmp_path: Path,
 ) -> None:
-    """``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1``: every non-read call, as before."""
+    """``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL=1``: every non-read call, as before."""
     ledger = SideEffectLedger(tmp_path / "side_effects.db")
     tools = _Tools()
     runner = GovernedToolRunner(kernel=_kernel(tmp_path, ledger), agent_type="chat")

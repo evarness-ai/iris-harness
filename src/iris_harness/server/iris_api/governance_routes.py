@@ -33,6 +33,11 @@ from iris_harness.kernel.governance.plugins.owner_pii_shadow import (
     owner_pii_mode_from_env,
     owner_pii_shadow_summary,
 )
+from iris_harness.kernel.governance.wiring import (
+    SIDE_EFFECT_LEDGER_ALL_ENV,
+    SIDE_EFFECT_LEDGER_ENV,
+    side_effect_ledger_settings_from_env,
+)
 
 
 class ApprovalRespondRequest(BaseModel):
@@ -54,11 +59,6 @@ _GOVERNANCE_FLAGS: tuple[tuple[str, str, bool], ...] = (
     ("IRIS_GOVERNANCE_REDACTION_ENABLED", "Secret redaction", False),
     ("IRIS_GOVERNANCE_LOOP_DETECT_ENABLED", "Loop detection", False),
     ("IRIS_GOVERNANCE_COST_LIMITER_ENABLED", "Cost limiter", False),
-    (
-        "IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER",
-        "Side-effect ledger (high-risk calls; off denies destructive tools)",
-        True,
-    ),
     ("IRIS_GOVERNANCE_PROMPT_GUARD", "Prompt / threat guard", False),
     ("IRIS_GOVERNANCE_INPUT_SAFETY", "Input safety screen", False),
 )
@@ -85,6 +85,25 @@ def _owner_pii_flag() -> dict[str, Any]:
     }
 
 
+def _side_effect_ledger_flags() -> list[dict[str, Any]]:
+    """The two ledger booleans, read by the parser the kernel build uses so the two cannot
+    disagree on a spelling or an unrecognised value. ``record_all`` is false while the
+    ledger is off: it has no effect then."""
+    setting = side_effect_ledger_settings_from_env()
+    return [
+        {
+            "key": SIDE_EFFECT_LEDGER_ENV,
+            "label": "Side-effect ledger (high-risk calls; off denies destructive tools)",
+            "on": setting.enabled,
+        },
+        {
+            "key": SIDE_EFFECT_LEDGER_ALL_ENV,
+            "label": "Side-effect ledger: also record every non-read call",
+            "on": setting.record_all,
+        },
+    ]
+
+
 def _env_flag(name: str, *, default: bool = False) -> bool:
     """Thin alias for the shared reader, keeping this module's semantics.
 
@@ -108,7 +127,11 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
             "enabled": _env_flag("IRIS_GOVERNANCE_ENABLED", default=True),
             "audit_db": str(audit.db_path),
             "audit_count": audit_count,
-            "flags": [*_flag_payload(_GOVERNANCE_FLAGS), _owner_pii_flag()],
+            "flags": [
+                *_flag_payload(_GOVERNANCE_FLAGS),
+                *_side_effect_ledger_flags(),
+                _owner_pii_flag(),
+            ],
         }
 
     @app.get("/cost")

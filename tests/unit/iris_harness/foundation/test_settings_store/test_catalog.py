@@ -284,3 +284,31 @@ def test_the_shipped_catalog_obeys_the_owners_rules(catalog: Catalog) -> None:
         if e.declaration.kind == "secret" and e.declaration.editable
     )
     assert secrets_editable == []
+
+
+@pytest.mark.parametrize(
+    ("name", "default", "guarded"),
+    [
+        ("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", True, True),
+        ("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL", False, False),
+    ],
+)
+def test_the_side_effect_ledger_is_two_plain_booleans(
+    catalog: Catalog, name: str, default: bool, guarded: bool
+) -> None:
+    """On/off stays type safe: the ledger and its scope are separate bools, so an explicit
+    ``true`` of the ledger cannot widen what is recorded."""
+    from iris_harness.foundation.settings.env_overrides import SettingValueError, normalize
+
+    decl = catalog.entries[name].declaration
+    assert (decl.kind, decl.default, decl.guarded, decl.applies) == (
+        "bool",
+        default,
+        guarded,
+        "restart",
+    )
+    for raw, out in (("true", "1"), ("on", "1"), ("1", "1"), ("No", "0"), (False, "0")):
+        assert normalize(decl, raw) == out
+    for raw in ("all", "high-risk", "maybe", ""):
+        with pytest.raises(SettingValueError):
+            normalize(decl, raw)

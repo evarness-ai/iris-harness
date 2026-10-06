@@ -479,6 +479,39 @@ def test_missing_uses_loads_and_capability_is_none(
     assert _seen("cons")["cap"] is None
 
 
+def test_missing_uses_is_yellow_and_names_the_capability_until_a_provider_mounts() -> None:
+    registry = _new_registry()
+    _record(registry, "prov", provides=["test.ping"])
+    _record(registry, "cons", uses=["test.ping"])
+
+    def line(name: str) -> Any:
+        return next(c for c in registry.health_checks() if c.target == f"plugin:{name}")
+
+    assert line("cons").state is HealthState.YELLOW
+    assert "test.ping" in line("cons").detail
+    assert "unavailable (degraded)" in line("cons").detail
+    assert registry.unavailable_optional_capabilities("cons") == ("test.ping",)
+    assert line("prov").state is HealthState.GREEN  # the provider has nothing missing
+
+    registry.provide_capability("prov", "test.ping", SimpleNamespace(ping=str))  # late mount
+    assert line("cons").state is HealthState.GREEN
+    assert registry.degraded_reason("cons") is None
+
+    registry.plugins()[0].status = PluginStatus.FAILED  # the provider goes away again
+    assert line("cons").state is HealthState.YELLOW
+    assert "test.ping" in line("cons").detail
+
+
+def test_a_failing_consumer_with_a_missing_uses_names_both_causes() -> None:
+    registry = _new_registry()
+    rec = _record(registry, "cons", uses=["test.ping"])
+    rec.status = PluginStatus.DEGRADED
+    rec.failure_count, rec.last_error = 2, "ValueError: boom"
+    reason = registry.degraded_reason("cons") or ""
+    assert "2 failure(s); last: ValueError: boom" in reason
+    assert "optional capability test.ping unavailable" in reason
+
+
 def test_a_capability_cycle_still_mounts_in_profile_order(
     tmp_path: Path, services: HarnessServices
 ) -> None:

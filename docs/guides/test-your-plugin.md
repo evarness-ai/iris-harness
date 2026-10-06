@@ -51,6 +51,15 @@ has a full `fake_model.yaml` that drives a tool call through the governed loop.
 `audit_refs` (the ids of the ledger rows the turn wrote) and, for `chat_stream`,
 `events` (`TurnEvent(kind, text)`, the terminal `done` or `error` last).
 
+## Plugin state and degraded plugins
+
+`h.plugins()` is `{name: (status, load_error)}`. `h.plugin_states()` returns a frozen
+`PluginState(status, load_error, degraded_reason, failure_count)` per plugin. A mounted
+plugin giving degraded answers has a `degraded_reason`: guarded calls that failed, or an
+optional `capabilities: uses` that no mounted plugin provides (`optional capability
+weather.forecast unavailable (degraded)`). The same text is the plugin's yellow Health
+line, and it clears once a provider mounts.
+
 ## Assert on governance
 
 ```python

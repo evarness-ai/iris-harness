@@ -127,6 +127,48 @@ def test_an_in_process_plugin_gets_the_manifest_checks() -> None:
         assert not h.plugin_loaded("sneaky")
 
 
+def _noop(api: PluginAPI) -> None:
+    pass
+
+
+def _provides_weather(api: PluginAPI) -> None:
+    class _Weather:
+        async def forecast(self, location: str, days: int = 3) -> Any:  # pragma: no cover
+            raise NotImplementedError
+
+    api.provide("weather.forecast", _Weather())
+
+
+def test_gap_health_reports_a_missing_optional_capability() -> None:
+    consumer = plugin(
+        _noop, manifest={"name": "trip-advisory", "capabilities": {"uses": ["weather.forecast"]}}
+    )
+    with harness(plugins=[consumer], fake_model=_SCRIPT) as h:
+        # The stable accessor carries the reason: no `_runtime` needed.
+        state = h.plugin_states()["trip-advisory"]
+        assert state.status == "loaded"
+        assert state.failure_count == 0
+        assert state.degraded_reason is not None
+        assert "weather.forecast" in state.degraded_reason
+        # Health says the same, yellow, and the plugin tuple form is unchanged.
+        line = next(
+            c
+            for c in h._runtime.plugin_registry.health_checks()
+            if c.target == "plugin:trip-advisory"
+        )
+        assert line.state.value == "yellow"
+        assert state.degraded_reason in line.detail
+        assert h.plugins()["trip-advisory"] == ("loaded", None)
+        assert h.plugin_states()["system"].degraded_reason is None
+
+    provider = plugin(
+        _provides_weather,
+        manifest={"name": "weather", "capabilities": {"provides": ["weather.forecast"]}},
+    )
+    with harness(plugins=[consumer, provider], fake_model=_SCRIPT) as h:
+        assert h.plugin_states()["trip-advisory"].degraded_reason is None
+
+
 def test_an_in_process_plugin_never_stands_in_for_a_profile_one() -> None:
     with pytest.raises(ValueError, match="already in profile"):
         with harness(plugins=[plugin(_greeter, name="system")]):

@@ -1,10 +1,11 @@
-"""A document the ingest gate classified stays classified when it is re-ingested (FMX8).
+"""Every ingest classifies, and a document keeps its label across re-ingests (FMX8).
 
 Re-ingest (``sync_all``, or ``ingest_path`` on a path already indexed) used to pass no
 classification, so an edited, gated document came back with unclassified chunks and
-retrieval stopped carrying its label to egress gating. The edited content is now
-classified by the gate's rule again and ratcheted with the stamp the source already
-carries: the label stays or rises, never falls, and secret content never enters RAG.
+retrieval stopped carrying its label to egress gating. Every ingest now classifies with
+the gate's rule (``sensitivity.classify``), ratcheted with the label the source carries
+(kept per source in rag.db): the label stays or rises, never falls, and secret content
+is refused.
 
 The CLI and API surfaces are covered in their own suites (test_docs_cli.py,
 test_rag_endpoints.py).
@@ -13,6 +14,7 @@ test_rag_endpoints.py).
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -147,17 +149,132 @@ def test_an_edit_to_secret_content_is_removed_not_indexed(
     assert search_documents("mitochondria", store=store, index=None) == []
 
 
-def test_an_unclassified_source_stays_unclassified(tmp_path: Path, store: DocumentStore) -> None:
-    """Ingest without the gate (no stamp) keeps its prior behaviour on re-ingest."""
-    f = tmp_path / "notes.md"
+def _forget_labels(store: DocumentStore) -> None:
+    """Make every source look like one indexed before classification existed."""
+    with store._connect() as conn:
+        conn.execute("UPDATE document_sources SET classification = NULL")
+        conn.execute("UPDATE document_chunks SET classification = NULL")
+
+
+def test_sync_labels_an_unlabelled_source_even_when_unchanged(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    """A source with no label is never skipped as unchanged: sync classifies it."""
+    f = tmp_path / "contact.md"
     f.write_text(_PERSONAL_TEXT)
     ingest_path(f, store=store, index=None)
+    _forget_labels(store)
 
-    _edit(f, _PERSONAL_EDIT)
+    result = sync_all(store=store, index=None)  # same bytes, same mtime
+
+    assert result.sources_updated == 1
+    assert store.list_sources()[0].classification == "personal"
+    assert _labels(store, f) == {"personal"}
+
+
+def test_sync_refuses_an_unlabelled_source_that_is_secret(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    """An unlabelled source whose content is now secret is refused and removed."""
+    f = tmp_path / "old.md"
+    f.write_text(_PUBLIC_TEXT)
+    ingest_path(f, store=store, index=None)
+    _forget_labels(store)
+    _edit(f, f"# Keys\n\nmitochondria aws_key={_AWS_KEY}\n")
+
     result = sync_all(store=store, index=None)
 
-    assert result.sources_updated == 1 and result.sources_denied == 0
-    assert _labels(store, f) == {None}
+    assert result.sources_denied == 1
+    assert store.list_sources() == []
+
+
+def test_a_first_ingest_of_a_folder_classifies_each_file(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    folder = tmp_path / "vault"
+    folder.mkdir()
+    (folder / "a.md").write_text(_PUBLIC_TEXT)
+    (folder / "b.md").write_text(_PERSONAL_TEXT)
+    (folder / "c.md").write_text(f"# Keys\n\naws_key={_AWS_KEY}\n")
+
+    result = ingest_path(folder, store=store, index=None)
+
+    assert (result.sources_added, result.sources_denied) == (2, 1)
+    labels = {Path(s.path).name: s.classification for s in store.list_sources()}
+    assert labels == {"a.md": "public", "b.md": "personal"}
+
+
+def test_the_label_survives_a_zero_chunk_ingest(tmp_path: Path, store: DocumentStore) -> None:
+    """The label is kept per source, so emptying a document does not drop it."""
+    f = tmp_path / "contact.md"
+    _gated(f, _PERSONAL_TEXT, store)
+
+    _edit(f, "")
+    sync_all(store=store, index=None)
+    sid = _source_id(f.resolve())
+    assert store.count_chunks(sid) == 0
+    assert store.get_source(sid).classification == "personal"  # type: ignore[union-attr]
+
+    _edit(f, _PUBLIC_TEXT)
+    sync_all(store=store, index=None)
+    assert _labels(store, f) == {"personal"}
+
+
+def test_removing_a_source_removes_its_label(tmp_path: Path, store: DocumentStore) -> None:
+    f = tmp_path / "contact.md"
+    _gated(f, _PERSONAL_TEXT, store)
+    sid = _source_id(f.resolve())
+
+    store.delete_source(sid)
+    assert store.get_source(sid) is None
+
+    _edit(f, _PUBLIC_TEXT)  # a fresh ingest starts from its own content again
+    ingest_path(f, store=store, index=None)
+    assert store.get_source(sid).classification == "public"  # type: ignore[union-attr]
+
+
+def test_an_older_rag_db_backfills_each_source_label_from_its_chunks(tmp_path: Path) -> None:
+    """The migration derives a source's label from its chunks, the most sensitive one."""
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.executescript("""
+        CREATE TABLE document_sources (
+            id TEXT PRIMARY KEY, path TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL,
+            content_sha TEXT NOT NULL, added_at TEXT NOT NULL, last_synced_at TEXT NOT NULL,
+            tags TEXT NOT NULL DEFAULT '[]', links TEXT NOT NULL DEFAULT '[]',
+            mtime REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE document_chunks (
+            id TEXT PRIMARY KEY, source_id TEXT NOT NULL, source_path TEXT NOT NULL,
+            title TEXT NOT NULL, chunk_index INTEGER NOT NULL, text TEXT NOT NULL,
+            page INTEGER, classification TEXT
+        );
+        """)
+    now = "2026-01-01T00:00:00+00:00"
+    for sid in ("mixed", "plain", "legacy"):
+        conn.execute(
+            "INSERT INTO document_sources VALUES (?, ?, 'file', 't', 'sha', ?, ?, '[]', '[]', 1)",
+            (sid, f"/{sid}.md", now, now),
+        )
+    for cid, sid, label in (
+        ("mixed:0", "mixed", "public"),
+        ("mixed:1", "mixed", "personal"),
+        ("mixed:2", "mixed", "internal"),
+        ("plain:0", "plain", "internal"),
+        ("legacy:0", "legacy", None),
+    ):
+        conn.execute(
+            "INSERT INTO document_chunks VALUES (?, ?, '/x.md', 't', 0, 'x', NULL, ?)",
+            (cid, sid, label),
+        )
+    conn.commit()
+    conn.close()
+
+    store = DocumentStore(db_path=db)
+    store.ensure_schema()
+
+    labels = {s.id: s.classification for s in store.list_sources()}
+    assert labels == {"mixed": "personal", "plain": "internal", "legacy": None}
 
 
 def test_a_touched_but_unchanged_file_keeps_its_stamp(tmp_path: Path, store: DocumentStore) -> None:

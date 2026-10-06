@@ -186,6 +186,33 @@ def test_reupload_of_a_gated_document_as_secret_is_removed(
     assert resp.json()["sources_denied"] == 1
     assert resp.json()["document"] is None
     assert store.get_source(sid) is None and store.count_chunks(sid) == 0
+    assert not (tmp_path / "uploads" / "contact.md").exists()  # the secret copy is gone
+
+
+def test_a_first_upload_is_classified(client: TestClient, tmp_path: Path) -> None:
+    body = b"# Contact\n\nReach me at jane@example.com about the herons."
+    resp = client.post("/rag/upload", files={"file": ("contact.md", body, "text/markdown")})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sources_added"] == 1
+    assert resp.json()["document"]["classification"] == "personal"
+    store, _index = client.app.state.rag_handles
+    assert _labels(store, _source_id((tmp_path / "uploads" / "contact.md").resolve())) == {
+        "personal"
+    }
+
+
+def test_a_secret_first_upload_is_refused_and_not_kept(client: TestClient, tmp_path: Path) -> None:
+    body = b"# Keys\n\naws_key=AKIAIOSFODNN7EXAMPLE\n"
+    resp = client.post("/rag/upload", files={"file": ("creds.md", body, "text/markdown")})
+
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["sources_denied"] == 1 and payload["sources_added"] == 0
+    assert payload["document"] is None
+    assert "refused: classified secret" in payload["summary"]
+    assert not (tmp_path / "uploads" / "creds.md").exists()
+    assert client.get("/rag/documents").json()["count"] == 0
 
 
 # ---- the size cap and the event loop (security review, 2026-09-26) -------------------

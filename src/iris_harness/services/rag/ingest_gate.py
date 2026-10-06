@@ -11,9 +11,9 @@ Nothing enters the retrievable index without passing through here:
   the file (TOCTOU guard): if the bytes changed since the proposal, or the
   re-scan says secret, it denies instead of ingesting.
 
-The classification rule itself lives in ``sensitivity``, shared with ``ingest``: a
-document the gate stamped is classified by the same rule again whenever an edit makes
-``sync_all`` (or any other re-ingest) index new content for it.
+The classification rule itself lives in ``sensitivity``, shared with ``ingest``, which
+applies it to every file it indexes, whichever surface asked (``iris docs``, the upload
+route, ``sync_all``): the label this gate approved is a floor that rule ratchets from.
 
 Both functions are pure/injectable — the runtime wiring owns the confirmation
 stash and the Action Center task; this module owns the policy.

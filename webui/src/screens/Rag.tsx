@@ -33,9 +33,7 @@ function UploadZone() {
       try {
         const res = await upload.mutateAsync(f);
         if (res.sources_denied) {
-          toast.error(
-            `${f.name}: now classified secret, removed from the index (use the vault)`,
-          );
+          toast.error(`${f.name}: classified secret, not indexed (use the vault)`);
         } else if (res.sources_skipped && !res.sources_added && !res.sources_updated) {
           toast.info(`${f.name}: already indexed (unchanged)`);
         } else {

@@ -89,7 +89,7 @@ class StoreDocumentCatalog:
             file_id=FILE_ID_PREFIX + source.id,
             filename=path.name,
             kind=str(source.kind),
-            classification=None,  # the core keeps it per chunk, not per document
+            classification=source.classification,
             byte_size=byte_size,
             location_tier=None,
             storage_path=source.path,

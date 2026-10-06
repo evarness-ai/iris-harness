@@ -14,7 +14,6 @@ from typing import Any, NoReturn
 
 import pytest
 
-from iris_harness.services.rag import ingest as ingest_module
 from iris_harness.services.rag import sensitivity
 from iris_harness.services.rag.index import DocumentIndex
 from iris_harness.services.rag.ingest import ingest_path
@@ -90,12 +89,13 @@ def test_a_failed_classification_scan_records_personal_and_warns(
     doc = tmp_path / "note.md"
     doc.write_text("# Title\n\nSome notes here.")
     recorder = _Recorder()
-    monkeypatch.setattr(ingest_module, "scan_text", _boom)
+    monkeypatch.setattr(sensitivity, "scan_text", _boom)
 
-    with caplog.at_level(logging.WARNING, logger="iris_harness.services.rag.ingest"):
+    with caplog.at_level(logging.WARNING, logger="iris_harness.services.rag.sensitivity"):
         ingest_path(doc, store=store, source=recorder)
 
     [recorded] = recorder.indexed
     # Fails closed: an unscanned file is never recorded as public.
     assert recorded.classification == "personal"
-    assert _warned(caplog, "iris_harness.services.rag.ingest", "classification scan failed")
+    assert store.list_sources()[0].classification == "personal"  # the stored label too
+    assert _warned(caplog, "iris_harness.services.rag.sensitivity", "classification scan failed")

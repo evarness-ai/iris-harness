@@ -30,7 +30,7 @@ export interface RagUploadResult {
   sources_added: number;
   sources_updated: number;
   sources_skipped: number;
-  /** Classified documents whose new content classifies secret: removed, not indexed. */
+  /** Files that classified secret: refused, not indexed (any earlier copy removed). */
   sources_denied: number;
   chunks_indexed: number;
   summary: string;

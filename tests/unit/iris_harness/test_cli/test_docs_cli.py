@@ -135,5 +135,36 @@ def test_docs_sync_reports_an_edit_to_secret(_isolated: None, tmp_path: Path) ->
         register_ingest_source(previous)
 
     assert result.exit_code == 0, result.stdout
-    assert "1 removed: now classified secret" in " ".join(result.stdout.split())
+    assert "1 refused: classified secret" in " ".join(result.stdout.split())
+    assert DocumentStore().list_sources() == []
+
+
+def _add(path: Path) -> str:
+    previous = current_ingest_source()
+    try:
+        register_ingest_source(None)
+        result = runner.invoke(docs_app, ["add", str(path)])
+    finally:
+        register_ingest_source(previous)
+    assert result.exit_code == 0, result.stdout
+    return " ".join(result.stdout.split())
+
+
+def test_docs_add_classifies_a_first_ingest(_isolated: None, tmp_path: Path) -> None:
+    note = tmp_path / "contact.md"
+    note.write_text(_PERSONAL)
+
+    assert "1 added" in _add(note)
+
+    assert DocumentStore().list_sources()[0].classification == "personal"
+    assert _labels(note) == {"personal"}
+
+
+def test_docs_add_refuses_a_secret_first_ingest(_isolated: None, tmp_path: Path) -> None:
+    note = tmp_path / "creds.md"
+    note.write_text("# Keys\n\naws_key=AKIAIOSFODNN7EXAMPLE\n")
+
+    out = _add(note)
+
+    assert "0 added" in out and "1 refused: classified secret" in out
     assert DocumentStore().list_sources() == []

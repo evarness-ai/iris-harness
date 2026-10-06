@@ -22,7 +22,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from iris_harness.kernel.governance.file_scan import scan_text
 from iris_harness.services.rag.chunker import chunk_markdown
 from iris_harness.services.rag.index import DocumentIndex
 from iris_harness.services.rag.ingest_source import IndexedDocument, IngestSource
@@ -68,27 +67,15 @@ def _report_indexed(
     kind: SourceKind,
     content_sha: str,
     mtime: float,
+    classification: str,
 ) -> None:
     """Tell the file domain that RAG indexed ``file``. Never breaks ingestion.
 
-    The classification is scanned here, in the core, so it is the same scan on every
-    install — with or without a file domain mounted (OSS plan M6.1b).
+    ``classification`` is the label RAG stamped (``sensitivity.classify``), computed in
+    the core, so it is the same on every install — with or without a file domain
+    mounted (OSS plan M6.1b).
     """
     try:
-        try:
-            classification = scan_text(
-                raw[:200_000].decode("utf-8", errors="ignore")
-            ).classification
-        except Exception as exc:  # classification is advisory, never fatal
-            # Fail closed: a file nobody could scan is treated as personal, the rank the
-            # ingest gate already gives an unknown label, never as public.
-            logger.warning(
-                "rag: classification scan failed for %s (%s); recording it as personal",
-                file,
-                type(exc).__name__,
-                exc_info=True,
-            )
-            classification = "personal"
         source.record_indexed(
             IndexedDocument(
                 path=file,
@@ -198,20 +185,22 @@ def ingest_path(
     domain can record what RAG holds (FMX4, ADR-0066) — one unified file catalog
     alongside finance docs, media and photos. Without one, ingestion is unchanged.
 
-    ``classification`` (FMX8) is stamped on every chunk stored/indexed by this
-    call so retrieval can carry sensitivity through to egress gating. Passing
-    ``"secret"`` raises :class:`SecretIngestError` — secret documents never
-    enter RAG (the ingest gate should have denied them earlier; use the vault).
-    ``None`` (the default) leaves a first ingest unclassified, as before.
+    Every file indexed is classified (FMX8) by the gate's rule, ``sensitivity.classify``:
+    what the file domain knows, ratcheted with a fresh scan of its bytes and of the text
+    extracted from them. That label is ratcheted again with the label the source already
+    carries (a re-ingest) and with ``classification`` (what the ingest gate approved),
+    then recorded on the source and stamped on each chunk, so retrieval carries it to
+    egress gating. A label stays or rises, never falls, the same ratchet the gate applies
+    whenever two sources disagree; lowering one takes removing the source and ingesting
+    it again.
 
-    A source that already carries a classification stamp keeps being classified: when
-    its content changed, the new bytes are classified by the gate's rule
-    (``sensitivity.classify``: what the file domain knows, ratcheted with a fresh scan)
-    and ratcheted with the stamp it carries and with ``classification``. The label can
-    stay or rise, never fall, the same ratchet the gate applies whenever two sources
-    disagree; lowering one takes removing the source and passing the gate again. If the
-    result is ``secret`` the new content is not indexed and the source's earlier chunks
-    are removed (counted in ``sources_denied``).
+    A file that classifies ``secret`` is refused: it is not indexed, any earlier chunks
+    of it are removed, and it is counted in ``sources_denied``. Passing
+    ``classification="secret"`` raises :class:`SecretIngestError` (the ingest gate should
+    have denied it earlier; use the vault).
+
+    A source with no label (indexed before classification existed) is never skipped as
+    unchanged: it is re-ingested, and so classified, on its next sync.
     """
     if classification == "secret":
         raise SecretIngestError(
@@ -229,8 +218,10 @@ def ingest_path(
             mtime = file.stat().st_mtime
         except OSError:
             continue
+        # A source indexed before classification existed is re-ingested, never skipped.
+        labelled = existing is not None and existing.classification is not None
         # Fast-path: unchanged mtime on an already-indexed file → skip unread.
-        if existing is not None and existing.mtime and existing.mtime == mtime:
+        if labelled and existing is not None and existing.mtime and existing.mtime == mtime:
             skipped += 1
             continue
         try:
@@ -238,7 +229,7 @@ def ingest_path(
         except OSError:
             continue
         sha = _sha_bytes(raw)
-        if existing is not None and existing.content_sha == sha:
+        if labelled and existing is not None and existing.content_sha == sha:
             # Content identical (mtime touched only) — refresh mtime, no reindex.
             store.upsert_source(
                 id=sid,
@@ -249,31 +240,30 @@ def ingest_path(
                 tags=existing.tags,
                 links=existing.links,
                 mtime=mtime,
+                classification=existing.classification,
             )
             skipped += 1
             continue
 
-        # A classified source stays classified: its new content is classified again.
-        file_classification = classification
-        prior = store.chunk_classifications(sid) if existing is not None else set()
-        if prior:
-            scanned, _ = classify(file, source, raw=raw)
-            file_classification = ratchet(*prior, scanned, classification)
-            if file_classification == "secret":
-                logger.warning(
-                    "rag: %s now classifies secret; removed from the index "
-                    "(secret documents never enter RAG)",
-                    file,
-                )
-                store.delete_source(sid)
-                if index is not None:
-                    index.delete_source(sid)
-                denied += 1
-                continue
-
         loaded = _load(file, raw)
         if loaded is None:  # unreadable / image without OCR / empty scan
             skipped += 1
+            continue
+
+        scanned, _ = classify(file, source, raw=raw, texts=tuple(t for _, t in loaded.units))
+        file_classification = ratchet(
+            existing.classification if existing is not None else None, scanned, classification
+        )
+        if file_classification == "secret":
+            logger.warning(
+                "rag: %s classifies secret; not indexed (secret documents never enter RAG)",
+                file,
+            )
+            if existing is not None:
+                store.delete_source(sid)
+                if index is not None:
+                    index.delete_source(sid)
+            denied += 1
             continue
 
         file_kind = kind if file.suffix.lower() in TEXT_SUFFIXES else _default_kind(file)
@@ -286,6 +276,7 @@ def ingest_path(
             tags=loaded.tags,
             links=loaded.links,
             mtime=mtime,
+            classification=file_classification,
         )
         # tags/links context line → embedded into chunk 0 (markdown vault graph).
         ctx = (
@@ -314,7 +305,15 @@ def ingest_path(
             index.delete_source(sid)
             index.index_chunks(doc_chunks)
         if source is not None:
-            _report_indexed(source, file, raw, kind=file_kind, content_sha=sha, mtime=mtime)
+            _report_indexed(
+                source,
+                file,
+                raw,
+                kind=file_kind,
+                content_sha=sha,
+                mtime=mtime,
+                classification=file_classification,
+            )
         chunks_total += len(doc_chunks)
         touched.append(str(file))
         if existing is None:
@@ -340,8 +339,8 @@ def sync_all(
 ) -> IngestResult:
     """Re-ingest every registered source path (picks up external edits).
 
-    An edited source that carries a classification stamp is classified again by
-    ``ingest_path``; see there.
+    Each file is classified again when its content changed (or when it has no label
+    yet); see ``ingest_path``.
     """
     added = updated = skipped = denied = chunks_total = 0
     touched: list[str] = []

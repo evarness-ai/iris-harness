@@ -18,12 +18,16 @@ from pathlib import Path
 from iris_harness.foundation.clock import utc_now
 from iris_harness.foundation.persistence import connect, data_path
 from iris_harness.services.rag.models import DocumentChunk, DocumentSource, SourceKind
+from iris_harness.services.rag.sensitivity import ratchet
 
 # Columns added after R0 — applied additively so existing rag.db files migrate.
 _SOURCE_MIGRATIONS = (
     ("tags", "TEXT NOT NULL DEFAULT '[]'"),
     ("links", "TEXT NOT NULL DEFAULT '[]'"),
     ("mtime", "REAL NOT NULL DEFAULT 0"),
+    # FMX8: the source's classification. Backfilled from its chunks when added (see
+    # ``_backfill_source_classification``); None = never classified (pre-FMX8 ingest).
+    ("classification", "TEXT"),
 )
 _CHUNK_MIGRATIONS = (
     ("page", "INTEGER"),  # R2: 1-based PDF page number
@@ -47,6 +51,7 @@ class DocumentStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
+            added: set[tuple[str, str]] = set()
             for table, migrations in (
                 ("document_sources", _SOURCE_MIGRATIONS),
                 ("document_chunks", _CHUNK_MIGRATIONS),
@@ -55,6 +60,9 @@ class DocumentStore:
                 for name, ddl in migrations:
                     if name not in cols:
                         conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+                        added.add((table, name))
+            if ("document_sources", "classification") in added:
+                _backfill_source_classification(conn)
 
     def _connect(self) -> sqlite3.Connection:
         conn = connect(self.db_path, row_factory=sqlite3.Row)
@@ -80,6 +88,7 @@ class DocumentStore:
         tags: tuple[str, ...] = (),
         links: tuple[str, ...] = (),
         mtime: float = 0.0,
+        classification: str | None = None,
     ) -> DocumentSource:
         now = utc_now()
         existing = self.get_source(id)
@@ -89,11 +98,13 @@ class DocumentStore:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO document_sources (id, path, kind, title, content_sha, added_at, "
-                "last_synced_at, tags, links, mtime) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "last_synced_at, tags, links, mtime, classification) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET path=excluded.path, kind=excluded.kind, "
                 "title=excluded.title, content_sha=excluded.content_sha, "
                 "last_synced_at=excluded.last_synced_at, tags=excluded.tags, "
-                "links=excluded.links, mtime=excluded.mtime",
+                "links=excluded.links, mtime=excluded.mtime, "
+                "classification=excluded.classification",
                 (
                     id,
                     path,
@@ -105,6 +116,7 @@ class DocumentStore:
                     tags_json,
                     links_json,
                     mtime,
+                    classification,
                 ),
             )
         return DocumentSource(
@@ -118,6 +130,7 @@ class DocumentStore:
             tags=tuple(tags),
             links=tuple(links),
             mtime=mtime,
+            classification=classification,
         )
 
     def list_sources(self) -> list[DocumentSource]:
@@ -159,19 +172,6 @@ class DocumentStore:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM document_chunks WHERE id = ?", (chunk_id,)).fetchone()
         return _row_to_chunk(row) if row else None
-
-    def chunk_classifications(self, source_id: str) -> set[str]:
-        """The classification stamps a source's stored chunks carry (FMX8).
-
-        Empty when the source has no chunks or was ingested without classification.
-        """
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT DISTINCT classification FROM document_chunks "
-                "WHERE source_id = ? AND classification IS NOT NULL",
-                (source_id,),
-            ).fetchall()
-        return {r["classification"] for r in rows}
 
     def count_chunks(self, source_id: str) -> int:
         with self._connect() as conn:
@@ -221,6 +221,25 @@ def _row_to_source(row: sqlite3.Row) -> DocumentSource:
         tags=tuple(json.loads(row["tags"])) if "tags" in keys and row["tags"] else (),
         links=tuple(json.loads(row["links"])) if "links" in keys and row["links"] else (),
         mtime=float(row["mtime"]) if "mtime" in keys and row["mtime"] is not None else 0.0,
+        classification=row["classification"] if "classification" in keys else None,
+    )
+
+
+def _backfill_source_classification(conn: sqlite3.Connection) -> None:
+    """Give each existing source the most sensitive label its chunks carry.
+
+    Runs once, when the per-source column is added to an older ``rag.db``. A source whose
+    chunks carry no label stays None (it was ingested before classification existed).
+    """
+    labels: dict[str, list[str]] = {}
+    for row in conn.execute(
+        "SELECT DISTINCT source_id, classification FROM document_chunks "
+        "WHERE classification IS NOT NULL"
+    ):
+        labels.setdefault(row["source_id"], []).append(row["classification"])
+    conn.executemany(
+        "UPDATE document_sources SET classification = ? WHERE id = ?",
+        [(ratchet(*found), sid) for sid, found in labels.items()],
     )
 
 
@@ -249,7 +268,8 @@ CREATE TABLE IF NOT EXISTS document_sources (
     last_synced_at TEXT NOT NULL,
     tags           TEXT NOT NULL DEFAULT '[]',
     links          TEXT NOT NULL DEFAULT '[]',
-    mtime          REAL NOT NULL DEFAULT 0
+    mtime          REAL NOT NULL DEFAULT 0,
+    classification TEXT
 );
 
 CREATE TABLE IF NOT EXISTS document_chunks (

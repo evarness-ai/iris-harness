@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 First public release of the IRIS harness.
 
+### Added
+
+- `search_docs`: the core can search its own shipped documentation (architecture, concepts,
+  guides, reference, usage-guides) by keyword at section level, as an internal read tool of
+  the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot
+  reach the identity files, the vault, `.env` files, the owner's data or any store, and a
+  document that classifies `secret` is dropped. An install without the docs says so.
+
 ### Changed
 
 - **Default flipped (issue #104): text a tool, capability or MCP server declares
@@ -96,6 +104,18 @@ First public release of the IRIS harness.
   leaving the setting unset logs nothing.
 
 ### Added
+
+- **Stored assistant text and summaries are scanned when they re-enter a prompt (issue
+  #145, step one).** The external-content floor screens a tool result once; the model's
+  restatement of it, stored as a turn, came back unscreened through the conversation window,
+  the session summary, `recall_conversation`, `memory_search` over sessions, the related
+  earlier turns and the intent router's recent-turns context. `kernel/governance/reentry.py` now runs the floor's tripwire over assistant
+  turns and summaries at those readers (the owner's own turns are returned verbatim), cuts
+  anything over 16 KB per text or 128 KB per read with a visible `[not scanned: ...]` marker,
+  and writes one counts-only `audit_log` row per read when something matched or a cap was hit.
+  It follows `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`; there is no new setting. Phrase-level
+  only; the recalled text is redacted but not yet marked as untrusted. See "Stored text
+  coming back into a prompt" in `docs/concepts/governance.md`.
 
 - The governed agent harness (`iris_harness`): intent routing, planning, a ReAct
   tool loop, response curation, and tiered LLM routing across local (Ollama, LM

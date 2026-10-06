@@ -185,6 +185,13 @@ A persona = a constrained agent identity with its own tool surface. Today:
   install actually has — plugins and models — is generated per turn from the live registry
   (`runtime/capabilities.py`), with the long form at `iris_doc("CAPABILITIES")`; it is never
   hand-written prose, which is how the primer came to name models this box does not run.
+  To find which of IRIS's own docs answers a question, the `search_docs` tool (the `system`
+  plugin, `services/docs_search/`) matches keywords at section level and returns document,
+  heading, line and a short snippet. It is an internal read tool over an allow-list of
+  shipped documentation roots in `config/docs_search.yaml`; it cannot reach the identity files
+  (SOUL, USER, AGENTS), the vault, `.env` files, the owner's data or any store, and it drops a
+  document the content scan classifies `secret`. The docs are not package data, so on an
+  installed wheel it answers that they are not present.
 - **Coding agent personas** — `src/iris_code/resources/personas/*.agent.md`:
   - `orchestrator` — delegation only; cannot invoke tools directly.
   - `analyst` — read-only investigation.

@@ -1050,7 +1050,8 @@ def _side_effect_ledger_from_env() -> tuple[SideEffectLedger | None, bool]:
       ledger for the high-risk class only; plain writes and reads are not recorded.
     * truthy: the ledger, opened now, recording every non-read call (the original meaning
       of the flag). DB path from ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH`` (also the
-      deferred ledger's), else ``<governance data dir>/side_effects.db``. If it will not open: ``(None, False)``.
+      deferred ledger's), else ``<governance data dir>/side_effects.db``. If it will not
+      open: ``(None, False)``.
     * falsy (``0``/``false``/``no``/``off``): ``(None, False)``. The kernel then denies every
       high-risk call (a destructive tool, or a pinned write) instead of running it with no
       durable record: the ledger is what makes those calls safe to attempt, so opting out
@@ -1065,6 +1066,13 @@ def _side_effect_ledger_from_env() -> tuple[SideEffectLedger | None, bool]:
         )
         return None, False
     if raw not in _TRUTHY:
+        if raw:
+            logger.warning(
+                "governance: IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=%r is not recognised (on: 1/true/"
+                "yes/on, off: 0/false/no/off); applying the default, the side-effect ledger for "
+                "high-risk calls only.",
+                raw,
+            )
         return None, True
     ledger = _open_side_effect_ledger(_side_effect_ledger_db_path_from_env())
     return ledger, ledger is not None

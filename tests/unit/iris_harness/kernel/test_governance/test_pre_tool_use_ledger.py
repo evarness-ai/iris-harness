@@ -546,6 +546,30 @@ def test_an_unset_flag_kernel_records_nothing_for_a_plain_write(
     assert (tmp_path / "s.db").exists()
 
 
+def test_an_unrecognised_flag_value_warns_and_applies_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "maybe")
+    with caplog.at_level(logging.WARNING, logger="iris_harness.kernel.governance.wiring"):
+        kernel = kernel_from_env()
+    assert kernel is not None
+    (warning,) = [r.getMessage() for r in caplog.records if "not recognised" in r.getMessage()]
+    assert "'maybe'" in warning and "1/true/yes/on" in warning and "high-risk" in warning
+    assert not (tmp_path / "s.db").exists()  # the default applied, not "on"
+
+
+def test_an_unset_flag_does_not_warn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.delenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", raising=False)
+    with caplog.at_level(logging.WARNING, logger="iris_harness.kernel.governance.wiring"):
+        kernel_from_env()
+    assert not any("SIDE_EFFECT_LEDGER" in r.getMessage() for r in caplog.records)
+
+
 @pytest.mark.parametrize("raw", ["1", "on", "true"])
 def test_an_explicit_on_records_every_non_read_call_as_before(
     raw: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

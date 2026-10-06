@@ -268,6 +268,34 @@ def test_by_default_a_high_risk_call_that_raises_settles_as_an_error(tmp_path: P
     assert (row.status, row.error) == ("error", "RuntimeError")
 
 
+def test_by_default_a_confirm_only_pinned_write_is_pre_recorded_and_settled(
+    tmp_path: Path,
+) -> None:
+    """``effect=write, confirm=approval`` is high-risk by its confirm alone.
+
+    Under the default scope the post hook tells it from a plain write by the ``tool_confirm``
+    the runner stamps on the POST metadata; without it the row would stay ``pending``.
+    """
+    ledger = DeferredSideEffectLedger(tmp_path / "side_effects.db")
+    tools = _Tools()
+    seen: list[str] = []
+    base = tools.spec("send", "write", "approval")
+
+    def call(args: dict[str, Any]) -> str:
+        seen.extend(r.status for r in _all_rows(ledger))
+        return base.call(args)
+
+    runner = GovernedToolRunner(
+        kernel=_kernel(tmp_path, ledger, high_risk_only=True), agent_type="chat"
+    )
+    outcome = runner.execute(base._replace(call=call), {}, _approved())
+
+    assert outcome.status == "ran" and outcome.ok
+    assert seen == ["pending"]
+    (row,) = _all_rows(ledger)
+    assert (row.status, row.error) == ("completed", None)
+
+
 def test_a_plain_write_with_the_flag_on_is_still_recorded_after_the_call(
     tmp_path: Path,
 ) -> None:
@@ -679,6 +707,24 @@ async def test_an_async_high_risk_capability_call_with_no_ledger_never_runs(
         ):
             pass
     assert provider.calls == []
+
+
+@pytest.mark.parametrize(
+    ("effect", "confirm"), [("destructive", "approval"), ("write", "approval")]
+)
+def test_by_default_a_pinned_capability_call_is_pre_recorded_and_settled(
+    tmp_path: Path, effect: str, confirm: str
+) -> None:
+    ledger = DeferredSideEffectLedger(tmp_path / "side_effects.db")
+    provider = _Provider(ledger)
+    _runner(_kernel(tmp_path, ledger, high_risk_only=True)).execute_call(
+        _cap("shred", effect=effect, confirm=confirm), provider.shred, {"id": 1}
+    )
+
+    (before,) = provider.rows_while_running
+    assert before.status == "pending"
+    row = _one_row(ledger)
+    assert (row.side_effect_id, row.status) == (before.side_effect_id, "completed")
 
 
 def test_a_plain_capability_write_keeps_its_post_only_row(tmp_path: Path) -> None:

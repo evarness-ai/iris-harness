@@ -154,6 +154,8 @@ iris_harness.sdk.rag:IngestResult
 iris_harness.sdk.rag:IngestSource
 iris_harness.sdk.rag:KnownFile
 iris_harness.sdk.rag:RagDocument
+iris_harness.sdk.rag:RemovalAwareIngestSource
+iris_harness.sdk.rag:RemovedDocument
 iris_harness.sdk.rag:execute_rag_ingest
 iris_harness.sdk.rag:propose_rag_ingest
 iris_harness.sdk.rag:register_document_catalog

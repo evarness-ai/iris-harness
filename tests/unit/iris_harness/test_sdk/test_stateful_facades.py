@@ -194,7 +194,14 @@ FACADES += [
                 ingest_gate,
             ),
             **dict.fromkeys(
-                ("IndexedDocument", "IngestSource", "KnownFile", "register_ingest_source"),
+                (
+                    "IndexedDocument",
+                    "IngestSource",
+                    "KnownFile",
+                    "RemovalAwareIngestSource",
+                    "RemovedDocument",
+                    "register_ingest_source",
+                ),
                 ingest_source,
             ),
             "IngestResult": rag_models,

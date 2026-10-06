@@ -66,29 +66,92 @@ from iris_harness.sdk.types import (
 logger = logging.getLogger(__name__)
 
 
+def _redact_owner_text(text: str) -> str:
+    """The ONE entry point for scanning text this plugin shows the owner or logs.
+
+    Every owner-facing site goes through here (streamed prose, the answer, activity hints,
+    trace lines, the logged command, artifact names), so what scans it can change in one
+    place. Today it is the SDK's tripwire without the envelope.
+    """
+    return redact_external_content(text)
+
+
+#: Complete lines kept back from emission, so a phrase split across up to two line breaks
+#: is scanned whole before any of it leaves.
+_HOLD_LINES = 2
+#: A buffer with no line break is force-scanned and flushed at this size.
+_FLUSH_CAP = 64 * 1024
+#: The tail kept (unemitted) after a forced flush, so a phrase straddling the cut is caught.
+_OVERLAP_CHARS = 2 * 1024
+
+
 class _ProseRedactor:
-    """The tripwire over prose that is streamed live, in whole lines.
+    """The tripwire over prose that is streamed live.
 
     The planner's final prose reaches the owner as it is generated, and the final tuple
     then carries nothing (the answer was already streamed), so the answer-level redaction
-    cannot see it. A phrase can straddle two chunks, so text is held back to the last
-    newline and redacted a line at a time; :meth:`flush` redacts the remainder.
+    cannot see it. A phrase can straddle chunks AND line breaks, so text is scanned with a
+    sliding overlap: the last ``_HOLD_LINES`` complete lines are held back from emission
+    and rescanned together with each new line (what was already emitted is never touched),
+    so a phrase split across up to two line breaks is caught. A line with no break is
+    force-scanned at ``_FLUSH_CAP`` bytes, keeping the last ``_OVERLAP_CHARS`` as context.
+    :meth:`flush` scans and emits what is left.
+
+    The cost is latency (the owner sees text two lines behind) and a phrase split across
+    more than two line breaks, or one longer than the overlap, is not caught by this layer.
+    Feeding is linear: only the new chunk is searched for a line break.
     """
 
     def __init__(self) -> None:
-        self._pending = ""
+        self._held = ""  # scanned, unemitted text
+        self._partial: list[str] = []  # the current unterminated line, as pieces
+        self._partial_len = 0
 
     def feed(self, chunk: str) -> str:
-        self._pending += chunk
-        cut = self._pending.rfind("\n")
-        if cut < 0:
+        if not chunk:
             return ""
-        head, self._pending = self._pending[: cut + 1], self._pending[cut + 1 :]
-        return redact_external_content(head)
+        cut = chunk.rfind("\n")
+        if cut < 0:
+            self._partial.append(chunk)
+            self._partial_len += len(chunk)
+            return self._force() if self._partial_len >= _FLUSH_CAP else ""
+        tail = chunk[cut + 1 :]
+        text = "".join(self._partial) + chunk[: cut + 1]
+        self._partial = [tail] if tail else []
+        self._partial_len = len(tail)
+        out = ""
+        for line in text.split("\n")[:-1]:
+            self._held = _redact_owner_text(self._held + line + "\n")
+            out += self._emit()
+        return out + (self._force() if self._partial_len >= _FLUSH_CAP else "")
 
     def flush(self) -> str:
-        rest, self._pending = self._pending, ""
-        return redact_external_content(rest)
+        rest = _redact_owner_text(self._held + "".join(self._partial))
+        self._held, self._partial, self._partial_len = "", [], 0
+        return rest
+
+    def _emit(self) -> str:
+        """Emit everything but the last ``_HOLD_LINES`` lines (or the overlap, if huge)."""
+        held = self._held
+        idx, keep = len(held) - 1, 0
+        for _ in range(_HOLD_LINES):
+            idx = held.rfind("\n", 0, idx)
+            if idx < 0:
+                keep = 0
+                break
+            keep = idx + 1
+        if len(held) - keep > _FLUSH_CAP:
+            keep = len(held) - _OVERLAP_CHARS
+        out, self._held = held[:keep], held[keep:]
+        return out
+
+    def _force(self) -> str:
+        """Scan a long unterminated buffer and emit all but the overlap tail."""
+        self._held = _redact_owner_text(self._held + "".join(self._partial))
+        self._partial, self._partial_len = [], 0
+        keep = max(0, len(self._held) - _OVERLAP_CHARS)
+        out, self._held = self._held[:keep], self._held[keep:]
+        return out
 
 
 def _safe_int_env(name: str, default: int, *, min_value: int = 1, max_value: int = 128) -> int:
@@ -719,7 +782,7 @@ def _make_code_exec_handler(
                 question = str(tool_call["question"]).strip()
                 progress = str(tool_call.get("progress") or "").strip()
                 if progress:
-                    yield ActivityChunk(progress)
+                    yield ActivityChunk(_redact_owner_text(progress))
 
                 if model_tier == ModelTier.SMALL:
                     ask_user_denied_turns += 1
@@ -754,9 +817,9 @@ def _make_code_exec_handler(
             # Pre-call activity hint — surfaced in the live spinner so the user
             # knows something is happening (replaces the dumb "Thinking..." text).
             if progress:
-                yield ActivityChunk(progress)
+                yield ActivityChunk(_redact_owner_text(progress))
             else:
-                cmd_hint = " ".join(cmd.split())
+                cmd_hint = " ".join(_redact_owner_text(cmd).split())
                 if len(cmd_hint) > 60:
                     cmd_hint = cmd_hint[:57] + "..."
                 yield ActivityChunk(f"running shell ({timeout}s) - {cmd_hint}")
@@ -766,10 +829,16 @@ def _make_code_exec_handler(
             # the planner transcript, the trace and session log, the activity hints and
             # the handoff answer all read this result (issue #140).
             raw_result = host.run_shell(cmd, timeout=timeout)
+            # File names the script created are third-party text too (it may name a file
+            # after a downloaded title): redacted here, so every later reader (the
+            # answer, the artifact block, the meta, the log, the trace) gets clean names.
             result = dataclasses.replace(
                 raw_result,
-                stdout=redact_external_content(raw_result.stdout),
-                stderr=redact_external_content(raw_result.stderr),
+                stdout=_redact_owner_text(raw_result.stdout),
+                stderr=_redact_owner_text(raw_result.stderr),
+                artifacts=type(raw_result.artifacts)(
+                    _redact_owner_text(a) for a in raw_result.artifacts
+                ),
             )
             last_result_summary = result.summary()
             last_stdout = result.stdout.strip()
@@ -795,11 +864,11 @@ def _make_code_exec_handler(
 
             # Trace chunk: full raw detail buffered client-side for /trace.
             trace_lines = [
-                f"$ {cmd}",
+                f"$ {_redact_owner_text(cmd)}",
                 f"  -> exit={result.exit_code}  duration={result.duration_ms:.0f}ms",
             ]
             if progress:
-                trace_lines.insert(0, f"progress: {progress}")
+                trace_lines.insert(0, f"progress: {_redact_owner_text(progress)}")
             if result.artifacts:
                 trace_lines.append(f"  -> artifacts: {', '.join(result.artifacts)}")
             if result.stdout:
@@ -812,7 +881,7 @@ def _make_code_exec_handler(
 
             with agent_scope("code_exec", iterations):
                 log_tool_run(
-                    cmd=cmd,
+                    cmd=_redact_owner_text(cmd),
                     exit_code=result.exit_code,
                     duration_ms=result.duration_ms,
                     stdout=result.stdout,
@@ -979,7 +1048,7 @@ def _make_code_exec_handler(
         # The answer goes to the owner or channel (intent route) and into the transcript,
         # and a lesson is derived from it: redact it (no envelope: it is not a model-bound
         # external result here) so an instruction the planner repeated does not travel on.
-        final_answer = redact_external_content(final_answer)
+        final_answer = _redact_owner_text(final_answer)
 
         # Capture lesson (and strip the fenced JSON block from the answer text).
         if lesson_capture is not None:
@@ -1000,7 +1069,11 @@ def _make_code_exec_handler(
         visible_artifacts = _user_visible_artifacts(task.query, all_artifacts)
         if visible_artifacts:
             unique = list(dict.fromkeys(visible_artifacts))
-            artifact_block = "\n\nArtifacts:\n" + "\n".join(f"- {p}" for p in unique)
+            # Redacted on its own: it is appended AFTER the final-answer redaction and is
+            # the only part of the answer that the non-streamed paths carry unscanned.
+            artifact_block = _redact_owner_text(
+                "\n\nArtifacts:\n" + "\n".join(f"- {p}" for p in unique)
+            )
             final_answer = final_answer.rstrip() + artifact_block
 
         # If prose was streamed live, emit the artifacts trailer as narration so
@@ -1052,7 +1125,9 @@ def _make_code_exec_handler(
                         )
                     else:
                         err = proposal_result.get("error", "unknown error")
-                        skill_note = f"\n\n⚠️ Draft skill save failed: {err}"
+                        skill_note = (
+                            f"\n\n⚠️ Draft skill save failed: {_redact_owner_text(str(err))}"
+                        )
                     if prose_was_streamed:
                         yield skill_note
                     else:
@@ -1070,7 +1145,7 @@ def _make_code_exec_handler(
 
         meta: dict[str, object] = {
             "iterations": iterations,
-            "artifacts": list(dict.fromkeys(all_artifacts)),
+            "artifacts": [_redact_owner_text(a) for a in dict.fromkeys(all_artifacts)],
             "workspace": host.workspace_path,
             "final_answer": final_answer,
             "prose_streamed": prose_was_streamed,
@@ -1097,7 +1172,7 @@ def _make_code_exec_handler(
         if narration:
             # The streamed prose is the answer here, and it never passed the final-answer
             # redaction in the loop: redact the joined text (issue #140).
-            answer = redact_external_content("".join(narration)) + "\n" + answer
+            answer = _redact_owner_text("".join(narration)) + "\n" + answer
         return answer, meta
 
     def stream_handler(task: AgentTask) -> Iterator[StreamChunk]:
@@ -1114,7 +1189,7 @@ def _make_code_exec_handler(
                     if ready := prose.feed(chunk):
                         yield ready
                 elif isinstance(chunk, TraceChunk):
-                    yield TraceChunk(redact_external_content(chunk.text))
+                    yield TraceChunk(_redact_owner_text(chunk.text))
                 else:
                     yield chunk
         except Exception as exc:

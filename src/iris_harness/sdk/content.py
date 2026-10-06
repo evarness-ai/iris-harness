@@ -9,6 +9,9 @@ the tripwire (instruction-like spans replaced by a visible marker) and the
 ``<external_content ... trust="untrusted">`` envelope. It is the kernel's own
 implementation (``kernel/governance/external_content.py``), not a copy, and runs offline.
 
+:func:`redact_external_content` is the tripwire without the envelope, for text a plugin
+shows the owner, returns to a channel or logs rather than hands to a model.
+
     from iris_harness.sdk.content import wrap_external_content
 
     prompt = f"Summarise this:\n{wrap_external_content(page_text, source='my_plugin')}"

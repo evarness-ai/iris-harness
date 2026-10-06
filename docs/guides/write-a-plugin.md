@@ -75,6 +75,11 @@ from iris_harness.sdk.content import wrap_external_content
 prompt = f"Summarise:\n{wrap_external_content(result.text, source='my_plugin', tool='fetch')}"
 ```
 
+For text you show the owner, return to a channel or log (not hand to a model), use
+`redact_external_content(text)` from the same module: it is the tripwire without the
+envelope. Streamed text needs care: a phrase can be split across chunks, so scan whole
+lines (with an overlap), not each chunk.
+
 ## The six registration kinds
 
 | Kind | Call | What it is for |

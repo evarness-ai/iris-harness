@@ -24,6 +24,16 @@ First public release of the IRIS harness.
   `--dump-config` print `none declared (the governed client contacts no host)` for a plugin
   without one.
 
+- Governed outbound HTTP for plugins (issue #103, part 2): `api.http` (and
+  `iris_harness.sdk.http.current_http()` for a declarative plugin) sends a request only to a
+  host the plugin's manifest `egress:` declares, fires the new `PRE_EGRESS` / `POST_EGRESS`
+  hook points and writes a ledger row per request (host, port, method, plugin, tool, run,
+  status, bytes, duration; never a path, query, header or body). A host that is not declared,
+  an IP literal, a missing kernel or a missing `plugin_egress` hook is refused with
+  `EgressDenied`. This governs calls made through that client only: it does not stop a plugin
+  that opens its own socket, and no shipped plugin uses the client yet. Also new:
+  `testing.fake_http`, `testing.check_network_imports` and a conformance check `egress`.
+
 ### Changed
 
 - **Default flipped (issue #104): text a tool, capability or MCP server declares

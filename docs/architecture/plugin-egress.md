@@ -170,14 +170,15 @@ that path. What is and is not covered:
 An empty declaration is a closed door, not "unrestricted". Nothing breaks on migration:
 the client is opt-in, so a plugin that does not use it is unaffected by the policy, and
 a plugin that adopts it must declare first. The only nudge for plugins that stay on raw
-libraries is the lint and the conformance check; no mount-time notice (the loader's
+libraries is the lint (run by the author) and the conformance check (which sees only calls made through the client); no mount-time notice (the loader's
 existing notices cover `party`).
 
 **`party` does not change the policy.** `party` is a declaration of provenance; nothing
 enforces it. The same rule applies to first-party and untrusted plugins; what differs is
-the lint. Untrusted and trusted-third-party plugins must not import raw network
-libraries (conformance fails them). First-party plugins that do today are on an explicit,
-tested, shrinking list (below), so a *new* raw import in a first-party plugin fails
+the lint. `testing.check_network_imports` is a function a plugin author runs in the
+plugin's own CI (it is not part of `check_conformance`, and the harness does not run it at
+mount). First-party plugins that import raw libraries today are on an explicit, tested,
+shrinking list (below), so a *new* raw import in a first-party plugin fails this repo's
 `tests/` instead of passing silently. That is not an exemption: it is a visible debt.
 
 **First-party network use today** (verified in source; `tests/unit/iris_harness/test_testing/

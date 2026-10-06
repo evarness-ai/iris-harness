@@ -792,6 +792,11 @@ def _make_react_handler(
             return None
         return row.status, [(item.tool, item.args) for item in (row.items or ())]
 
+    def _approval_call_id(approval_id: str) -> str | None:
+        """The call id of the attempt an approval held (#134)."""
+        row = _approval_queue().get(approval_id)
+        return row.call_id if row is not None else None
+
     def _core_for(
         query: str,
         routing_intent: str,
@@ -946,6 +951,7 @@ def _make_react_handler(
             origin_channel=origin_channel,
             link_approval_checkpoint=_link_approval_checkpoint,
             read_approval=_read_approval,
+            approval_call_id=_approval_call_id,
             budget_observer=_budget_observer,
             # The governance judge reviews this run on the route it ran on (§9.2).
             review_route=effective_intent,

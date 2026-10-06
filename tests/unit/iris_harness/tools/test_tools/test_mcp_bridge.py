@@ -907,3 +907,53 @@ def test_a_bridged_tools_rows_name_the_server_that_owns_it(tmp_path: Path) -> No
     rows = [r for r in audit.query() if r.hook_point in ("pre_tool_use", "post_tool_use")]
     assert {r.hook_point for r in rows} == {"pre_tool_use", "post_tool_use"}
     assert {json.loads(r.payload_json)["tool_plugin"] for r in rows} == {"mcp:filesystem"}
+
+
+def test_a_bridged_call_mints_one_call_id_for_its_pre_and_post_rows(tmp_path: Path) -> None:
+    """#134: the bridge used to stamp ``tool_call_id=None``. Each outbound call now gets
+    one minted ULID on both its rows (and the old metadata key with the same value)."""
+    import json
+
+    from iris_harness.foundation.ids import is_ulid
+    from iris_harness.kernel.governance import build_default_kernel
+    from iris_harness.kernel.governance.audit import AuditLog
+
+    audit = AuditLog(db_path=tmp_path / "audit.db")
+    write_governor_policy(tmp_path)
+    write_mcp_config(tmp_path, enabled=True)
+    bridge = MCPBridge(
+        tmp_path,
+        governor_service=build_governor_service(tmp_path),
+        governance_kernel=build_default_kernel(audit_log=audit),
+    )
+    for _ in range(2):
+        bridge.invoke_external_tool(
+            "filesystem",
+            "read_file",
+            # Arguments are only arguments: neither key names the call.
+            {"path": "README.md", "call_id": "FORGED", "tool_call_id": "FORGED"},
+            approval_granted=True,
+            executor=lambda server, tool_name, arguments: {"content": "x"},
+        )
+    rows = [r for r in audit.query() if r.hook_point in ("pre_tool_use", "post_tool_use")]
+    ids: dict[str, set[str]] = {"pre_tool_use": set(), "post_tool_use": set()}
+    for row in rows:
+        payload = json.loads(row.payload_json)
+        assert is_ulid(payload.get("call_id")), payload
+        ids[row.hook_point].add(payload["call_id"])
+    assert ids["pre_tool_use"] == ids["post_tool_use"]  # the same two calls, pre and post
+    assert len(ids["pre_tool_use"]) == 2 and "FORGED" not in ids["pre_tool_use"]
+
+
+def test_the_bridge_stamps_the_alias_beside_the_call_id() -> None:
+    from unittest.mock import MagicMock
+
+    kernel = MagicMock()
+    kernel.fire_sync.return_value = (MagicMock(outcome="allow"), MagicMock(payload={"result": "r"}))
+    bridge = MCPBridge.__new__(MCPBridge)
+    bridge._governance_kernel = kernel
+    bridge._fire_governance_post_tool(
+        server_name="s", tool_name="t", result="r", persona=None, run_id=None, call_id="C1"
+    )
+    meta = kernel.fire_sync.call_args[0][1].metadata
+    assert (meta["call_id"], meta["tool_call_id"]) == ("C1", "C1")

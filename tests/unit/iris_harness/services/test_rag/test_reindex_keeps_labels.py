@@ -1,0 +1,335 @@
+"""A rebuild of the RAG index keeps every source's label (never lowers, never drops one).
+
+The label is canonical in ``rag.db`` (``document_sources.classification`` per source,
+``document_chunks.classification`` per chunk); the Chroma collection only mirrors the chunk
+label in its metadata, and retrieval reads the label back from the store. The one rebuild
+path, ``reindex_all`` (``iris docs reindex``), re-reads chunks from the store, so a label
+stays. These tests pin that for each way the index gets rebuilt:
+
+* the index is lost (a fresh, empty collection) and ``reindex_all`` refills it;
+* the embedding model changes (a different embedder over the same persisted collection);
+* the same rebuild through the ``iris docs reindex`` command;
+* a forced rebuild of an empty store (the documented way to empty the index).
+
+``iris docs sync`` has no ``--force``, and ``sync_all`` is not a rebuild (it skips unchanged
+files), so it is pinned only as "does not touch a label". The embedder stub is the hashing
+one of ``test_index_rebuild``; no model is loaded.
+"""
+
+from __future__ import annotations
+
+import inspect
+import os
+import re
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import pytest
+from chromadb import Documents, EmbeddingFunction
+from typer.testing import CliRunner
+
+import iris_harness.foundation.persistence.embedding as embedding
+from iris_harness.cli.docs import docs_app
+from iris_harness.services.rag.index import DocumentIndex
+from iris_harness.services.rag.ingest import _source_id, ingest_path, reindex_all, sync_all
+from iris_harness.services.rag.ingest_source import (
+    IndexedDocument,
+    KnownFile,
+    RemovedDocument,
+    register_ingest_source,
+)
+from iris_harness.services.rag.retrieve import search_documents
+from iris_harness.services.rag.store import DocumentStore
+
+from .test_index_rebuild import _HashEmbedder, _snapshot
+
+_PERSONAL = "# Contact\n\nReach me at jane@example.com about the mitochondria notes."
+_PUBLIC = "# Notes\n\nThe mitochondria is the powerhouse of the cell."
+_INTERNAL = "# Plan\n\nThe mitochondria roadmap is internal."
+
+
+class _OtherEmbedder(EmbeddingFunction[Documents]):
+    """A different model: another name and another vector size than the hashing one."""
+
+    def __init__(self) -> None:
+        pass
+
+    def __call__(self, input: Documents) -> Any:
+        vectors = []
+        for text in input:
+            vec = [0.0] * 32
+            for word in re.findall(r"[a-z0-9]+", text.lower()):
+                vec[sum(map(ord, word)) % 32] += 1.0
+            vectors.append(vec)
+        return vectors
+
+    @staticmethod
+    def name() -> str:
+        return "iris-test-other"
+
+    def get_config(self) -> dict[str, Any]:
+        return {}
+
+    @staticmethod
+    def build_from_config(config: dict[str, Any]) -> _OtherEmbedder:
+        return _OtherEmbedder()
+
+
+class _Recorder:
+    """A file-domain source that records every call the seam makes."""
+
+    def __init__(self, known: dict[Path, KnownFile] | None = None) -> None:
+        self.known = known or {}
+        self.indexed: list[IndexedDocument] = []
+        self.removed: list[RemovedDocument] = []
+
+    def known_file(self, path: Path) -> KnownFile | None:
+        return self.known.get(Path(path).resolve())
+
+    def record_indexed(self, doc: IndexedDocument) -> None:
+        self.indexed.append(doc)
+
+    def record_removed(self, doc: RemovedDocument) -> None:
+        self.removed.append(doc)
+
+
+@pytest.fixture(autouse=True)
+def _real_chroma(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.delenv("IRIS_TEST_NULL_EMBEDDINGS", raising=False)
+    monkeypatch.setattr(embedding, "_shared", _HashEmbedder())
+    yield
+    register_ingest_source(None)
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> DocumentStore:
+    s = DocumentStore(db_path=tmp_path / "rag.db")
+    s.ensure_schema()
+    return s
+
+
+@pytest.fixture
+def docs(tmp_path: Path) -> dict[str, Path]:
+    folder = tmp_path / "vault"
+    folder.mkdir()
+    files = {"personal": _PERSONAL, "public": _PUBLIC, "internal": _INTERNAL}
+    paths = {}
+    for label, text in files.items():
+        paths[label] = folder / f"{label}.md"
+        paths[label].write_text(text)
+    return paths
+
+
+def _state(store: DocumentStore) -> dict[str, Any]:
+    """Every label rag.db holds: per source, and per chunk."""
+    return {
+        "sources": {s.id: s.classification for s in store.list_sources()},
+        "chunks": {c.id: c.classification for c in store.iter_chunks()},
+    }
+
+
+def _mirror(index: DocumentIndex) -> dict[str, Any]:
+    """The label the index mirrors for each chunk (None when the metadata has none)."""
+    return {cid: meta.get("classification") for cid, (_, meta) in _snapshot(index).items()}
+
+
+def _indexed(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], source: _Recorder | None = None
+) -> DocumentIndex:
+    index = DocumentIndex(persist_dir=tmp_path / "chroma")
+    assert index.is_ready
+    ingest_path(docs["personal"].parent, store=store, index=index, source=source)
+    return index
+
+
+def test_the_fixture_labels_are_what_the_tests_assume(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> None:
+    """Guard the premise: three different labels, at least one above the default."""
+    _indexed(tmp_path, store, docs)
+    by_name = {Path(s.path).stem: s.classification for s in store.list_sources()}
+    assert by_name["personal"] == "personal"
+    assert by_name["public"] == "public"
+    assert len(set(by_name.values())) >= 2
+
+
+def test_a_rebuild_into_a_lost_index_keeps_every_label(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> None:
+    original = _indexed(tmp_path, store, docs)
+    before_store, before_mirror = _state(store), _mirror(original)
+    assert "personal" in before_store["sources"].values()
+
+    lost = DocumentIndex(persist_dir=tmp_path / "chroma_lost")
+    assert _mirror(lost) == {}
+    assert reindex_all(store=store, index=lost) == len(before_store["chunks"])
+
+    assert _state(store) == before_store  # canonical labels untouched
+    assert _mirror(lost) == before_mirror == before_store["chunks"]  # mirror re-derived from them
+
+
+def test_a_rebuild_never_lowers_a_chunk_label_the_store_holds(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> None:
+    """The mirror is re-read from the store, so a label that differs from a fresh scan stays.
+
+    The file was labelled ``personal`` and then edited to read as public; the ratchet keeps
+    ``personal``. A rebuild that re-scanned or reset labels would show ``public``.
+    """
+    index = _indexed(tmp_path, store, docs)
+    docs["personal"].write_text(_PUBLIC)
+    st = docs["personal"].stat()
+    os.utime(docs["personal"], (st.st_mtime + 10, st.st_mtime + 10))
+    sync_all(store=store, index=index)
+    sid = _source_id(docs["personal"].resolve())
+    assert store.get_source(sid).classification == "personal"  # type: ignore[union-attr]
+
+    reindex_all(store=store, index=index)
+
+    assert store.get_source(sid).classification == "personal"  # type: ignore[union-attr]
+    assert {v for k, v in _mirror(index).items() if k.startswith(sid)} == {"personal"}
+
+
+def _model_changed(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> tuple[DocumentIndex, dict[str, Any], _Recorder]:
+    """Index under one embedder, then open the same collection under another."""
+    recorder = _Recorder()
+    _indexed(tmp_path, store, docs, source=recorder)
+    before = _state(store)
+    monkeypatch.setattr(embedding, "_shared", _OtherEmbedder())
+    return DocumentIndex(persist_dir=tmp_path / "chroma"), before, recorder
+
+
+def test_a_model_change_leaves_every_label_and_source_in_the_store(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Chroma refuses the persisted collection under a new embedder (see the xfail below).
+
+    That must not cost a label: the store is untouched, the sources stay, retrieval falls
+    back to keyword search and still carries each chunk's label, and the file domain is not
+    told anything was removed.
+    """
+    changed, before, recorder = _model_changed(tmp_path, store, docs, monkeypatch)
+    indexed_before = len(recorder.indexed)
+
+    assert not changed.is_ready
+    with pytest.raises(RuntimeError, match="unavailable"):
+        reindex_all(store=store, index=changed)
+
+    assert _state(store) == before
+    hits = search_documents("mitochondria", store=store, index=changed)
+    assert {h.classification for h in hits} == set(before["sources"].values())
+    assert len(recorder.indexed) == indexed_before and recorder.removed == []
+
+
+def test_a_rebuild_into_a_fresh_collection_after_a_model_change_keeps_every_label(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The repair that works today: rebuild into a collection created under the new model."""
+    _, before, recorder = _model_changed(tmp_path, store, docs, monkeypatch)
+    fresh = DocumentIndex(persist_dir=tmp_path / "chroma_new_model")
+    assert fresh.is_ready
+
+    reindex_all(store=store, index=fresh)
+    once = _snapshot(fresh)
+    reindex_all(store=store, index=fresh)
+
+    assert _state(store) == before
+    assert _mirror(fresh) == before["chunks"]
+    assert _snapshot(fresh) == once
+    hits = search_documents("mitochondria", store=store, index=fresh)
+    assert {h.classification for h in hits} == set(before["sources"].values())
+    assert recorder.removed == []
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="issue 144: a changed embedding model makes the persisted collection unopenable, "
+    "so `iris docs reindex` cannot rebuild it (Chroma embedding-function conflict, index.py:58)",
+)
+def test_reindex_can_rebuild_after_the_embedding_model_changes(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    changed, before, _ = _model_changed(tmp_path, store, docs, monkeypatch)
+
+    reindex_all(store=store, index=changed)
+
+    assert _mirror(changed) == before["chunks"]
+
+
+def test_the_cli_reindex_keeps_every_label_and_does_not_touch_the_file_domain(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+    before_store, before_mirror = _state(store), _mirror(index)
+    recorder = _Recorder()
+    register_ingest_source(recorder)
+    monkeypatch.setattr("iris_harness.cli.docs._store_and_index", lambda: (store, index))
+
+    result = CliRunner().invoke(docs_app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    assert _state(store) == before_store
+    assert _mirror(index) == before_mirror
+    assert recorder.indexed == [] and recorder.removed == []  # reads no file, drops nothing
+
+
+def test_reindex_all_takes_no_ingest_source(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> None:
+    """The rebuild has no seam to the file domain at all, so it cannot report a removal."""
+    assert "source" not in inspect.signature(reindex_all).parameters
+    recorder = _Recorder()
+    index = _indexed(tmp_path, store, docs, source=recorder)
+    indexed_before = len(recorder.indexed)
+
+    reindex_all(store=store, index=index)
+
+    assert len(recorder.indexed) == indexed_before and recorder.removed == []
+
+
+def test_a_rebuild_keeps_every_source_and_is_idempotent(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+    sources_before = {s.id for s in store.list_sources()}
+    state = _state(store)
+
+    reindex_all(store=store, index=index)
+    once_store, once_index = _state(store), _snapshot(index)
+    reindex_all(store=store, index=index)
+
+    assert {s.id for s in store.list_sources()} == sources_before
+    assert once_store == state == _state(store)
+    assert _snapshot(index) == once_index
+
+
+def test_sync_after_a_rebuild_keeps_the_labels(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> None:
+    """``sync_all`` (the only other re-index command; it has no force) never lowers one."""
+    index = _indexed(tmp_path, store, docs)
+    before = _state(store)
+
+    reindex_all(store=store, index=index)
+    sync_all(store=store, index=index)
+
+    assert _state(store) == before
+    assert _mirror(index) == before["chunks"]
+
+
+def test_a_forced_rebuild_of_an_empty_store_drops_the_mirror_not_the_labels_elsewhere(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> None:
+    """``--force`` on an empty store empties the index; a populated store is never so rebuilt."""
+    index = _indexed(tmp_path, store, docs)
+    other = DocumentStore(db_path=tmp_path / "empty.db")
+    other.ensure_schema()
+    before = _state(store)
+
+    reindex_all(store=other, index=index, force=True)  # the wrong store, deliberately forced
+
+    assert _snapshot(index) == {}
+    assert _state(store) == before  # the real store's labels are not the rebuild's to touch

@@ -1056,12 +1056,14 @@ class SideEffectLedgerSetting:
     ``enabled`` is ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`` (default on): off denies every
     high-risk call. ``record_all`` is ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL`` (default
     off) and only counts while ``enabled``: it adds every non-read call to the high-risk
-    class the ledger always covers. ``problems`` are the warnings the build logs.
+    class the ledger always covers. ``problems`` are the warnings the build logs, and
+    ``notices`` are warnings about a setting that still works but no longer means what it did.
     """
 
     enabled: bool
     record_all: bool
     problems: tuple[str, ...] = ()
+    notices: tuple[str, ...] = ()
 
 
 def parse_side_effect_ledger_settings(
@@ -1071,9 +1073,11 @@ def parse_side_effect_ledger_settings(
 
     An unrecognised value of either applies that setting's default (ledger on, scope
     ``ALL`` off) and is a problem naming the accepted spellings. ``ALL`` set while the
-    ledger is off is a problem too: it has no effect.
+    ledger is off is a problem too: it has no effect. A ledger explicitly set on with
+    ``ALL`` off is a notice: before the scope split that value recorded every non-read call.
     """
     problems: list[str] = []
+    notices: list[str] = []
     ledger = (ledger_raw or "").strip().lower()
     scope = (all_raw or "").strip().lower()
     enabled = ledger not in _FALSY
@@ -1095,7 +1099,13 @@ def parse_side_effect_ledger_settings(
             f"{SIDE_EFFECT_LEDGER_ENV} is off: there is no ledger to record into."
         )
         record_all = False
-    return SideEffectLedgerSetting(enabled, record_all, tuple(problems))
+    if ledger in _TRUTHY and not record_all and not (scope and scope in _TRUTHY):
+        notices.append(
+            f"governance: {SIDE_EFFECT_LEDGER_ENV}={ledger!r} covers high-risk calls only "
+            f"(destructive tools and pinned writes). It no longer also records every other "
+            f"non-read call; set {SIDE_EFFECT_LEDGER_ALL_ENV}=1 for that."
+        )
+    return SideEffectLedgerSetting(enabled, record_all, tuple(problems), tuple(notices))
 
 
 def side_effect_ledger_settings_from_env() -> SideEffectLedgerSetting:
@@ -1123,6 +1133,8 @@ def _side_effect_ledger_from_env() -> tuple[SideEffectLedger | None, bool]:
     setting = side_effect_ledger_settings_from_env()
     for problem in setting.problems:
         logger.warning("%s", problem)
+    for notice in setting.notices:
+        logger.warning("%s", notice)
     if not setting.enabled:
         logger.warning(
             "governance: IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=%r -- the side-effect ledger is "

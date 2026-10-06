@@ -681,6 +681,46 @@ def test_the_two_settings_parse_as_booleans(
     assert (got.enabled, got.record_all, len(got.problems)) == (enabled, record_all, problems)
 
 
+@pytest.mark.parametrize(
+    ("ledger", "scope", "notices"),
+    [
+        (None, None, 0),
+        ("", None, 0),
+        ("true", None, 1),
+        ("1", "", 1),
+        ("On", "no", 1),
+        ("true", "1", 0),
+        ("1", "yes", 0),
+        (None, "1", 0),
+        ("0", None, 0),
+        ("false", "1", 0),
+        ("maybe", None, 0),
+    ],
+)
+def test_an_explicit_ledger_on_without_the_scope_is_a_notice_never_a_default(
+    ledger: str | None, scope: str | None, notices: int
+) -> None:
+    """Only an EXPLICIT truthy value says what it no longer records; unset stays silent."""
+    got = parse_side_effect_ledger_settings(ledger, scope)
+    assert len(got.notices) == notices
+    for text in got.notices:
+        assert "IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL=1" in text
+
+
+def test_the_notice_is_logged_once_as_a_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.delenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL", raising=False)
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "true")
+    with caplog.at_level(logging.WARNING, logger="iris_harness.kernel.governance.wiring"):
+        kernel_from_env()
+    hits = [r for r in caplog.records if "covers high-risk calls only" in r.getMessage()]
+    assert len(hits) == 1
+    assert hits[0].levelno == logging.WARNING
+
+
 def test_a_kernel_built_without_a_ledger_still_guards_high_risk_calls(tmp_path: Path) -> None:
     kernel = build_default_kernel(
         audit_log=AuditLog(db_path=tmp_path / "audit.db"), side_effect_ledger_enabled=False

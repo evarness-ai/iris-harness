@@ -27,7 +27,9 @@ First public release of the IRIS harness.
   non-read call to be recorded, also set `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL=1`.
   `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0` is unchanged (no ledger; destructive tools and
   pinned writes are denied), and `..._ALL` set while the ledger is off logs a warning that
-  it has no effect.
+  it has no effect. An explicit `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1` (or `true`/`yes`/`on`)
+  without `..._ALL` logs one warning at startup saying it covers high-risk calls only;
+  leaving the setting unset logs nothing.
 
 ### Added
 

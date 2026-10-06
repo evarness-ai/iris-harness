@@ -227,6 +227,17 @@ def test_with_the_floor_off_the_slot_is_verbatim(monkeypatch: pytest.MonkeyPatch
     assert _floor_rows() == []
 
 
+def test_the_slot_tripwire_is_the_kernels_one_helper_with_its_row_shape() -> None:
+    """``redact_external_text`` delegates to ``redact_text``: its caller and source stamp."""
+    from iris_harness.runtime.external_text import redact_external_text
+
+    out = redact_external_text(INJECTED, skill="mail", tool="list_inbox")
+    assert MARKER in out
+    (row,) = _floor_rows()
+    assert row["caller"] == "core:skill_render" and row["source"] == "skill:mail"
+    assert row["tool"] == "list_inbox"
+
+
 # ------------------------------------------------------------------ heartbeat / digest route
 def test_the_digest_store_and_the_channel_get_the_redacted_text(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

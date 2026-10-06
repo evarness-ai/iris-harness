@@ -29,9 +29,12 @@ test_external_content_floor.py``.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 #: The setting that turns the floor off.
 EXTERNAL_CONTENT_FLOOR_FLAG = "IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"
@@ -71,6 +74,14 @@ def floor_setting_problem() -> str | None:
 
 #: What replaces a span the tripwire matched.
 MARKER = "[redacted: instruction-like text in external content]"
+
+#: Most spans redacted one by one in a text. Past this, the rest of the text collapses into
+#: ONE marker that says how many further spans it held (:func:`_collapsed_marker`). Every
+#: match used to become the 52-character :data:`MARKER`, so a hostile 100 KB of ``[INST] ``
+#: (14,285 matches) grew to ~771 KB. The shipped samples redact at most a handful of spans
+#: (see ``test_external_content_floor.py``); 64 is far above any real text and bounds the
+#: marker cost at 64 x 52 = ~3.3 KB per pass.
+MAX_REDACTIONS = 64
 
 #: The tag that wraps an external result.
 ENVELOPE_TAG = "external_content"
@@ -249,6 +260,11 @@ def _extent(text: str, end: int) -> int:
     return found.start() if found.group(0) == "\n" else found.start() + 1
 
 
+def _collapsed_marker(further: int) -> str:
+    """The one marker standing for everything after the :data:`MAX_REDACTIONS`-th span."""
+    return f"[redacted: {further} further instruction-like spans in external content]"
+
+
 def _redact(text: str, patterns: tuple[FloorPattern, ...]) -> tuple[str, list[str], int]:
     spans: list[tuple[int, int, str]] = []
     for pattern in patterns:
@@ -266,8 +282,14 @@ def _redact(text: str, patterns: tuple[FloorPattern, ...]) -> tuple[str, list[st
             merged.append((start, end))
     out: list[str] = []
     cursor = 0
-    for start, end in merged:
+    for index, (start, end) in enumerate(merged):
         out.append(text[cursor:start])
+        if index == MAX_REDACTIONS:
+            # Over the cap: the rest of the text (never left raw) becomes one marker. The
+            # span count and the pattern ids below still cover every span found.
+            out.append(_collapsed_marker(len(merged) - MAX_REDACTIONS))
+            cursor = len(text)
+            break
         out.append(MARKER)
         cursor = end
     out.append(text[cursor:])
@@ -288,13 +310,78 @@ def scan(text: str) -> ScanResult:
     after_hidden, hidden_ids, hidden_spans = _redact(text, hidden)
     folded = _FOLD_RE.sub("", after_hidden)
     after_phrases, phrase_ids, phrase_spans = _redact(folded, phrases)
+    rewritten = phrase_spans > 0
+    if hidden_spans > MAX_REDACTIONS:
+        # The hidden pass collapsed the tail into one marker, so the phrase pass never saw
+        # what was in it. Count it from the text as it came (the result is discarded): the
+        # ids and the span count stay accurate, and the tail is already redacted.
+        _, phrase_ids, phrase_spans = _redact(_FOLD_RE.sub("", text), phrases)
     spans = hidden_spans + phrase_spans
     if spans == 0:
         return ScanResult(text, (), 0)
     # A phrase match rewrites the folded text; with none, only the hidden redactions apply.
-    out = after_phrases if phrase_spans else after_hidden
+    out = after_phrases if rewritten else after_hidden
     ids = (*hidden_ids, *phrase_ids)
     return ScanResult(out, ids, spans)
+
+
+def redact_text(text: str, *, source: str, tool: str | None = None, caller: str = "core") -> str:
+    """The tripwire alone, for a sink that must not carry the envelope, with its ledger row.
+
+    The one entry point for every tripwire-only caller (a brief slot, a directly answered
+    skill, a lesson, an SDK plugin): the floor setting is honoured, the floor's own
+    :func:`scan` does the work, and a match writes ONE ``post_tool_use`` row of the
+    ``external_content_floor`` plugin (pattern ids, counts, tool, source and caller; never the
+    text) and a WARNING without the text. Returns ``text`` itself, writing nothing, when the
+    floor is off, the text is empty or nothing matched. A failed ledger write never breaks
+    the caller.
+    """
+    if not text or not floor_enabled():
+        return text
+    found = scan(text)
+    if not found.matched:
+        return text
+    logger.warning(
+        "external_content_floor: redacted %d span(s) (%s) in text from %s%s",
+        found.spans,
+        ",".join(found.ids),
+        source,
+        f" via {tool}" if tool else "",
+    )
+    _audit(tool=tool, source=source, caller=caller, ids=found.ids, spans=found.spans)
+    return found.text
+
+
+def _audit(*, tool: str | None, source: str, caller: str, ids: tuple[str, ...], spans: int) -> None:
+    """One ledger row, in the shape the floor hook writes. Never raises."""
+    try:
+        from iris_harness.foundation.observability.session_log import current_session_id
+        from iris_harness.kernel.governance.audit.log import AuditLog
+
+        payload: dict[str, object] = {
+            "tool": tool,
+            "source": source,
+            "patterns": list(ids),
+            "spans": spans,
+            "marked": False,
+            "caller": caller,
+        }
+        session_id = current_session_id()
+        if session_id is not None:
+            payload["session_id"] = session_id
+        AuditLog().record(
+            run_id=session_id or caller,
+            step_id=None,
+            agent_type="core",
+            hook_point="post_tool_use",
+            plugin="external_content_floor",
+            decision="transform",
+            severity="warn",
+            reason=f"external_content_floor: redacted {spans} instruction-like span(s)",
+            payload=payload,
+        )
+    except Exception:  # noqa: BLE001 - an audit write never breaks the caller
+        logger.warning("external_content_floor: could not write the ledger row", exc_info=False)
 
 
 _ATTR_UNSAFE_RE = re.compile(r"[^\w.:/@+-]")
@@ -339,10 +426,12 @@ __all__ = [
     "ENVELOPE_TAG",
     "EXTERNAL_CONTENT_FLOOR_FLAG",
     "MARKER",
+    "MAX_REDACTIONS",
     "PATTERNS",
     "FloorPattern",
     "ScanResult",
     "floor_enabled",
+    "redact_text",
     "scan",
     "unwrap",
     "wrap",

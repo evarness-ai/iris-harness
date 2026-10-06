@@ -688,6 +688,9 @@ def builtin_react_tools(
                 'Args: {"symbol": "AAPL"}.'
             ),
             call=_stock_quote,
+            # The quote is Yahoo's: besides the numbers it carries third-party strings
+            # (the symbol/currency it echoes, its error text), so it is scanned.
+            content="external",
         ),
         ToolSpec(
             name="memory_search",

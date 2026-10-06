@@ -156,6 +156,37 @@ def test_an_external_result_is_scanned_and_its_redaction_reaches_the_caller(
     assert outcome.post is not None and outcome.post.decision is not None
 
 
+def test_the_real_stock_quote_tool_is_scanned_by_declaration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``stock_quote`` is declared external on the core ReAct tool, and that declaration
+    is what makes the runner scan it: Yahoo's error text, stubbed here to carry an
+    instruction, comes back redacted. Stubs only the sandbox fetch."""
+    from types import SimpleNamespace
+
+    from iris_harness.runtime.react_tools import builtin_react_tools
+    from iris_harness.tools import stock_quote as stock_quote_module
+
+    payload = json.dumps({"error": INJECTED})
+    monkeypatch.setattr(
+        stock_quote_module,
+        "_default_run_shell",
+        lambda cmd: SimpleNamespace(stdout=payload, stderr="", exit_code=0),
+    )
+    tool = next(
+        t
+        for t in builtin_react_tools(semantic_index=None, wiki=None, repo_root=tmp_path)
+        if t.name == "stock_quote"
+    )
+    world = _World(tmp_path)
+    outcome = world.run(tool, {"symbol": "AAPL"})
+
+    assert outcome.status == "ran"
+    assert REDACTION_MARKER in outcome.text
+    assert "evil@example.com" not in outcome.text
+    assert any(INJECTED in scored for scored in world.classifier.scored)
+
+
 def test_an_internal_result_is_not_scanned(tmp_path: Path) -> None:
     world = _World(tmp_path)
     outcome = world.run(_tool("memory_search", INJECTED))

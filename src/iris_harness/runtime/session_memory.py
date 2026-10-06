@@ -339,8 +339,16 @@ class SessionMemory:
         used = 0
         # Most recent first — the latest exchange matters most for routing — then
         # stop as soon as the total budget is hit.
-        for turn in reversed(history[-self._ROUTING_CONTEXT_MAX_TURNS :]):
-            text = (getattr(turn, "content", "") or "").strip().replace("\n", " ")
+        window = history[-self._ROUTING_CONTEXT_MAX_TURNS :]
+        # Stored text going into the router's prompt: assistant turns are scanned whole,
+        # before the per-turn cut so a phrase cannot hide at it; the owner's are not (#145).
+        shown = reenter_many(
+            [(getattr(t, "role", ""), getattr(t, "content", "") or "") for t in window],
+            reader="router_context",
+            origin="transcript",
+        )
+        for turn, scanned in zip(reversed(window), reversed(shown), strict=True):
+            text = (scanned.text or "").strip().replace("\n", " ")
             if not text:
                 continue
             role = "User" if getattr(turn, "role", "") == "user" else "Assistant"

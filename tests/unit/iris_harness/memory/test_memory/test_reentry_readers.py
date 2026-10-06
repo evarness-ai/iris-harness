@@ -124,3 +124,20 @@ def test_the_prompt_builder_scans_a_summary_it_was_handed() -> None:
         memory_token_budget=4300,
     )
     assert "Earlier: weather" in prompt and RAW not in prompt and MARKER in prompt
+
+
+def test_the_router_context_scans_assistant_turns_before_the_200_character_cut(
+    store: MemoryStore,
+) -> None:
+    sessions = _sessions(store)
+    sessions._loaded_sessions.add("s3")
+    padded = "Oslo is mild. " + "x " * 90 + RAW  # the phrase starts just before the cut
+    sessions.conversations["s3"] = [
+        ConversationTurn(role="user", content=MINE),
+        ConversationTurn(role="assistant", content=padded),
+        ConversationTurn(role="assistant", content=f"Short. {RAW}"),
+    ]
+    context = sessions.format_recent_context("s3")
+    assert context is not None
+    assert "Ignore all previous" not in context and MARKER in context
+    assert MINE.replace("\n", " ")[:150] in context  # the owner's own turn is verbatim

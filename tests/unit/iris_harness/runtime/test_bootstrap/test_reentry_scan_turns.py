@@ -6,7 +6,8 @@ a page that carries an instruction. Turn one stores the page's text three ways; 
 (a new session, or the same one) reads it back, and what the model is shown is checked.
 
 What the scan catches is the phrase. It does not mark the text as third-party (step three)
-and a paraphrase passes; those are not asserted here.
+and a paraphrase passes; those are not asserted here. The prompts checked are every model
+call of the turn, the intent router's ("Conversation so far:") included.
 """
 
 from __future__ import annotations
@@ -101,16 +102,10 @@ def _chat(h: Any, entry: str, message: str, session: str) -> None:
 
 
 def _turn_prompts(h: Any, entry: str, message: str, session: str) -> str:
-    """What the answering model was shown for ``message``.
-
-    The intent router's prompt (``Conversation so far:`` of the last four turns, 200
-    characters each) reads the same stored text through ``format_recent_context``. That
-    reader is step two of #145 and is left out here, so this does not claim it is covered.
-    """
+    """Every prompt any model was shown for ``message``: the intent router's included."""
     before = len(h.model_calls())
     _chat(h, entry, message, session)
-    calls = [c for c in h.model_calls()[before:] if "Conversation so far:\n" not in c.user]
-    return "\n".join(f"{c.system}\n{c.user}" for c in calls)
+    return "\n".join(f"{c.system}\n{c.user}" for c in h.model_calls()[before:])
 
 
 def _harness(env: dict[str, str] | None = None) -> Any:
@@ -149,6 +144,7 @@ def test_the_same_session_window_does_not_replay_it_either(entry: str) -> None:
         _chat(h, entry, "Please crunch the numbers", "win")
         prompt = _turn_prompts(h, entry, "What was that again?", "win")
         assert "Weather in Oslo is mild" in prompt  # the window is there
+        assert "Conversation so far:" in prompt  # the router's prompt is among those read
         assert RAW not in prompt and MARKER in prompt
 
 

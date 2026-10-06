@@ -166,8 +166,8 @@ with a warning.
 The floor screens a tool result once, when it arrives. The same words can come back later:
 the model restates a tool's output in its answer, the turn is stored, and the stored text
 re-enters a prompt through the conversation window, the session summary,
-`recall_conversation`, `memory_search` over sessions, and the related earlier turns the
-retriever adds. `kernel/governance/reentry.py` is the second look, at that re-entry
+`recall_conversation`, `memory_search` over sessions, the related earlier turns the
+retriever adds, and the recent-turns block of the intent router's prompt. `kernel/governance/reentry.py` is the second look, at that re-entry
 (issue #145, step one).
 
 - **What is scanned.** Assistant turns and summaries, with the floor's own tripwire (the
@@ -177,7 +177,8 @@ retriever adds. `kernel/governance/reentry.py` is the second look, at that re-en
   the same visible marker the floor uses.
 - **Where.** Where the text is read back, shared by every path: `rt.chat`, `rt.chat_stream`,
   the general lane, `code_exec` and escalation actions all read the window built in
-  `SessionMemory.build_memory_context`. `recall_conversation` and `memory_search` run in the
+  `SessionMemory.build_memory_context`, and the intent router's "Conversation so far" block
+  (`format_recent_context`, scanned before its 200-character cut) is its only producer. `recall_conversation` and `memory_search` run in the
   loop only (`iris mcp serve` and `api.tools` resolve plugin tools, which do not include them).
 - **Limits.** A text over 16 KB is cut, and a read that has scanned 128 KB (newest texts
   first) replaces the older ones, each with a visible `[not scanned: ...]` marker; an
@@ -196,8 +197,7 @@ homoglyph spelling, and a summary the model wrote that rewords an instruction al
 recalled text is redacted, not marked: it does not arrive in an `<external_content>`
 envelope, because the turn's origin (third-party text or the owner's own conversation) is not
 recorded yet; that is a later step. Not covered yet: the compactor's summarizer input, the
-behavior miner, intention roll-up, the intent router's recent-turns context and notices
-injected into the window.
+behavior miner, intention roll-up and notices injected into the window.
 
 ## The audit ledger
 

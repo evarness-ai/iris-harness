@@ -342,6 +342,10 @@ def test_a_describe_that_raises_falls_back_to_the_raw_call(tmp_path: Path) -> No
     assert row is not None and row.card is not None
     assert row.card.title == "trash_email wants to delete or overwrite your data"
     assert row.card.lines == ('trash_email {"ids": ["m1", "m2"]}',)
+    # The chat halt message words the fallback the same way the card does (#109).
+    assert trace.final_answer.startswith(
+        "trash_email wants to delete or overwrite your data: this needs your approval"
+    )
     assert row.card.undo_tool == "restore_email"  # the manifest's part still holds
 
 

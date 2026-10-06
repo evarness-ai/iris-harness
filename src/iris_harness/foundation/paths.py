@@ -119,6 +119,20 @@ def _checkout_config_dir() -> Path | None:
     return candidate if candidate.is_dir() else None
 
 
+def checkout_docs_dir() -> Path | None:
+    """The checkout's ``docs/``, when this package was imported from a checkout.
+
+    ``None`` from a wheel: the docs are not package data, so an installed IRIS has none to
+    read, and a caller must say so rather than reach for some other project's ``docs/``
+    (``_checkout_root`` is the check that keeps it from doing that).
+    """
+    root = _checkout_root()
+    if root is None:
+        return None
+    candidate = root / "docs"
+    return candidate if candidate.is_dir() else None
+
+
 def packaged_config_dir() -> Path:
     """The default config the wheel ships, at ``iris_harness/_data/config``.
 

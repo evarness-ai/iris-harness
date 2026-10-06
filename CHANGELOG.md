@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 First public release of the IRIS harness.
 
+### Changed
+
+- Destructive tools and pinned writes now get a durable side-effect ledger row before
+  they run (issue #73). This needs no flag: with `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`
+  unset the ledger covers that high-risk class only, and plain writes and reads are
+  unchanged (no row, no file). Behavior change for deployments that set
+  `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0`: a destructive tool or pinned write is now denied
+  rather than run with no durable record. Remove the setting, or set it to `1` to also
+  record every non-read call, to run them again.
+
 ### Added
 
 - The governed agent harness (`iris_harness`): intent routing, planning, a ReAct
@@ -28,3 +38,32 @@ First public release of the IRIS harness.
   `party` (the plugin is treated as `untrusted`), including an entry-point plugin
   with no manifest; `iris plugins` and `iris plugins show` print `party`; the
   examples and `iris plugin new` scaffolds declare `party: untrusted` explicitly.
+
+### Fixed
+
+- A ReAct step's `pre_llm_call` audit row names the model and provider the step
+  actually called: the step resolves its model once and the row and the call share
+  it, where the row used to carry a snapshot from when the loop was built and the call
+  asked the tier router again (a governor downshift or a tier edit could make them
+  disagree, and a turn paid one extra router ask, a governor acquire, for the snapshot).
+  A router answer of the wrong type still fails loudly rather than yielding a row with
+  no model. `model` and `provider` now
+  appear in `GET /governance/audit`, `iris governance audit` and the trace, and the
+  CLI table has a `by` column (tool owner, capability provider or model).
+- A core-only start (no `email` extra, no domain plugins) stays quiet without going
+  blind. A skill whose tools module genuinely fails to load is logged once with its
+  traceback (as before #118's one-line warning), while a skill blocked by a declared
+  missing package gets one INFO line naming the extra to install; `gmail-inbox` now
+  declares all three Google packages its import chain needs and `requires.extra: email`.
+  A `heartbeats.yaml` entry names its owning plugin with `plugin:`: an unmounted owner is
+  skipped quietly (one INFO summary, "plugin not mounted"), but a mounted plugin that
+  registered no handler, a mistyped handler with no `plugin:`, or no plugin lookup bound
+  still warns. Refs #110.
+- A typo in a heartbeat's `plugin:` no longer reads as "plugin not installed":
+  `config/heartbeats.yaml` declares every owner it may name (`plugins_in_tree`,
+  `plugins_external`), a test checks each `plugin:` against them (and the in-tree names
+  against the shipped manifests), and an undeclared owner with a missing handler warns.
+  A skill blocked by a missing env var, config file or credential, not only a package,
+  now logs the same one INFO line and shows `blocked: env:NAME` in `iris skills list`;
+  `requires.env_vars` is now read from the process environment (it was checked against
+  an empty mapping, so a declared variable always counted as missing). Refs #110.

@@ -2,14 +2,16 @@
 
 ``PreToolUseLedgerHook`` writes a ``pending`` row before a destructive tool or a pinned
 write runs, or denies the call when it cannot; ``PostToolUseLedgerHook`` settles that row
-(``SideEffectLedger.finalize``). The ledger is on by default; turning it off turns
-high-risk calls off. The runner's side is ``tests/unit/iris_harness/agent/test_agent/
+(``SideEffectLedger.finalize``). That class is always recorded (the ledger is created on
+first use); ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1`` records every non-read call too, and
+``=0`` turns high-risk calls off. The runner's side is ``tests/unit/iris_harness/agent/test_agent/
 test_pre_execution_record.py``.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +40,10 @@ from iris_harness.kernel.governance.plugins.post_tool_use_ledger import (
     PostToolUseLedgerHook,
 )
 from iris_harness.kernel.governance.plugins.pre_tool_use_ledger import PreToolUseLedgerHook
-from iris_harness.kernel.governance.side_effects import SideEffectLedger
+from iris_harness.kernel.governance.side_effects import (
+    DeferredSideEffectLedger,
+    SideEffectLedger,
+)
 from iris_harness.kernel.governance.side_effects.probes import NO_PROBE, run_probe
 
 KEY = "run-1:2:call-1"
@@ -405,24 +410,110 @@ def test_the_row_is_settled_before_any_post_hook_can_withhold_the_result(
         assert names.index(later) > ledger_at, names
 
 
-def test_a_default_kernel_opens_the_default_ledger(tmp_path: Path) -> None:
+def test_a_default_kernel_guards_high_risk_calls_without_touching_the_ledger(
+    tmp_path: Path,
+) -> None:
     from iris_harness.foundation.paths import governance_data_dir
 
     kernel = build_default_kernel(audit_log=AuditLog(db_path=tmp_path / "audit.db"))
     assert "post_tool_use_ledger" in kernel.hook_names(HookPoint.POST_TOOL_USE)
-    assert (governance_data_dir() / "side_effects.db").exists()
-
-
-def test_a_kernel_built_without_a_ledger_still_guards_high_risk_calls(tmp_path: Path) -> None:
-    kernel = build_default_kernel(
-        audit_log=AuditLog(db_path=tmp_path / "audit.db"), side_effect_ledger_enabled=False
-    )
-    assert "post_tool_use_ledger" not in kernel.hook_names(HookPoint.POST_TOOL_USE)
     assert kernel.hook_names(HookPoint.PRE_TOOL_USE)[-1] == "pre_tool_use_ledger"
+    # Built, not used: the default ledger opens when a high-risk call first needs it.
+    assert not (governance_data_dir() / "side_effects.db").exists()
 
 
-@pytest.mark.parametrize("raw", [None, "1", "on", "maybe"])
-def test_the_ledger_is_on_unless_opted_out(
+async def test_the_default_ledger_opens_on_the_first_high_risk_call_and_records_it(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "s.db"
+    ledger = DeferredSideEffectLedger(db)
+    assert not db.exists()
+    decision = await PreToolUseLedgerHook(ledger)(_pre())
+    assert decision.outcome == "allow" and db.exists()
+    row = ledger.get(decision.audit_metadata[SIDE_EFFECT_ID])
+    assert row is not None and row.status == "pending"
+
+
+def test_a_second_thread_never_sees_a_deferred_ledger_before_its_schema_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first open holds every other caller until the schema is complete.
+
+    Thread A is parked inside schema creation; thread B then records. B must wait for A, not
+    run against a database with no table (which would deny a legitimate high-risk call).
+    """
+    ledger = DeferredSideEffectLedger(tmp_path / "s.db")
+    real_init = SideEffectLedger._init_schema
+    in_schema = threading.Event()
+    release = threading.Event()
+    parked: list[bool] = []
+
+    def slow_init(self: SideEffectLedger) -> None:
+        if not parked:  # only the first opener parks
+            parked.append(True)
+            in_schema.set()
+            assert release.wait(timeout=10)
+        real_init(self)
+
+    monkeypatch.setattr(SideEffectLedger, "_init_schema", slow_init)
+    errors: list[BaseException] = []
+
+    def record(key: str) -> None:
+        try:
+            ledger.record(
+                run_id="r", step_id=1, tool="wipe", verification_probe=NO_PROBE, side_effect_id=key
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    a = threading.Thread(target=record, args=("a",))
+    b = threading.Thread(target=record, args=("b",))
+    a.start()
+    assert in_schema.wait(timeout=10)  # A is inside the schema creation
+    b.start()
+    b.join(timeout=1.0)  # unfixed: B finishes (failing) here; fixed: B is still waiting on A
+    release.set()
+    a.join(timeout=10)
+    b.join(timeout=10)
+
+    assert errors == []
+    assert ledger.get("a") is not None and ledger.get("b") is not None
+
+
+async def test_a_deferred_ledger_that_will_not_open_denies_the_high_risk_call(
+    tmp_path: Path,
+) -> None:
+    blocker = tmp_path / "file"
+    blocker.write_text("not a directory")
+    ledger = DeferredSideEffectLedger(blocker / "s.db")
+    decision = await PreToolUseLedgerHook(ledger)(_pre())
+    assert decision.outcome == "deny"
+
+
+@pytest.mark.parametrize("effect", ["write", "send"])
+async def test_the_default_post_hook_leaves_a_plain_write_alone(
+    effect: str, tmp_path: Path
+) -> None:
+    db = tmp_path / "s.db"
+    hook = PostToolUseLedgerHook(DeferredSideEffectLedger(db), high_risk_only=True)
+    ctx = _post(effect=effect)
+    ctx.metadata["tool_confirm"] = "once"
+    decision = await hook(ctx)
+    assert decision.outcome == "allow"
+    assert not db.exists()
+
+
+async def test_the_default_post_hook_settles_a_high_risk_row(tmp_path: Path) -> None:
+    ledger = DeferredSideEffectLedger(tmp_path / "s.db")
+    pre = await PreToolUseLedgerHook(ledger)(_pre())
+    hook = PostToolUseLedgerHook(ledger, high_risk_only=True)
+    await hook(_post())
+    row = ledger.get(pre.audit_metadata[SIDE_EFFECT_ID])
+    assert row is not None and row.status == "completed"
+
+
+@pytest.mark.parametrize("raw", [None, "maybe"])
+def test_an_unset_flag_is_the_high_risk_only_default(
     raw: str | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
@@ -434,7 +525,70 @@ def test_the_ledger_is_on_unless_opted_out(
     kernel = kernel_from_env()
     assert kernel is not None
     assert "post_tool_use_ledger" in kernel.hook_names(HookPoint.POST_TOOL_USE)
+    assert not (tmp_path / "s.db").exists()  # nothing touched until a high-risk call
+
+
+def test_an_unset_flag_kernel_records_nothing_for_a_plain_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Through the kernel's own hooks, as ``kernel_from_env`` wires them."""
+    monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.delenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", raising=False)
+    kernel = kernel_from_env()
+    assert kernel is not None
+    ctx = _post(effect="write")
+    ctx.metadata["tool_confirm"] = "once"
+    kernel.fire_sync(HookPoint.POST_TOOL_USE, ctx)
+    assert not (tmp_path / "s.db").exists()
+    # ... and a destructive call through the same kernel is recorded, in the same file.
+    kernel.fire_sync(HookPoint.POST_TOOL_USE, _post())
     assert (tmp_path / "s.db").exists()
+
+
+def test_an_unrecognised_flag_value_warns_and_applies_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "maybe")
+    with caplog.at_level(logging.WARNING, logger="iris_harness.kernel.governance.wiring"):
+        kernel = kernel_from_env()
+    assert kernel is not None
+    (warning,) = [r.getMessage() for r in caplog.records if "not recognised" in r.getMessage()]
+    assert "'maybe'" in warning and "1/true/yes/on" in warning and "high-risk" in warning
+    assert not (tmp_path / "s.db").exists()  # the default applied, not "on"
+
+
+def test_an_unset_flag_does_not_warn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.delenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", raising=False)
+    with caplog.at_level(logging.WARNING, logger="iris_harness.kernel.governance.wiring"):
+        kernel_from_env()
+    assert not any("SIDE_EFFECT_LEDGER" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("raw", ["1", "on", "true"])
+def test_an_explicit_on_records_every_non_read_call_as_before(
+    raw: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", raw)
+    kernel = kernel_from_env()
+    assert kernel is not None
+    assert "post_tool_use_ledger" in kernel.hook_names(HookPoint.POST_TOOL_USE)
+    assert (tmp_path / "s.db").exists()  # opened at build, as the flag always did
+
+
+def test_a_kernel_built_without_a_ledger_still_guards_high_risk_calls(tmp_path: Path) -> None:
+    kernel = build_default_kernel(
+        audit_log=AuditLog(db_path=tmp_path / "audit.db"), side_effect_ledger_enabled=False
+    )
+    assert "post_tool_use_ledger" not in kernel.hook_names(HookPoint.POST_TOOL_USE)
+    assert kernel.hook_names(HookPoint.PRE_TOOL_USE)[-1] == "pre_tool_use_ledger"
 
 
 @pytest.mark.parametrize("raw", ["0", "false", "off"])
@@ -461,6 +615,7 @@ def test_a_ledger_that_will_not_open_fails_closed(
     blocker = tmp_path / "file"
     blocker.write_text("not a directory")
     monkeypatch.setenv("IRIS_GOVERNANCE_AUDIT_DB_PATH", str(tmp_path / "a.db"))
+    monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "1")
     monkeypatch.setenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", str(blocker / "s.db"))
     kernel = kernel_from_env()
     assert kernel is not None

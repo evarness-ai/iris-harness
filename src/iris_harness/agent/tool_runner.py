@@ -400,6 +400,9 @@ class GovernedToolRunner:
         except ToolUnavailable as exc:
             result = str(exc)
             ok = False
+            # A failed call settles as an error, like any other raise: the class of what the
+            # tool's code raised (the fault boundary chains it as the cause), never a message.
+            error = type(_cause(exc)).__name__
         except Exception as exc:  # noqa: BLE001
             result = f"Tool error: {exc}"
             ok = False
@@ -580,6 +583,9 @@ class GovernedToolRunner:
             metadata={
                 "caller": call.caller or f"model:{self._agent_type}",
                 "session_id": self._session_id,
+                # The side-effect ledger's default scope is the high-risk class, which is
+                # decided by effect and confirm together (``pinned_by_declaration``).
+                "tool_confirm": tool.confirm,
                 **tool_post_metadata(
                     effect=tool.effect,
                     content=tool.content,

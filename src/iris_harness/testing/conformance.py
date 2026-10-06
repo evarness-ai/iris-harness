@@ -16,8 +16,22 @@ each example from code, as your plugin's own caller, and reads the audit ledger:
 * **coverage** -- every declared tool and every method of a provided capability has an
   example. One without is reported, not passed: an unexercised tool is unproven.
 
+An approval check never passes on nothing: a held call with no queued approval, no
+``args_digest`` on the rows to compare the queued and the run arguments by, or no outcome
+row for the approval is a violation, not a skipped step.
+
 Two harnesses are built, one that approves every held call and one that rejects it, so the
-plugin's ``setup`` runs twice and must not depend on state the first run left behind.
+plugin's ``setup`` runs twice and must not depend on state the first run left behind (a
+plugin that mounts the first time and not the second is a ``mount`` violation).
+
+What the suite does not prove. Whether a tool must be held is read from the plugin's own
+manifest (``effect``, ``confirm``), as governance reads it: a plugin that declares
+``effect: read`` and writes anyway is not detected here. A provided capability's write
+that confirms is refused from code and never queued (there is no approval to answer), so
+for those the suite checks that the call was held, the provider's result never left, and
+the ledger has the refusal; it does not run an approve / reject round as it does for tools.
+The suite runs the plugin on a worker thread when the caller is inside a running event
+loop, since the governed call path cannot run inside one.
 
 The result is a list of :class:`Violation` (empty when the plugin conforms);
 :func:`assert_conformant` raises :class:`ConformanceError` listing them, for a one-line
@@ -35,7 +49,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+from collections import Counter
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -105,7 +121,24 @@ def check_conformance(
     ``tools`` maps each declared tool to the arguments of one example call;
     ``capabilities`` maps each provided capability to ``{method: arguments}``. ``profile``
     is the shipped profile the plugin is mounted on (see :func:`harness`).
+
+    Safe to call from async code: inside a running event loop the checks run on a worker
+    thread, because the governed call path refuses to run inside a loop.
     """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return _check(plugin_under_test, tools, capabilities, profile)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(_check, plugin_under_test, tools, capabilities, profile).result()
+
+
+def _check(
+    plugin_under_test: InProcessPlugin,
+    tools: ToolExamples | None,
+    capabilities: CapabilityExamples | None,
+    profile: str,
+) -> list[Violation]:
     tools = dict(tools or {})
     capabilities = {name: dict(methods) for name, methods in (capabilities or {}).items()}
     manifest = plugin_under_test.manifest
@@ -129,6 +162,10 @@ def check_conformance(
 
     if held_tools:
         with harness(profile=profile, plugins=[plugin_under_test]) as h:
+            if not h.plugin_loaded(manifest.name):
+                status, error = h.plugins().get(manifest.name, ("absent", None))
+                detail = f"mounted the first time, not the rejecting run's: {error or status}"
+                return [*violations, Violation("mount", manifest.name, detail)]
             for name, args in held_tools.items():
                 violations += _tool_call(h, caller, name, args, approve=False)
     return violations
@@ -241,7 +278,7 @@ def _tool_call(
     mark, failures = h._audit_high_water(), _failures(h, caller)
     h.respond_to_approval(result.approval_id, approve=approve)
     after = _tool_rows(h, name, after=mark)
-    runs = {r.run_id for r in after if r.hook_point == POST}
+    runs = _executions(after)
     closed = _approval_status(h, result.approval_id, after=mark)
     if closed is None:
         out.append(Violation("audit", name, "the approval's outcome has no audit row"))
@@ -254,10 +291,21 @@ def _tool_call(
     elif closed not in (None, "ran"):
         out.append(Violation("approval", name, f"approved, but it did not run ({closed})"))
     out += _audited(name, after, caller, ran=True)
-    if len(runs) != 1:
-        out.append(Violation("approval", name, f"approved, it ran {len(runs)} time(s), not once"))
+    if runs != 1:
+        out.append(Violation("approval", name, f"approved, it ran {runs} time(s), not once"))
     ran_with = {d for d in (_digest(r) for r in after if r.hook_point == PRE) if d is not None}
-    if queued and ran_with and ran_with != queued:
+    if not queued or not ran_with:
+        # Nothing to compare is not a match: the pinned arguments went unchecked.
+        side = "queued" if not queued else "run"
+        out.append(
+            Violation(
+                "approval",
+                name,
+                f"the {side} call's rows carry no args_digest; its arguments "
+                "cannot be shown to be the ones the owner approved",
+            )
+        )
+    elif ran_with != queued:
         out.append(
             Violation("approval", name, "approved, it ran with arguments other than those queued")
         )
@@ -301,10 +349,32 @@ def _capability_calls(
                 out.append(Violation("example", subject, f"the example call failed: {exc!r}"))
             rows = _tool_rows(h, subject, after=mark)
             out += _audited(subject, rows, caller, ran=not held)
+            if held:
+                out += _held_capability(subject, rows)
             if held != (spec.methods[method].confirm_mode == "once"):
                 state = "held" if held else "ran"
                 out.append(Violation("approval", subject, f"{state}, against its declared effect"))
     return out
+
+
+def _held_capability(subject: str, rows: list[AuditRow]) -> list[Violation]:
+    """A capability call held for approval is refused from code (nothing is queued, so
+    there is no approval to answer): the provider's result must not have left, and a hook
+    must have recorded the hold."""
+    out: list[Violation] = []
+    if any(row.hook_point == POST for row in rows):
+        out.append(Violation("approval", subject, f"held, yet it has a {POST} row: it ran"))
+    if not any(row.hook_point == PRE and row.decision == "require_approval" for row in rows):
+        out.append(Violation("approval", subject, f"held, but no {PRE} row records the hold"))
+    return out
+
+
+def _executions(rows: list[AuditRow]) -> int:
+    """How many times the tool ran: each hook writes one ``post_tool_use`` row per run, so
+    the busiest hook's row count is the number of runs. Distinct ``run_id`` is no count:
+    a call run twice by the harness keeps its run id."""
+    per_hook = Counter(row.plugin for row in rows if row.hook_point == POST)
+    return max(per_hook.values(), default=0)
 
 
 def _invoke(method: Any, args: dict[str, Any]) -> Any:

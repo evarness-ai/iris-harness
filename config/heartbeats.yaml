@@ -3,7 +3,23 @@
 # Each entry is registered with the HeartbeatScheduler at startup. The `handler`
 # field must match a callable registered via `HeartbeatScheduler.register_handler`.
 #
+# `plugin:` names the plugin that registers the handler, on every entry whose handler is
+# not the core's own. An entry whose plugin is not mounted (the profile leaves it out, or
+# a package it needs is not installed) is skipped quietly, shown as unavailable, and
+# counted in one INFO line at startup. A missing handler with its plugin mounted, or with
+# no `plugin:`, warns.
+#
+# `plugins_in_tree` and `plugins_external` list every name a `plugin:` may use: the first
+# are plugins whose manifest ships in this tree, the second are owners shipped elsewhere
+# (a private domain plugin), which this tree cannot check. A `plugin:` in neither list is a
+# typo, so its missing handler warns instead of reading as "plugin not installed", and
+# tests/unit/iris_harness/services/test_heartbeat/test_plugin_owners.py fails the build.
+# Add a new owner here, in the right list, in the same change that adds its heartbeat.
+#
 # Schedules support cron expressions (5-field) or `interval:<seconds>`.
+
+plugins_in_tree: [email_workflows, system]
+plugins_external: [calendar, file_organizer, finance_workflows]
 
 heartbeats:
   - name: wiki_lint
@@ -143,6 +159,7 @@ heartbeats:
 
   - name: email_sweep
     handler: email_sweep
+    plugin: email_workflows
     # 06:15, 12:15 and 18:15 in the owner's zone (IRIS_TZ; the scheduler reads cron in
     # it). Loop-proof PR 5: new mail is invisible until the email judge has read it, so
     # the sweep only needs to run just before each judge run.
@@ -160,6 +177,7 @@ heartbeats:
 
   - name: email_judge
     handler: email_judge
+    plugin: email_workflows
     # Fifteen minutes after each sweep, in the owner's zone (IRIS_TZ).
     schedule: "30 6,12,18 * * *"
     description: "Judge the waiting email oldest first, up to IRIS_EMAIL_JUDGE_MAX
@@ -177,6 +195,7 @@ heartbeats:
 
   - name: email_semantic_index
     handler: email_semantic_index
+    plugin: email_workflows
     schedule: "interval:1800"
     description: "Fill the semantic email index with mail it lacks (from before it
       existed, or indexed by an older version), newest first, at most max_per_run per
@@ -188,6 +207,7 @@ heartbeats:
 
   - name: finance_ingest_tick
     handler: finance_ingest_tick
+    plugin: finance_workflows
     schedule: "0 7 * * *"
     description: "Daily statement ingestion across ALL connected inboxes (e.g. an
       INR inbox + a USD inbox), then extraction of new pendings — so net worth and
@@ -198,6 +218,7 @@ heartbeats:
 
   - name: finance_monitor
     handler: finance_monitor
+    plugin: finance_workflows
     schedule: "0 8 * * *"
     description: "Daily 8 AM finance check — bills due/overdue (statement-derived
       + manual) and unusual category spend. Emits finance.alert; the morning
@@ -211,6 +232,7 @@ heartbeats:
 
   - name: filemanager_retention
     handler: filemanager_retention
+    plugin: file_organizer
     schedule: "45 3 * * *"
     description: "Daily 3:45 AM central custody retention sweep — purge managed
       file bytes past their per-file window (policy in
@@ -221,6 +243,7 @@ heartbeats:
 
   - name: filemanager_index
     handler: filemanager_index
+    plugin: file_organizer
     schedule: "15 4 * * *"
     description: "Daily 4:15 AM root indexer — catalogue files in place across
       allowed roots (local + iCloud Drive): media kind, sensitivity, password
@@ -230,6 +253,7 @@ heartbeats:
 
   - name: filemanager_photos
     handler: filemanager_photos
+    plugin: file_organizer
     platforms: [darwin]  # the Apple Photos library
     schedule: "30 4 * * *"
     description: "Daily 4:30 AM Apple Photos catalogue — record photos/videos
@@ -240,6 +264,7 @@ heartbeats:
 
   - name: filemanager_vision
     handler: filemanager_vision
+    plugin: file_organizer
     schedule: "45 4 * * *"
     description: "Daily 4:45 AM image enrichment over cataloged photos/images:
       deterministic screenshot detection always runs; local model classification
@@ -250,6 +275,7 @@ heartbeats:
 
   - name: meeting_prep
     handler: meeting_prep
+    plugin: calendar
     schedule: "0 18 * * *"
     description: "Daily 6 PM meeting-prep — scan tomorrow's meetings (events with
       attendees) and create one dedup-keyed prep task each. Calendar C3 / ADR-0043."
@@ -258,6 +284,7 @@ heartbeats:
 
   - name: calendar_mirror
     handler: calendar_mirror
+    plugin: calendar
     schedule: "interval:900"
     description: "Reconcile task events into the calendar — create/move/delete
       events so calendar-visible due tasks mirror to the calendar. Bills are not
@@ -268,6 +295,7 @@ heartbeats:
 
   - name: apple_calendar_sync
     handler: apple_calendar_sync
+    plugin: calendar
     platforms: [darwin]  # EventKit / Calendar.app
     schedule: "interval:900"
     description: "Read-back the user's Apple/iCloud Calendar.app events into calendar.db
@@ -278,6 +306,7 @@ heartbeats:
 
   - name: health_tick
     handler: health_tick
+    plugin: system
     schedule: "interval:60"
     description: "Sample runtime health (services, credentials, hardware) into a
       cached HealthSnapshot for the system_health tool, GET /health, and the Web

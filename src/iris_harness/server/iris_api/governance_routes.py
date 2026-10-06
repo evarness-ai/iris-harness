@@ -56,7 +56,7 @@ _GOVERNANCE_FLAGS: tuple[tuple[str, str, bool], ...] = (
     ("IRIS_GOVERNANCE_COST_LIMITER_ENABLED", "Cost limiter", False),
     (
         "IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER",
-        "Side-effect ledger (off denies destructive tools)",
+        "Side-effect ledger (high-risk calls; off denies destructive tools)",
         True,
     ),
     ("IRIS_GOVERNANCE_PROMPT_GUARD", "Prompt / threat guard", False),

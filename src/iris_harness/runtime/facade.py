@@ -116,6 +116,7 @@ from iris_harness.services.channels.connectors.telegram_poller import TelegramPo
 from iris_harness.services.heartbeat import (
     HeartbeatScheduler,
     load_heartbeats,
+    load_plugin_owners,
 )
 from iris_harness.services.heartbeat.models import (
     HeartbeatDefinition,
@@ -1530,6 +1531,9 @@ class IrisRuntime:
         )
         try:
             definitions = load_heartbeats(self.config_dir / "heartbeats.yaml")
+            self.heartbeats.bind_known_plugins(
+                load_plugin_owners(self.config_dir / "heartbeats.yaml")
+            )
         except Exception:
             logger.exception("heartbeat config load failed")
             definitions = []

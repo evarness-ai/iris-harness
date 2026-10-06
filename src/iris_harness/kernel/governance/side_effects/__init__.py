@@ -8,12 +8,14 @@ from iris_harness.kernel.governance.side_effects.probes import (
     run_probe,
 )
 from iris_harness.kernel.governance.side_effects.store import (
+    DeferredSideEffectLedger,
     SideEffectLedger,
     SideEffectRow,
     default_ledger_db_path,
 )
 
 __all__ = [
+    "DeferredSideEffectLedger",
     "default_ledger_db_path",
     "NO_PROBE",
     "ProbeResult",

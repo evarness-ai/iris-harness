@@ -19,13 +19,18 @@ from iris_harness.foundation.auth import auth_headers
 from iris_harness.server.iris_api import memory_routes
 from iris_harness.server.iris_api.main import create_app
 from iris_harness.services.rag.documents import (
+    RagDocument,
     register_document_catalog,
     registered_document_catalog,
 )
 from iris_harness.services.rag.index import DocumentIndex
 from iris_harness.services.rag.ingest import _source_id
 from iris_harness.services.rag.ingest_gate import execute_rag_ingest, propose_rag_ingest
-from iris_harness.services.rag.ingest_source import current_ingest_source, register_ingest_source
+from iris_harness.services.rag.ingest_source import (
+    RemovedDocument,
+    current_ingest_source,
+    register_ingest_source,
+)
 from iris_harness.services.rag.store import DocumentStore
 
 
@@ -302,3 +307,90 @@ def test_ingest_runs_off_the_event_loop(
 
     assert resp.status_code == 200, resp.text
     assert seen == [False]
+
+
+# ---- the file domain is told when RAG drops a document (issue 101) --------------------
+
+
+class _RemovalRecorder:
+    def __init__(self) -> None:
+        self.removed: list[RemovedDocument] = []
+
+    def known_file(self, path: Path) -> None:
+        return None
+
+    def record_indexed(self, doc: object) -> None:
+        pass
+
+    def record_removed(self, doc: RemovedDocument) -> None:
+        self.removed.append(doc)
+
+
+def test_a_secret_reupload_is_reported_to_the_source(client: TestClient, tmp_path: Path) -> None:
+    _gated_upload(client, tmp_path)
+    rec = _RemovalRecorder()
+    register_ingest_source(rec)  # the fixture restores the previous source
+
+    body = b"# Contact\n\naws_key=AKIAIOSFODNN7EXAMPLE\n"
+    resp = client.post("/rag/upload", files={"file": ("contact.md", body, "text/markdown")})
+
+    assert resp.json()["sources_denied"] == 1
+    assert [d.reason for d in rec.removed] == ["denied"]
+
+
+def test_delete_is_reported_to_the_source(client: TestClient) -> None:
+    up = client.post(
+        "/rag/upload", files={"file": ("temp.md", b"Disposable otters.", "text/markdown")}
+    ).json()
+    rec = _RemovalRecorder()
+    register_ingest_source(rec)
+
+    assert client.delete(f"/rag/documents/{up['document']['file_id']}").status_code == 200
+
+    assert [(d.path.name, d.reason) for d in rec.removed] == [("temp.md", "removed")]
+
+
+class _OneDocumentCatalog:
+    """A file domain's catalog that lists a document RAG's own store never held."""
+
+    def __init__(self, doc: RagDocument) -> None:
+        self.doc = doc
+        self.forgotten: list[str] = []
+
+    def list_documents(self) -> list[RagDocument]:
+        return [self.doc]
+
+    def get_document(self, file_id: str) -> RagDocument | None:
+        return self.doc if file_id == self.doc.file_id else None
+
+    def forget_document(self, file_id: str) -> None:
+        self.forgotten.append(file_id)
+
+
+def test_delete_of_a_catalog_only_document_is_reported_like_a_denial_would_be(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """RAG's store holds nothing for it, but the catalog listed it: tell the source anyway."""
+    path = tmp_path / "elsewhere" / "held.md"
+    doc = RagDocument(
+        file_id="rag_abc",
+        filename="held.md",
+        kind="file",
+        classification=None,
+        byte_size=None,
+        location_tier=None,
+        storage_path=str(path),
+        created_at="",
+        updated_at="",
+    )
+    catalog = _OneDocumentCatalog(doc)
+    register_document_catalog(catalog)  # the fixture restores the previous catalog
+    rec = _RemovalRecorder()
+    register_ingest_source(rec)
+
+    assert client.delete("/rag/documents/rag_abc").status_code == 200
+
+    assert catalog.forgotten == ["rag_abc"]
+    assert [(d.path, d.reason, d.source_id) for d in rec.removed] == [
+        (path, "removed", _source_id(path.resolve()))
+    ]

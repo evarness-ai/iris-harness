@@ -200,14 +200,17 @@ def cmd_remove(
 ) -> None:
     """Remove a source's chunks from the index (does not touch your file)."""
     from iris_harness.services.rag.ingest import _source_id
+    from iris_harness.services.rag.ingest_source import current_ingest_source, report_removed
 
     store, index = _store_and_index()
-    sid = _source_id(Path(path).expanduser().resolve())
+    resolved = Path(path).expanduser().resolve()
+    sid = _source_id(resolved)
     if store.get_source(sid) is None:  # type: ignore[attr-defined]
         console.print(f"  [yellow]not indexed: {path}[/yellow]")
         return
     store.delete_source(sid)  # type: ignore[attr-defined]
     index.delete_source(sid)  # type: ignore[attr-defined]
+    report_removed(current_ingest_source(), resolved, source_id=sid, reason="removed")
     console.print(f"  [bold green]✓[/bold green]  removed [cyan]{path}[/cyan] from the index")
 
 

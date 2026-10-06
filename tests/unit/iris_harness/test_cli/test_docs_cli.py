@@ -20,6 +20,7 @@ from iris_harness.services.rag.ingest_gate import execute_rag_ingest, propose_ra
 from iris_harness.services.rag.ingest_source import (
     IndexedDocument,
     KnownFile,
+    RemovedDocument,
     current_ingest_source,
     register_ingest_source,
 )
@@ -31,12 +32,16 @@ runner = CliRunner()
 class Recorder:
     def __init__(self) -> None:
         self.indexed: list[IndexedDocument] = []
+        self.removed: list[RemovedDocument] = []
 
     def known_file(self, path: Path) -> KnownFile | None:
         return None
 
     def record_indexed(self, doc: IndexedDocument) -> None:
         self.indexed.append(doc)
+
+    def record_removed(self, doc: RemovedDocument) -> None:
+        self.removed.append(doc)
 
 
 @pytest.fixture
@@ -170,3 +175,41 @@ def test_docs_add_refuses_a_secret_first_ingest(_isolated: None, tmp_path: Path)
     assert "✓" not in out
     assert "0 added" in out and "1 refused: classified secret" in out
     assert DocumentStore().list_sources() == []
+
+
+# ─── the file domain is told when RAG drops a file (issue 101) ────────────────────────
+
+
+@pytest.mark.parametrize("command", [["sync"], ["add", "{note}"]])
+def test_docs_reingest_that_turns_secret_is_reported_to_the_source(
+    _isolated: None, tmp_path: Path, command: list[str]
+) -> None:
+    note = _gated_then_edited(tmp_path)
+    note.write_text("# Contact\n\naws_key=AKIAIOSFODNN7EXAMPLE\n")
+    _bump_mtime(note)
+    rec = Recorder()
+    previous = current_ingest_source()
+    try:
+        register_ingest_source(rec)
+        result = runner.invoke(docs_app, [a.format(note=note) for a in command])
+    finally:
+        register_ingest_source(previous)
+
+    assert result.exit_code == 1, result.stdout  # a refusal is a non-zero exit
+    assert [(d.path, d.reason) for d in rec.removed] == [(note.resolve(), "denied")]
+
+
+def test_docs_remove_is_reported_to_the_source(_isolated: None, tmp_path: Path) -> None:
+    note = tmp_path / "note.md"
+    note.write_text("# Weekend\n\nGroceries and a walk.")
+    rec = Recorder()
+    previous = current_ingest_source()
+    try:
+        register_ingest_source(rec)
+        assert runner.invoke(docs_app, ["add", str(note)]).exit_code == 0
+        result = runner.invoke(docs_app, ["remove", str(note)])
+    finally:
+        register_ingest_source(previous)
+
+    assert result.exit_code == 0, result.stdout
+    assert [(d.path, d.reason) for d in rec.removed] == [(note.resolve(), "removed")]

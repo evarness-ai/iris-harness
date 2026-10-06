@@ -123,7 +123,7 @@ def audit(
         console.print("no rows match")
         return
     table = Table(show_lines=False)
-    for column in ("time", "hook", "plugin", "decision", "caller", "label", "where", "how"):
+    for column in ("time", "hook", "plugin", "decision", "caller", "by", "label", "where", "how"):
         table.add_column(column)
     for e in view["entries"]:
         how = f"deterministic:{e.get('handler') or '?'}" if e.get("deterministic") else ""
@@ -133,6 +133,8 @@ def audit(
             e["plugin"],
             e["decision"],
             e.get("caller") or "",
+            # What ran: the tool's owning plugin, the capability's provider, or the model.
+            e.get("tool_plugin") or e.get("capability_provider") or e.get("model") or "",
             e["classification"] or "",
             e["locality"] or "",
             how or e.get("tool_name") or "",

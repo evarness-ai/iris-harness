@@ -1288,13 +1288,14 @@ class AgenticCore:
         budget_observer: Callable[[int, int], None] | None = None,
         reserve_tools: list[ToolSpec] | None = None,
         review_route: str | None = None,
-        llm_identity: tuple[str, str] | None = None,
+        model_identity: Callable[[], tuple[str, str] | None] | None = None,
     ) -> None:
         self.config = config or AgenticCoreConfig()
-        # ``(model, provider)`` of the model ``llm_call`` runs, stamped on every step's
-        # PRE_LLM_CALL row so it names what it governs, as every other model call's row
-        # does. ``llm_call`` is opaque to the loop, so its owner says what it calls.
-        self._llm_identity = llm_identity
+        # ``(model, provider)`` of the model the NEXT step calls, asked just before each
+        # PRE_LLM_CALL so the row names it as every other model call's row does. ``llm_call``
+        # is opaque to the loop, so its owner says which model it is, and keeps that one
+        # resolution for the call. None (a legacy caller, a test): the row carries the tier alone.
+        self._model_identity = model_identity
         # The routing intent whose model this loop's LLM uses. A run that ends is handed
         # to the process's run reviewer (the governance judge, §9.2) with it, so the
         # review runs on the same route as the run; None opts the loop out.
@@ -2282,8 +2283,9 @@ class AgenticCore:
             llm_payload["context_tokens"] = context_tokens
         if evicted_tokens:
             llm_payload["evicted_tokens"] = evicted_tokens
-        if self._llm_identity is not None:
-            llm_payload["model"], llm_payload["provider"] = self._llm_identity
+        identity = self._next_model_identity()
+        if identity is not None:
+            llm_payload["model"], llm_payload["provider"] = identity
         llm_ctx = HookContext(
             hook_point=HookPoint.PRE_LLM_CALL,
             run_id=run_id,
@@ -2297,6 +2299,16 @@ class AgenticCore:
         prompt_value = final_ctx.payload.get("prompt", prompt)
         transformed_prompt = prompt_value if isinstance(prompt_value, str) else prompt
         return decision, transformed_prompt, final_ctx.classification
+
+    def _next_model_identity(self) -> tuple[str, str] | None:
+        """``(model, provider)`` for the call about to be audited, or None when unknown."""
+        if self._model_identity is None:
+            return None
+        try:
+            return self._model_identity()
+        except Exception:  # the ledger's detail must never break the turn
+            logger.warning("could not resolve the model for the audit row", exc_info=True)
+            return None
 
     @staticmethod
     def _governance_block_message(decision: HookDecision) -> str:

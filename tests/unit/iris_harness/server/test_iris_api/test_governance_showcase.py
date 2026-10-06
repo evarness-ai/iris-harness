@@ -307,3 +307,97 @@ def test_cli_proof_bundle_check_exits_non_zero_on_a_violation(ledger: AuditLog) 
     failed = runner.invoke(governance_app, ["proof-bundle", "check", "--days", "1"])
     assert failed.exit_code == 1
     assert "FAIL no-private-to-cloud" in failed.output
+
+
+# ------------------------------------------------- who ran it: model and tool owner (#129)
+
+
+def _identity_rows(ledger: AuditLog) -> None:
+    _record(
+        ledger,
+        1,
+        "pre_llm_call",
+        tier="tier_1",
+        run_id="r",
+        payload={
+            "session_id": "s-1",
+            "model": "qwen-test",
+            "provider": "ollama",
+            # Content that must never surface.
+            "prompt": f"write to {ADDRESS}",
+            "query": f"what is {ADDRESS}",
+        },
+    )
+    _record(
+        ledger,
+        2,
+        "pre_tool_use",
+        run_id="r",
+        payload={
+            "session_id": "s-1",
+            "tool_name": "email_search",
+            "tool_plugin": "mail",
+            "args": {"q": ADDRESS},
+            "result": f"found {ADDRESS}",
+            # Not identifiers: a non-string model is dropped, not shown.
+            "model": {"name": ADDRESS},
+        },
+    )
+
+
+def test_audit_and_trace_name_the_model_and_provider_never_the_prompt(
+    client: TestClient, ledger: AuditLog, tmp_path: Path
+) -> None:
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "session-s-1.jsonl").write_text(
+        "\n".join(
+            json.dumps(e)
+            for e in (
+                {
+                    "kind": "user_message",
+                    "ts": _ts(0).isoformat(),
+                    "session_id": "s-1",
+                    "text": "hi",
+                },
+                {
+                    "kind": "agent_response",
+                    "ts": _ts(10).isoformat(),
+                    "session_id": "s-1",
+                    "response": "hello",
+                },
+            )
+        )
+        + "\n"
+    )
+    _identity_rows(ledger)
+
+    audit = client.get("/governance/audit").json()
+    tool_row, llm_row = audit["entries"]
+    assert (llm_row["model"], llm_row["provider"]) == ("qwen-test", "ollama")
+    assert tool_row["tool_plugin"] == "mail"
+    assert "model" not in tool_row  # a non-string value is not a public identifier
+    trace = client.get("/api/traces/s-1~0").json()
+    traced = {e["hook_point"]: e for e in trace["governance"]}
+    assert traced["pre_llm_call"]["model"] == "qwen-test"
+    assert traced["pre_llm_call"]["provider"] == "ollama"
+    assert ADDRESS not in json.dumps(audit) + json.dumps(trace)
+    for entry in audit["entries"] + trace["governance"]:
+        assert not {"prompt", "query", "args", "result"} & set(entry)
+
+
+def test_cli_audit_table_has_a_by_column_naming_the_owner_or_model(ledger: AuditLog) -> None:
+    _identity_rows(ledger)
+    out = CliRunner().invoke(governance_app, ["audit"], env={"COLUMNS": "240"})
+    assert out.exit_code == 0, out.output
+    header = next(line for line in out.output.splitlines() if "hook" in line and "caller" in line)
+    assert " by " in header
+    rows = {
+        hook: line
+        for line in out.output.splitlines()
+        for hook in ("pre_llm_call", "pre_tool_use")
+        if hook in line
+    }
+    assert "qwen-test" in rows["pre_llm_call"]
+    assert "mail" in rows["pre_tool_use"]
+    assert ADDRESS not in out.output

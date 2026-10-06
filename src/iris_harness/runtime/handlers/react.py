@@ -636,7 +636,11 @@ def _make_react_handler(
     # _FINAL_ANSWER_RE regex in agentic_core.py.
     _REACT_STOP_SEQUENCES = ("\nUser:", "\nObservation:")
 
-    def _llm_call(prompt: str, routing_intent: str) -> str:
+    def _llm_call(prompt: str, routing_intent: str, resolved: list[object] | None = None) -> str:
+        # The config the step's audit row already named (``_model_identity`` below), so the
+        # row and the call cannot disagree and the router's side effects (a governor
+        # downshift, the arbiter's eviction) happen once per step, not twice.
+        cfg = resolved.pop() if resolved else tier_router.get_llm_config(routing_intent)
         # Opt-in cloud synthesis: the "search" loop runs on a cloud model (Copilot's
         # Claude) when IRIS_SEARCH_SYNTHESIS_PROVIDER=copilot — it follows ReAct cleanly
         # and synthesizes web results far better than the local 7B. Governed (the client's
@@ -683,12 +687,11 @@ def _make_react_handler(
                     _audit_synthesis_fallback(
                         blocked.decision,
                         local_tier=local_tier,
-                        local_llm=_llm_identity(tier_router.get_llm_config(routing_intent)),
+                        local_llm=_llm_identity(cfg),
                     )
         # Tier follows the turn's routing intent (search / multi-step escalate to
         # tier-2) instead of being pinned to "general" — a small tier-1 model on a
         # tool-heavy ReAct loop fails to call tools and just refuses.
-        cfg = tier_router.get_llm_config(routing_intent)
         from iris_harness.llm.client import CodingLLMClient, CodingLLMConfig
 
         # AgenticCore._loop fires PRE_CLASSIFY + PRE_LLM_CALL before every
@@ -903,10 +906,19 @@ def _make_react_handler(
         # The model this loop's step runs on: the tier's, whose tier the PRE_LLM_CALL row is
         # governed at (``_llm_call`` may route a search step to the cloud synthesis client,
         # which governs itself and names its own model on its own row).
+        step_config: list[object] = []
+
+        def _model_identity() -> tuple[str, str]:
+            # Asked once per step, just before its PRE_LLM_CALL: the router's answer is
+            # kept for ``_llm_call`` so the row names the model the step then calls.
+            cfg = tier_router.get_llm_config(effective_intent)
+            step_config[:] = [cfg]
+            return _llm_identity(cfg)
+
         return AgenticCore(
             config=core_config,
-            llm_identity=_llm_identity(tier_router.get_llm_config(effective_intent)),
-            llm_call=lambda prompt: _llm_call(prompt, effective_intent),
+            model_identity=_model_identity,
+            llm_call=lambda prompt: _llm_call(prompt, effective_intent, step_config),
             tools=tools,
             reserve_tools=reserve,
             kernel=governance_kernel,

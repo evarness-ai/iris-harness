@@ -53,6 +53,12 @@ from iris_harness.llm.fake import (
     transcript,
 )
 from iris_harness.llm.tier_router import FORCED_PROVIDER_ENV
+from iris_harness.testing.conformance import (
+    ConformanceError,
+    Violation,
+    assert_conformant,
+    check_conformance,
+)
 from iris_harness.testing.harness import (
     Harness,
     TurnAuditRow,
@@ -150,6 +156,7 @@ def no_network() -> Iterator[list[Any]]:
 
 
 __all__ = [
+    "ConformanceError",
     "FakeCall",
     "FakeModelError",
     "Harness",
@@ -164,6 +171,9 @@ __all__ = [
     "TurnEvent",
     "TurnRecord",
     "TurnResult",
+    "Violation",
+    "assert_conformant",
+    "check_conformance",
     "check_stable_imports",
     "harness",
     "no_network",

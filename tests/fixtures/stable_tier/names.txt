@@ -244,6 +244,11 @@ iris_harness.sdk:PluginCLI
 iris_harness.sdk:PluginManifest
 iris_harness.sdk:RegistrationKind
 iris_harness.sdk:register_plugin_commands
+iris_harness.testing.conformance:ConformanceCheck
+iris_harness.testing.conformance:ConformanceError
+iris_harness.testing.conformance:Violation
+iris_harness.testing.conformance:assert_conformant
+iris_harness.testing.conformance:check_conformance
 iris_harness.testing.harness:ANSWER_HOOK
 iris_harness.testing.harness:Harness
 iris_harness.testing.harness:LLM_CALL_HOOK
@@ -273,6 +278,7 @@ iris_harness.testing.stable:check_file
 iris_harness.testing.stable:check_stable_imports
 iris_harness.testing.stable:declaration_path
 iris_harness.testing.stable:stable_tier
+iris_harness.testing:ConformanceError
 iris_harness.testing:FakeCall
 iris_harness.testing:FakeModelError
 iris_harness.testing:Harness
@@ -287,6 +293,9 @@ iris_harness.testing:TurnAuditRow
 iris_harness.testing:TurnEvent
 iris_harness.testing:TurnRecord
 iris_harness.testing:TurnResult
+iris_harness.testing:Violation
+iris_harness.testing:assert_conformant
+iris_harness.testing:check_conformance
 iris_harness.testing:check_stable_imports
 iris_harness.testing:harness
 iris_harness.testing:no_network

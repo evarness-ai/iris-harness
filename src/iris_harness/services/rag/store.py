@@ -90,6 +90,8 @@ class DocumentStore:
         mtime: float = 0.0,
         classification: str | None = None,
     ) -> DocumentSource:
+        """Insert or update a source. An omitted (None) ``classification`` keeps the label
+        already stored: a label is only ever replaced by another label."""
         now = utc_now()
         existing = self.get_source(id)
         added = existing.added_at if existing else now
@@ -104,7 +106,7 @@ class DocumentStore:
                 "title=excluded.title, content_sha=excluded.content_sha, "
                 "last_synced_at=excluded.last_synced_at, tags=excluded.tags, "
                 "links=excluded.links, mtime=excluded.mtime, "
-                "classification=excluded.classification",
+                "classification=COALESCE(excluded.classification, document_sources.classification)",
                 (
                     id,
                     path,
@@ -130,7 +132,11 @@ class DocumentStore:
             tags=tuple(tags),
             links=tuple(links),
             mtime=mtime,
-            classification=classification,
+            classification=(
+                classification
+                if classification is not None or existing is None
+                else existing.classification
+            ),
         )
 
     def list_sources(self) -> list[DocumentSource]:

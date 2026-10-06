@@ -12,6 +12,7 @@ from typing import Annotated
 import typer
 
 from iris_harness.cli.render import console, print_error
+from iris_harness.services.rag.models import IngestResult
 
 docs_app = typer.Typer(
     name="docs",
@@ -28,6 +29,14 @@ def _store_and_index() -> tuple[object, object]:
     store = DocumentStore()
     store.ensure_schema()
     return store, DocumentIndex()
+
+
+def _report(result: IngestResult) -> None:
+    """Print the ingest summary; a refused (secret) file is a warning and a non-zero exit."""
+    if result.sources_denied:
+        console.print(f"  [bold yellow]![/bold yellow]  {result.summary()}")
+        raise typer.Exit(1)
+    console.print(f"  [bold green]✓[/bold green]  {result.summary()}")
 
 
 @docs_app.command("add")
@@ -55,7 +64,7 @@ def cmd_add(
         kind=kind,  # type: ignore[arg-type]
         source=current_ingest_source(),
     )
-    console.print(f"  [bold green]✓[/bold green]  {result.summary()}")
+    _report(result)
 
 
 @docs_app.command("sync")
@@ -70,7 +79,7 @@ def cmd_sync() -> None:
         index=index,  # type: ignore[arg-type]
         source=current_ingest_source(),
     )
-    console.print(f"  [bold green]✓[/bold green]  {result.summary()}")
+    _report(result)
 
 
 @docs_app.command("reindex")

@@ -134,19 +134,20 @@ def test_docs_sync_reports_an_edit_to_secret(_isolated: None, tmp_path: Path) ->
     finally:
         register_ingest_source(previous)
 
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 1, result.stdout  # a refusal is not a success
     assert "1 refused: classified secret" in " ".join(result.stdout.split())
+    assert "✓" not in result.stdout
     assert DocumentStore().list_sources() == []
 
 
-def _add(path: Path) -> str:
+def _add(path: Path, *, exit_code: int = 0) -> str:
     previous = current_ingest_source()
     try:
         register_ingest_source(None)
         result = runner.invoke(docs_app, ["add", str(path)])
     finally:
         register_ingest_source(previous)
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == exit_code, result.stdout
     return " ".join(result.stdout.split())
 
 
@@ -164,7 +165,8 @@ def test_docs_add_refuses_a_secret_first_ingest(_isolated: None, tmp_path: Path)
     note = tmp_path / "creds.md"
     note.write_text("# Keys\n\naws_key=AKIAIOSFODNN7EXAMPLE\n")
 
-    out = _add(note)
+    out = _add(note, exit_code=1)
 
+    assert "✓" not in out
     assert "0 added" in out and "1 refused: classified secret" in out
     assert DocumentStore().list_sources() == []

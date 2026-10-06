@@ -113,7 +113,8 @@ def execute_rag_ingest(
 
     TOCTOU guard: the approval was granted for the bytes seen at proposal
     time. If the file vanished, its content changed, or a fresh scan now says
-    secret, this raises :class:`IngestDeniedError` instead of ingesting.
+    secret, this raises :class:`IngestDeniedError` instead of ingesting. It also raises
+    if ingest itself refuses the file after scanning its extracted text.
     """
     resolved = Path(proposal.resolved_path).expanduser().resolve()
     if not resolved.is_file():
@@ -131,13 +132,21 @@ def execute_rag_ingest(
         raise IngestDeniedError(
             f"denied: {resolved.name} now scans as secret — {_VAULT_REFUSAL_MESSAGE}"
         )
-    return ingest_path(
+    result = ingest_path(
         resolved,
         store=store,
         index=index,
         source=source,
         classification=classification,
     )
+    if result.sources_denied:
+        # The byte scan above passed, but ingest also scans the text it extracts (PDF,
+        # OCR, docx) and refused it: surface that as a denial, not a normal result.
+        raise IngestDeniedError(
+            f"denied: {resolved.name} classifies secret once its text is extracted — "
+            f"{_VAULT_REFUSAL_MESSAGE}"
+        )
+    return result
 
 
 __all__ = [

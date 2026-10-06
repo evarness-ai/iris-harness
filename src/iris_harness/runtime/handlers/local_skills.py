@@ -30,6 +30,7 @@ from iris_harness.foundation.clock import local_now
 from iris_harness.foundation.paths import data_dir
 from iris_harness.llm.errors import friendly_llm_error as _friendly_llm_error
 from iris_harness.runtime.brief_tools import make_brief_render_tool, make_brief_runner
+from iris_harness.runtime.external_text import redact_external_text
 from iris_harness.runtime.handlers.general_support import local_skill_input_schema
 from iris_harness.runtime.routine_authoring import _get_semantic_router
 from iris_harness.runtime.skill_matching import (
@@ -265,8 +266,12 @@ def make_local_skills(skill_registry: SkillRegistry | None) -> LocalSkills:
             recorded = record_skill_pending_actions(result, data_dir=pending_data_dir)
         except Exception:
             logger.exception("failed to record pending actions from skill result")
+        answer = format_direct_skill_result(tool_name, result)
+        if package.manifest.tools and package.manifest.tools[0].content == "external":
+            # The answer is the tool's text, shown to the owner as it is: tripwire, no envelope.
+            answer = redact_external_text(answer, skill=package.manifest.name, tool=tool_name)
         return (
-            format_direct_skill_result(tool_name, result),
+            answer,
             {
                 "used_skill": True,
                 "skill_tool": tool_name,
@@ -288,17 +293,13 @@ def make_local_skills(skill_registry: SkillRegistry | None) -> LocalSkills:
 
         try:
             from iris_harness.runtime.handlers.skill_brief import (
-                SlotContext,
-                _build_tool_index,
+                build_slot_context,
                 render_layout,
                 resolve_slot,
             )
 
             spec = package.manifest.brief
-            ctx = SlotContext(
-                now=local_now(),
-                tool_index=_build_tool_index(skill_registry),
-            )
+            ctx = build_slot_context(skill_registry, now=local_now())
             resolved = {
                 name: resolve_slot(slot, ctx, spec.uses) for name, slot in spec.slots.items()
             }

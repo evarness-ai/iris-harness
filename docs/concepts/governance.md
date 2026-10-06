@@ -111,6 +111,23 @@ kept. A capability result is typed data read by plugin code, redacted field by f
 it gets the tripwire and not the envelope; the consumer's own tool that hands that text to
 the model declares `content: external` and is wrapped there.
 
+**Briefs and digests.** A brief slot calls its skill tool in-process, so no `POST_TOOL_USE`
+fires for it. A slot over a tool that declares `content: external` (the email skills,
+`fetch_web_content`) therefore has its text passed through the same tripwire (`scan`) where
+the slot is rendered, with the same ledger row (caller `core:skill_render`). The digest
+store, Telegram, web push, the chat transcript and a skill answered directly in chat all
+get redaction and no envelope, because the owner reads them. The `render_<brief>` tool the
+loop calls is declared `content: external` when any of its slot tools is, so the runner
+envelopes what the model reads. A slot over an internal tool is not touched.
+
+Every tripwire-only caller (a slot, a skill answered directly, a lesson, an SDK plugin)
+goes through one kernel helper, `redact_text` in `kernel/governance/external_content.py`:
+the floor setting, then `scan`, then one ledger row (pattern ids and counts, never the
+text). With the floor off it returns the text unchanged and writes nothing. `scan` redacts
+at most 64 spans one by one; past that, the rest of the text becomes one marker that says
+how many further spans it held (the span count and pattern ids still cover all of them), so
+a hostile text cannot grow to many times its size in markers and its tail is never left raw.
+
 **2. The instruction-pattern tripwire.** A short list of phrase-level patterns
 (`kernel/governance/external_content.py`). A match is replaced with
 `[redacted: instruction-like text in external content]`; a phrase match is redacted from

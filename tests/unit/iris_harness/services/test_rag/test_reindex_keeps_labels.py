@@ -587,7 +587,7 @@ def test_a_handle_opened_before_a_reset_recovers_with_one_warning(
     caplog.clear()
     search_documents("mitochondria", store=store, index=server)  # now healthy: silent
     assert caplog.records == []
-    assert {c for c in _snapshot(server)} == {c for c in _snapshot(cli)}
+    assert set(_snapshot(server)) == set(_snapshot(cli))
 
 
 def test_index_chunks_after_a_reset_recovers(

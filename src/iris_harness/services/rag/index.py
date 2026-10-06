@@ -22,6 +22,7 @@ import logging
 import os
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -34,11 +35,15 @@ _COLLECTION = "iris_documents"
 _REBUILD_BATCH = 500  # chunks per upsert; well under Chroma's per-call maximum
 
 
+def _delete_ids(col: Any, *, ids: list[str]) -> None:
+    col.delete(ids=ids)
+
+
 def _not_found_error() -> type[Exception]:
     """Chroma's "collection does not exist" error, ``chromadb.errors.NotFoundError``."""
     from chromadb.errors import NotFoundError
 
-    return NotFoundError  # type: ignore[no-any-return]
+    return NotFoundError
 
 
 @dataclass
@@ -157,7 +162,7 @@ class DocumentIndex:
             return
         try:
             self._upsert(chunks)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - best-effort write; the store keeps the chunk
             logger.warning(
                 "document index: could not index %d chunk(s) (%s); they stay in the store and "
                 "return on the next `iris docs reindex`",
@@ -198,7 +203,7 @@ class DocumentIndex:
         ]
         for i in range(0, len(stale), _REBUILD_BATCH):
             ids = stale[i : i + _REBUILD_BATCH]
-            self._call(lambda col, ids=ids: col.delete(ids=ids))
+            self._call(partial(_delete_ids, ids=ids))
         return total
 
     def reset_collection(self) -> None:

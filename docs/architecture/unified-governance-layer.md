@@ -336,8 +336,10 @@ result a plugin pulled into the turn governs the model calls after it. Outside a
 nothing is stamped and a lift is a no-op.
 
 **Identity on every row (G10).** Every `pre_llm_call` row names the `model` and `provider`
-it governs: the shared client and the loop's step (`AgenticCore(llm_identity=...)`, set from
-the tier the step runs on in `runtime/handlers/react.py`); a caller that fires the hook
+it governs: the shared client and the loop's step (`AgenticCore(model_identity=...)`, asked once per
+step in `runtime/handlers/react.py`: the router's answer is kept for the step's call, so the row
+names the model that is called and the router, with its governor/arbiter side effects, is
+asked once per step); a caller that fires the hook
 around an opaque callable (`TaskPlanner`, `IntentRouter`, `ConversationCompactor`,
 `EntityExtractor`) cannot know the model behind it and says `unknown`. Every
 `pre_tool_use` / `post_tool_use` row names its owner as `tool_plugin` (not `plugin`, which
@@ -346,7 +348,8 @@ on a row is the governance check that wrote it): the plugin that registered the 
 `skill:<name>` for a skill package's tool, `mcp:<server>` for a bridged server's tool
 (`tools/mcp_bridge.py`), the capability's provider for a capability call, and `system` for
 a core tool. Both are in the audit whitelist (`kernel._AUDITED_PAYLOAD_KEYS`) and the
-public fields (`audit_view.PUBLIC_PAYLOAD_FIELDS`); the stable `TurnAuditRow` exposes
+public fields (`audit_view.PUBLIC_PAYLOAD_FIELDS`, so `model`, `provider` and `tool_plugin`
+reach `GET /governance/audit`, `iris governance audit` (its `by` column) and the trace); the stable `TurnAuditRow` exposes
 `caller` and `tool_plugin`.
 
 **Every model call in the turn, not only the loop's (2026-09-30).** One rule,

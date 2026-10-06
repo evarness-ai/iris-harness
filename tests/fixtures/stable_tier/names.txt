@@ -18,7 +18,10 @@ iris_harness.sdk.capabilities:CAPABILITIES
 iris_harness.sdk.capabilities:CapabilityDenied
 iris_harness.sdk.capabilities:CapabilitySpec
 iris_harness.sdk.capabilities:CapabilityUnavailable
+iris_harness.sdk.capabilities:Forecast
+iris_harness.sdk.capabilities:ForecastPeriod
 iris_harness.sdk.capabilities:MethodSpec
+iris_harness.sdk.capabilities:WeatherForecast
 iris_harness.sdk.channels:APPROVAL_REQUESTED
 iris_harness.sdk.channels:ApprovalRequestedPayload
 iris_harness.sdk.channels:ChannelMessage

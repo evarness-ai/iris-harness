@@ -786,3 +786,12 @@ def test_unregistered_agent_falls_back_to_system_then_blank(monkeypatch) -> None
     assert tb._agent_meta("email") == ("", "", "")
     tb.register_agent_source("system", _FakeAgentHandler().handle)
     assert tb._agent_meta("email")[1] == "_FakeAgentHandler.handle"
+
+
+def test_tool_events_pair_by_call_id_with_the_old_key_as_the_fallback():
+    # #134: ``call_id`` is the runner's minted id; a session log written before it (or a
+    # general-lane builtin tool, which mints none) has only ``tool_call_id``.
+    assert tb._call_id_of({"call_id": "01A", "tool_call_id": "01A"}) == "01A"
+    assert tb._call_id_of({"call_id": "01A", "tool_call_id": "other"}) == "01A"
+    assert tb._call_id_of({"tool_call_id": "c1"}) == "c1"
+    assert tb._call_id_of({}) is None

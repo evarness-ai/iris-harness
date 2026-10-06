@@ -489,3 +489,25 @@ def test_research_and_code_execution_are_served_only_when_named(tmp_path: Path) 
 def test_no_skill_is_served_unless_named(tmp_path: Path) -> None:
     world = _World(tmp_path)
     assert [s.spec.name for s in select_tools(world.tools).served] == ["look_up"]
+
+
+def test_each_served_call_gets_its_own_minted_call_id_on_every_row(tmp_path: Path) -> None:
+    """#134: an inbound MCP call is a call like any other; its rows carry one ULID, two
+    calls carry two, and the client cannot name it (its argument is just an argument)."""
+    from iris_harness.foundation.ids import is_ulid
+
+    world = _World(tmp_path, _Spy(HookPoint.POST_TOOL_USE))
+    first, second = world.serve(
+        ("look_up", {"query": "x", "call_id": "FORGED", "tool_call_id": "FORGED"}),
+        ("look_up", {"query": "y"}),
+    )
+    assert first["isError"] is False and second["isError"] is False
+    by_run: dict[str, set[str]] = {}
+    for row in world.rows("pre_tool_use") + world.rows("post_tool_use"):
+        payload = json.loads(row.payload_json)
+        assert is_ulid(payload.get("call_id")), payload
+        assert payload["call_id"] != "FORGED"
+        by_run.setdefault(row.run_id, set()).add(payload["call_id"])
+    # Two calls, two runs, one id each; the run id is not the call id.
+    assert len(by_run) == 2 and all(len(ids) == 1 for ids in by_run.values())
+    assert not set(by_run) & {i for ids in by_run.values() for i in ids}

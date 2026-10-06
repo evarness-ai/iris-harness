@@ -58,6 +58,7 @@ from iris_harness.foundation.capability_fields import (
     extract_fields,
     rebuild,
 )
+from iris_harness.foundation.ids import new_ulid
 from iris_harness.kernel.governance import (
     DataClassification,
     GovernanceKernel,
@@ -71,6 +72,8 @@ from iris_harness.kernel.governance.audit.digest import (
     audit_digester,
 )
 from iris_harness.kernel.governance.hooks.tool_payload import (
+    CALL_ID,
+    HELD_CALL_ID,
     TOOL_CALL_ID,
     TOOL_SENDS_TO,
     TOOL_VERIFY,
@@ -188,6 +191,10 @@ class ToolCall:
     # only by ``ToolService``, never by a caller: it is what lets the approval hook queue
     # a call no run will resume.
     deferred: bool = False
+    # An approved re-execution of a held call: the call id of the HELD attempt, read by the
+    # harness from the approval row (``ApprovalRow.call_id``). The approved attempt is a new
+    # call with its own id; this is how both join (#134). Never the caller's to set.
+    held_call_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -230,6 +237,8 @@ class ToolOutcome:
     approval_card: dict[str, Any] | None = None
     classification: DataClassification | None = None
     post: PostOutcome | None = None
+    # The call attempt's id (a ULID), None only for a call refused before it was minted.
+    call_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -350,9 +359,11 @@ class GovernedToolRunner:
             if per_call and not call.approved_by and can_queue
             else None
         )
-        # Minted before PRE_TOOL_USE: the row a high-risk call leaves in the side-effect
-        # ledger before it runs is keyed by it, and POST_TOOL_USE settles that same row.
-        tool_call_id = uuid.uuid4().hex[:12]
+        # Minted here, once per call attempt and before PRE_TOOL_USE: every audit row of the
+        # call carries it, and the row a high-risk call leaves in the side-effect ledger before
+        # it runs is keyed by it, and POST_TOOL_USE settles that same row. Nothing a caller
+        # passes (arguments, ``ToolCall``) can choose it (#134).
+        tool_call_id = new_ulid()
         decision, tool_args = self.pre(
             tool,
             args,
@@ -367,13 +378,17 @@ class GovernedToolRunner:
                 decision=decision,
                 approval_card=approval_card,
                 classification=call.classification,
+                call_id=tool_call_id,
             )
         if per_call and not call.approved_by:
             # Governance allowed a call nobody approved: the approval hook is not
             # registered. Fail closed rather than run it (ADR-0118).
             logger.warning("react: %r (approved per call) allowed without an approval", name)
             return ToolOutcome(
-                status="refused", text=refused(tool), classification=call.classification
+                status="refused",
+                text=refused(tool),
+                classification=call.classification,
+                call_id=tool_call_id,
             )
 
         # Emit session-log tool events so tool calls show up in the trace graph and the
@@ -387,7 +402,13 @@ class GovernedToolRunner:
             # The arguments as the caller wrote them, never ``tool_args``: a PRE_TOOL_USE
             # transform may have resolved a ``vault://`` handle into a secret there
             # (credential broker), and a secret must never reach a log.
-            payload={"tool": name, "tool_call_id": tool_call_id, "arguments": args},
+            payload={
+                "tool": name,
+                "call_id": tool_call_id,
+                # The old name, same value: trace readers and logs written before #134.
+                "tool_call_id": tool_call_id,
+                "arguments": args,
+            },
         )
         # Recorded before the call, not after it succeeds: a write that raised half-way
         # may still have changed something.
@@ -414,6 +435,7 @@ class GovernedToolRunner:
             phase="tool.invoke.end",
             payload={
                 "tool": name,
+                "call_id": tool_call_id,
                 "tool_call_id": tool_call_id,
                 "ok": ok,
                 "withheld": post.withheld,
@@ -427,6 +449,7 @@ class GovernedToolRunner:
             ok=ok and not post.withheld,
             classification=post.classification,
             post=post,
+            call_id=tool_call_id,
         )
 
     def pre(
@@ -478,7 +501,11 @@ class GovernedToolRunner:
                 # ToolSpec). The tool policy's confirm-once rule reads it.
                 "tool_effect": tool.effect,
                 "tool_confirm": tool.confirm,
+                # The kernel stamps CALL_ID on every audit row of the call; TOOL_CALL_ID is the
+                # same value under its old name.
+                CALL_ID: tool_call_id,
                 TOOL_CALL_ID: tool_call_id,
+                HELD_CALL_ID: call.held_call_id,
                 TOOL_VERIFY: tool.verify,
                 # ADR-0125: where the arguments go, when the tool declares a destination
                 # the owner-PII guards treat on its own (a web search provider).
@@ -592,6 +619,7 @@ class GovernedToolRunner:
                     verify=tool.verify,
                     tool_call_id=tool_call_id,
                     error=error,
+                    held_call_id=call.held_call_id,
                 ),
             },
         )
@@ -636,39 +664,42 @@ class GovernedToolRunner:
         final context describes.
         """
         run_id = str(uuid.uuid4())
-        args = self.capability_pre(call, args, run_id)
+        call_id = new_ulid()  # one id for the call; the run id is not it (#134)
+        args = self.capability_pre(call, args, run_id, call_id)
         try:
             result = provider_call(**args)
         except Exception as exc:
-            self._capability_failed(call, run_id, exc)
+            self._capability_failed(call, run_id, call_id, exc)
             raise
         if call.shape == "stream":
-            return self._governed_stream(call, iter(result), run_id)
-        return self.capability_post(call, result, run_id)
+            return self._governed_stream(call, iter(result), run_id, call_id)
+        return self.capability_post(call, result, run_id, call_id)
 
     async def aexecute_call(
         self, call: CapabilityCall, provider_call: Callable[..., Any], args: dict[str, Any]
     ) -> Any:
         """Govern and run an ``async def`` capability method, through ``kernel.fire``."""
         run_id = str(uuid.uuid4())
-        args = await self.capability_apre(call, args, run_id)
+        call_id = new_ulid()
+        args = await self.capability_apre(call, args, run_id, call_id)
         try:
             result = await provider_call(**args)
         except Exception as exc:
-            await self._capability_afailed(call, run_id, exc)
+            await self._capability_afailed(call, run_id, call_id, exc)
             raise
-        return await self.capability_apost(call, result, run_id)
+        return await self.capability_apost(call, result, run_id, call_id)
 
     async def aexecute_stream(
         self, call: CapabilityCall, provider_call: Callable[..., Any], args: dict[str, Any]
     ) -> AsyncIterator[Any]:
         """Govern an async stream: ``PRE`` before it starts, ``POST`` per item and at the end."""
         run_id = str(uuid.uuid4())
-        args = await self.capability_apre(call, args, run_id)
+        call_id = new_ulid()
+        args = await self.capability_apre(call, args, run_id, call_id)
         try:
             stream = provider_call(**args)
         except Exception as exc:
-            await self._capability_afailed(call, run_id, exc)
+            await self._capability_afailed(call, run_id, call_id, exc)
             raise
         digester = _capability_digester(call)
         digests: list[str] = []
@@ -677,7 +708,9 @@ class GovernedToolRunner:
         try:
             async for item in stream:
                 digests.append(digester.digest(item))
-                yield await self.capability_apost(call, item, run_id, stream_item=len(digests) - 1)
+                yield await self.capability_apost(
+                    call, item, run_id, call_id, stream_item=len(digests) - 1
+                )
             finished = True
         except BaseException as exc:
             # The class only (the consumer's ``GeneratorExit``, a cancellation, what the
@@ -692,6 +725,7 @@ class GovernedToolRunner:
                     call,
                     None,
                     run_id,
+                    call_id,
                     stream_end=digests,
                     partial=not finished,
                     error=None if finished else stopped_by,
@@ -702,7 +736,7 @@ class GovernedToolRunner:
                 logger.info("capability stream %s: partial end denied", call.tool_name)
 
     def _governed_stream(
-        self, call: CapabilityCall, stream: Iterator[Any], run_id: str
+        self, call: CapabilityCall, stream: Iterator[Any], run_id: str, call_id: str
     ) -> Iterator[Any]:
         digester = _capability_digester(call)
         digests: list[str] = []
@@ -711,7 +745,9 @@ class GovernedToolRunner:
         try:
             for item in stream:
                 digests.append(digester.digest(item))
-                yield self.capability_post(call, item, run_id, stream_item=len(digests) - 1)
+                yield self.capability_post(
+                    call, item, run_id, call_id, stream_item=len(digests) - 1
+                )
             finished = True
         except BaseException as exc:
             stopped_by = type(exc).__name__  # the class only, as in ``aexecute_stream``
@@ -722,6 +758,7 @@ class GovernedToolRunner:
                     call,
                     None,
                     run_id,
+                    call_id,
                     stream_end=digests,
                     partial=not finished,
                     error=None if finished else stopped_by,
@@ -736,6 +773,7 @@ class GovernedToolRunner:
         point: HookPoint,
         call: CapabilityCall,
         run_id: str,
+        call_id: str,
         payload: dict[str, Any],
         *,
         error: str | None = None,
@@ -746,8 +784,8 @@ class GovernedToolRunner:
         caller policy, the tool policy, the output classifier and every other tool hook
         judge a capability call exactly as they judge a tool. The capability's own keys
         are metadata for the audit row; the row holds no argument or result text, only
-        their digests (``kernel._AUDITED_PAYLOAD_KEYS``). One call is one ``run_id``,
-        which is also its ``tool_call_id``: a stream's items are one call.
+        their digests (``kernel._AUDITED_PAYLOAD_KEYS``). One call is one ``run_id`` and one
+        ``call_id`` (a ULID, minted apart from the run id): a stream's items are one call.
         """
         return HookContext(
             hook_point=point,
@@ -778,13 +816,15 @@ class GovernedToolRunner:
                     effect=call.effect,
                     content=call.content,
                     verify=None,
-                    tool_call_id=run_id,
+                    tool_call_id=call_id,
                     error=error,
                 ),
             },
         )
 
-    def _pre_ctx(self, call: CapabilityCall, args: dict[str, Any], run_id: str) -> HookContext:
+    def _pre_ctx(
+        self, call: CapabilityCall, args: dict[str, Any], run_id: str, call_id: str
+    ) -> HookContext:
         if self._kernel is None:
             raise CapabilityDenied(_NO_KERNEL)
         # No audit key, no call: raised before PRE_TOOL_USE, so the provider never runs.
@@ -793,6 +833,7 @@ class GovernedToolRunner:
             HookPoint.PRE_TOOL_USE,
             call,
             run_id,
+            call_id,
             pre_tool_payload(call.tool_name, args, **digester.args_fields(args)),
         )
 
@@ -812,10 +853,10 @@ class GovernedToolRunner:
         return new_args if new_args is not None else args
 
     def capability_pre(
-        self, call: CapabilityCall, args: dict[str, Any], run_id: str
+        self, call: CapabilityCall, args: dict[str, Any], run_id: str, call_id: str
     ) -> dict[str, Any]:
         """``PRE_TOOL_USE`` for a capability call; the arguments to run with, or a denial."""
-        ctx = self._pre_ctx(call, args, run_id)
+        ctx = self._pre_ctx(call, args, run_id, call_id)
         _refuse_inside_a_loop()
         assert self._kernel is not None
         decision, final_ctx = self._kernel.fire_sync(HookPoint.PRE_TOOL_USE, ctx)
@@ -823,14 +864,16 @@ class GovernedToolRunner:
             return self._allowed_args(call, decision, final_ctx, args)
         except CapabilityDenied:
             if side_effect_id_of(final_ctx.metadata) is not None:
-                self._capability_failed(call, run_id, CapabilityDenied(NOT_RUN), error=NOT_RUN)
+                self._capability_failed(
+                    call, run_id, call_id, CapabilityDenied(NOT_RUN), error=NOT_RUN
+                )
             raise
 
     async def capability_apre(
-        self, call: CapabilityCall, args: dict[str, Any], run_id: str
+        self, call: CapabilityCall, args: dict[str, Any], run_id: str, call_id: str
     ) -> dict[str, Any]:
         """The async twin of :meth:`capability_pre`, through ``kernel.fire``."""
-        ctx = self._pre_ctx(call, args, run_id)
+        ctx = self._pre_ctx(call, args, run_id, call_id)
         assert self._kernel is not None
         decision, final_ctx = await self._kernel.fire(HookPoint.PRE_TOOL_USE, ctx)
         try:
@@ -838,12 +881,17 @@ class GovernedToolRunner:
         except CapabilityDenied:
             if side_effect_id_of(final_ctx.metadata) is not None:
                 await self._capability_afailed(
-                    call, run_id, CapabilityDenied(NOT_RUN), error=NOT_RUN
+                    call, run_id, call_id, CapabilityDenied(NOT_RUN), error=NOT_RUN
                 )
             raise
 
     def _failed_ctx(
-        self, call: CapabilityCall, run_id: str, exc: Exception, error: str | None = None
+        self,
+        call: CapabilityCall,
+        run_id: str,
+        call_id: str,
+        exc: Exception,
+        error: str | None = None,
     ) -> HookContext | None:
         """The ``POST_TOOL_USE`` context of a high-risk capability call whose provider raised.
 
@@ -861,15 +909,25 @@ class GovernedToolRunner:
             digests = {}
         payload = post_tool_payload(call.tool_name, "", fields={}, **digests, call_failed=True)
         return self._capability_ctx(
-            HookPoint.POST_TOOL_USE, call, run_id, payload, error=error or type(exc).__name__
+            HookPoint.POST_TOOL_USE,
+            call,
+            run_id,
+            call_id,
+            payload,
+            error=error or type(exc).__name__,
         )
 
     def _capability_failed(
-        self, call: CapabilityCall, run_id: str, exc: Exception, error: str | None = None
+        self,
+        call: CapabilityCall,
+        run_id: str,
+        call_id: str,
+        exc: Exception,
+        error: str | None = None,
     ) -> None:
         """Settle the row of a high-risk call whose provider raised; never masks ``exc``."""
         try:
-            ctx = self._failed_ctx(call, run_id, exc, error)
+            ctx = self._failed_ctx(call, run_id, call_id, exc, error)
             if ctx is not None:
                 _refuse_inside_a_loop()
                 assert self._kernel is not None
@@ -878,11 +936,16 @@ class GovernedToolRunner:
             logger.exception("capability %s: could not settle its failed call", call.tool_name)
 
     async def _capability_afailed(
-        self, call: CapabilityCall, run_id: str, exc: Exception, error: str | None = None
+        self,
+        call: CapabilityCall,
+        run_id: str,
+        call_id: str,
+        exc: Exception,
+        error: str | None = None,
     ) -> None:
         """The async twin of :meth:`_capability_failed`."""
         try:
-            ctx = self._failed_ctx(call, run_id, exc, error)
+            ctx = self._failed_ctx(call, run_id, call_id, exc, error)
             if ctx is not None:
                 assert self._kernel is not None
                 await self._kernel.fire(HookPoint.POST_TOOL_USE, ctx)
@@ -894,6 +957,7 @@ class GovernedToolRunner:
         call: CapabilityCall,
         value: Any,
         run_id: str,
+        call_id: str,
         stream_item: int | None,
         stream_end: list[str] | None,
         partial: bool,
@@ -912,7 +976,9 @@ class GovernedToolRunner:
                 stream_end=True,
                 stream_partial=partial,
             )
-            ctx = self._capability_ctx(HookPoint.POST_TOOL_USE, call, run_id, payload, error=error)
+            ctx = self._capability_ctx(
+                HookPoint.POST_TOOL_USE, call, run_id, call_id, payload, error=error
+            )
             return ctx, {}
         try:
             fields = extract_fields(value, call.value_type, call.fields)
@@ -929,7 +995,10 @@ class GovernedToolRunner:
         )
         if stream_item is not None:
             payload["stream_item"] = stream_item
-        return self._capability_ctx(HookPoint.POST_TOOL_USE, call, run_id, payload), fields
+        return (
+            self._capability_ctx(HookPoint.POST_TOOL_USE, call, run_id, call_id, payload),
+            fields,
+        )
 
     @staticmethod
     def _redacted(
@@ -977,6 +1046,7 @@ class GovernedToolRunner:
         call: CapabilityCall,
         value: Any,
         run_id: str,
+        call_id: str,
         *,
         stream_item: int | None = None,
         stream_end: list[str] | None = None,
@@ -990,13 +1060,13 @@ class GovernedToolRunner:
         """
         try:
             ctx, fields = self._post_ctx(
-                call, value, run_id, stream_item, stream_end, partial, error
+                call, value, run_id, call_id, stream_item, stream_end, partial, error
             )
         except Exception as exc:
             if stream_item is None:
                 # The value never reached the hooks (a type mismatch, no audit key): the
                 # call ran, so its row is settled here, not left ``pending`` for ever.
-                self._capability_failed(call, run_id, _cause(exc))
+                self._capability_failed(call, run_id, call_id, _cause(exc))
             raise
         _refuse_inside_a_loop()
         assert self._kernel is not None
@@ -1009,6 +1079,7 @@ class GovernedToolRunner:
         call: CapabilityCall,
         value: Any,
         run_id: str,
+        call_id: str,
         *,
         stream_item: int | None = None,
         stream_end: list[str] | None = None,
@@ -1018,11 +1089,11 @@ class GovernedToolRunner:
         """The async twin of :meth:`capability_post`, through ``kernel.fire``."""
         try:
             ctx, fields = self._post_ctx(
-                call, value, run_id, stream_item, stream_end, partial, error
+                call, value, run_id, call_id, stream_item, stream_end, partial, error
             )
         except Exception as exc:
             if stream_item is None:
-                await self._capability_afailed(call, run_id, _cause(exc))
+                await self._capability_afailed(call, run_id, call_id, _cause(exc))
             raise
         assert self._kernel is not None
         decision, final_ctx = await self._kernel.fire(HookPoint.POST_TOOL_USE, ctx)

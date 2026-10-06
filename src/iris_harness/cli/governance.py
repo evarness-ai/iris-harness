@@ -108,7 +108,7 @@ def audit(
     ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print the view as JSON.")] = False,
 ) -> None:
-    """The newest decisions: hook, decision, caller, by (tool owner or model), label, where."""
+    """The newest decisions: hook, decision, caller, by (tool owner or model), call id, label, where."""
     from iris_harness.foundation.paths import audit_db_path
     from iris_harness.kernel.governance.audit import AuditLog
     from iris_harness.kernel.governance.audit.view import audit_view
@@ -124,7 +124,18 @@ def audit(
         console.print("no rows match")
         return
     table = Table(show_lines=False)
-    for column in ("time", "hook", "plugin", "decision", "caller", "by", "label", "where", "how"):
+    for column in (
+        "time",
+        "hook",
+        "plugin",
+        "decision",
+        "caller",
+        "by",
+        "call",
+        "label",
+        "where",
+        "how",
+    ):
         table.add_column(column)
     for e in view["entries"]:
         how = f"deterministic:{e.get('handler') or '?'}" if e.get("deterministic") else ""
@@ -136,6 +147,8 @@ def audit(
             e.get("caller") or "",
             # What ran: the tool's owning plugin, the capability's provider, or the model.
             e.get("tool_plugin") or e.get("capability_provider") or e.get("model") or "",
+            # The call this row is about (a ULID, #134): joins a call's rows to one another.
+            e.get("call_id") or "",
             e["classification"] or "",
             e["locality"] or "",
             how or e.get("tool_name") or "",

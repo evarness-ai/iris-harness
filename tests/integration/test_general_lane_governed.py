@@ -102,3 +102,26 @@ def test_the_general_lane_governs_its_research_call_on_both_surfaces(world: Any)
         assert callers == {"caller_policy: model:system"}
         assert all(payload.get("digest_alg") for _, payload in rows)
         assert all(_FOUND not in row.payload_json for row, _ in rows)
+
+
+def test_each_general_lane_plugin_call_carries_one_minted_call_id_on_both_surfaces(
+    world: Any,
+) -> None:
+    """#134: the lane's plugin tool call takes the runner, so it gets the runner's minted
+    ULID on its PRE and POST rows (the provider's own ``c1`` is never the audit id)."""
+    from iris_harness.foundation.ids import is_ulid
+
+    rt, audit = world
+    message = "what is the latest on the rust 2.0 release?"
+    rt.chat(message, session_id="s-sync")
+    assert [e for e in rt.chat_stream(message, session_id="s-stream") if e.kind == "done"]
+
+    seen: set[str] = set()
+    for session_id in ("s-sync", "s-stream"):
+        rows = _research_rows(audit, session_id)
+        ids = {payload.get("call_id") for _, payload in rows}
+        assert len(ids) == 1, ids  # PRE and POST rows of the one call share its id
+        (call_id,) = ids
+        assert is_ulid(call_id) and call_id != "c1"
+        seen.add(call_id)
+    assert len(seen) == 2  # two turns, two calls, two ids

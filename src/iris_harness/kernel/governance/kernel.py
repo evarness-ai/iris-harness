@@ -27,7 +27,12 @@ from collections import defaultdict
 from typing import Any
 
 from iris_harness.kernel.governance.audit import AuditLog
-from iris_harness.kernel.governance.hooks.tool_payload import SIDE_EFFECT_ID
+from iris_harness.kernel.governance.hooks.tool_payload import (
+    CALL_ID,
+    HELD_CALL_ID,
+    SIDE_EFFECT_ID,
+    call_id_of,
+)
 from iris_harness.kernel.governance.hooks.types import (
     Hook,
     HookContext,
@@ -252,6 +257,19 @@ class GovernanceKernel:
             caller = ctx.metadata.get("caller")
             if isinstance(caller, str) and caller:
                 payload.setdefault("caller", caller)
+            # Which call this row is about (#134). The runner mints the id once per call
+            # attempt and stamps it into the metadata; it is written here, from the
+            # metadata only, so a value in the payload or the arguments is never read, and
+            # it wins over anything a hook put in its own ``audit_metadata``. A row of the
+            # approved re-execution of a held call also names the held attempt.
+            call_id = call_id_of(ctx.metadata)
+            if call_id:
+                payload[CALL_ID] = call_id
+            else:
+                payload.pop(CALL_ID, None)  # only the runner's stamp names a call
+            held = ctx.metadata.get(HELD_CALL_ID)
+            if isinstance(held, str) and held:
+                payload[HELD_CALL_ID] = held
             trace_id = _current_trace_id_hex()
             if trace_id is not None:
                 payload.setdefault("trace_id", trace_id)

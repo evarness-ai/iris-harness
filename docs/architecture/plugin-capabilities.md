@@ -237,7 +237,7 @@ including the approval and refusal tests, is unchanged.
 `kernel/governance/hooks/tool_payload.py` (`pre_tool_payload`: `tool_name` + `args`;
 `post_tool_payload`: `tool_name` + `result`), and the runner stamps the tool's declaration
 on the `POST_TOOL_USE` metadata (`tool_effect`, `tool_content`, `tool_verify`,
-`tool_call_id`). `execute` now runs `POST_TOOL_USE` itself and its `ToolOutcome` carries the
+`call_id`, with `tool_call_id` as the same value under its old name). `execute` now runs `POST_TOOL_USE` itself and its `ToolOutcome` carries the
 `PostOutcome` (`agent/tool_runner.py`, `post`): a deny withholds the result behind
 `governance_block_message`, a transform is what the caller hands on, on the sync and stream
 loops, the approved-resume path and both `ToolService` sites; `_governance_post_tool` is

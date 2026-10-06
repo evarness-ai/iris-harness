@@ -19,6 +19,7 @@ import yaml
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from iris_harness.foundation.ids import new_ulid
 from iris_harness.foundation.observability.logging_setup import log_egress
 from iris_harness.kernel.governance.mcp_signing import (
     MCPSigningConfig,
@@ -395,6 +396,9 @@ class MCPBridge:
         """
         server = self._require_enabled_server(server_name)
         call_arguments = dict(arguments)
+        # One id for this outbound call, minted here and nowhere else: its PRE and POST rows
+        # both carry it (#134). Not the caller's to supply.
+        call_id = new_ulid()
 
         # Governance kernel pre-check (Phase 4 — story 12.gov-4.6).
         if self._governance_kernel is not None:
@@ -404,6 +408,7 @@ class MCPBridge:
                 arguments=arguments,
                 persona=persona,
                 run_id=run_id,
+                call_id=call_id,
             )
 
         decision = self._guard_mcp_action(
@@ -433,6 +438,7 @@ class MCPBridge:
                 result=result,
                 persona=persona,
                 run_id=run_id,
+                call_id=call_id,
             )
         return MCPInvocationResult(
             server_name=server.name,
@@ -450,6 +456,7 @@ class MCPBridge:
         arguments: dict[str, Any],
         persona: str | None,
         run_id: str | None,
+        call_id: str,
     ) -> dict[str, Any]:
         """Fire ``PreToolUse`` through the governance kernel for an MCP dispatch.
 
@@ -470,6 +477,8 @@ class MCPBridge:
             audit_digester,
         )
         from iris_harness.kernel.governance.hooks.tool_payload import (
+            CALL_ID,
+            TOOL_CALL_ID,
             args_of,
             pre_tool_payload,
         )
@@ -498,6 +507,7 @@ class MCPBridge:
                 tool_plugin=f"mcp:{server_name}",
                 **digester.args_fields(arguments),
             ),
+            metadata={CALL_ID: call_id, TOOL_CALL_ID: call_id},
         )
         decision, final_ctx = self._governance_kernel.fire_sync(HookPoint.PRE_TOOL_USE, ctx)
         if decision.outcome == "deny":
@@ -515,6 +525,7 @@ class MCPBridge:
         result: Any,
         persona: str | None,
         run_id: str | None,
+        call_id: str,
     ) -> Any:
         """Fire ``PostToolUse`` over an MCP server's result; what the caller may receive.
 
@@ -552,7 +563,7 @@ class MCPBridge:
                 **audit_digester().result_fields(result),
             ),
             metadata=tool_post_metadata(
-                effect=None, content="external", verify=None, tool_call_id=None
+                effect=None, content="external", verify=None, tool_call_id=call_id
             ),
         )
         decision, final_ctx = self._governance_kernel.fire_sync(HookPoint.POST_TOOL_USE, ctx)

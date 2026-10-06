@@ -960,14 +960,16 @@ def cmd_run_resume(
     """
     from pathlib import Path as _Path
 
-    from iris_harness.kernel.governance.side_effects import SideEffectLedger, run_probe
+    from iris_harness.kernel.governance.side_effects import run_probe, shared_side_effect_ledger
     from iris_harness.memory.state.store import (
         CheckpointNotFoundError,
         CheckpointStore,
     )
 
-    ledger_db = _Path(db_path) if db_path else None
-    ledger = SideEffectLedger(db_path=ledger_db)
+    # The process's one handle for this database (issue #102), not a ledger of its own:
+    # opened now, since resume needs the schema and an unusable database should fail here.
+    ledger = shared_side_effect_ledger(_Path(db_path) if db_path else None)
+    ledger.open()
     checkpoint_store = CheckpointStore()
 
     try:

@@ -185,6 +185,10 @@ First public release of the IRIS harness.
   one warning says how many. Only RAG's own entries are removed, never a file. `IngestResult`
   gains defaulted `sources_removed` and `sources_unavailable` counts.
 
+- `iris run resume` reads the process's shared side-effect ledger for the database instead of
+  building a second handle of its own, and opens it before it lists pending rows, so an
+  unusable ledger database stops the command there (issue #102).
+
 - A document index made under a different embedding model can be repaired (issue #144).
   Chroma refuses to reopen the persisted collection under a new embedder, so the index was
   unavailable, retrieval fell back to keyword search and `iris docs reindex` could not

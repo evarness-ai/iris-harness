@@ -26,6 +26,7 @@ PUBLIC_PAYLOAD_FIELDS: dict[str, tuple[type, ...]] = {
     "deterministic": (bool,),
     "handler": (str,),
     "tool_name": (str,),
+    "tool_plugin": (str,),
     "capability": (str,),
     "method": (str,),
     "capability_provider": (str,),

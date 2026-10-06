@@ -495,6 +495,7 @@ class MCPBridge:
                 dict(arguments),
                 mcp_server=server_name,
                 mcp_tool=tool_name,
+                tool_plugin=f"mcp:{server_name}",
                 **digester.args_fields(arguments),
             ),
         )
@@ -547,6 +548,7 @@ class MCPBridge:
                 result,
                 mcp_server=server_name,
                 mcp_tool=tool_name,
+                tool_plugin=f"mcp:{server_name}",
                 **audit_digester().result_fields(result),
             ),
             metadata=tool_post_metadata(

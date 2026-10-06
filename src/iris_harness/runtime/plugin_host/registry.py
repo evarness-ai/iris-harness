@@ -465,7 +465,7 @@ class PluginRegistry:
         )
         # `_replace`, not a field-by-field copy: a copy silently drops every field
         # added to ToolSpec later (ADR-0118's describe/undo would have been lost here).
-        self._tools.append(tool._replace(call=guarded))
+        self._tools.append(tool._replace(call=guarded, plugin=plugin))
         self._record(plugin, RegistrationKind.TOOL, tool.name)
 
     def tools(self) -> list[ToolSpec]:

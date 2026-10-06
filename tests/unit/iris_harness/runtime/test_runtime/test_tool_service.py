@@ -81,7 +81,8 @@ def test_a_read_tool_runs_through_governance_as_its_caller(
     payload = pre.seen[0].payload
     assert (payload["tool_name"], payload["args"]) == ("look_up", {"q": "x"})
     # The row's only trace of the arguments: a keyed digest (kernel/governance/audit/digest.py).
-    assert set(payload) == {"tool_name", "args", "args_digest", "digest_alg"}
+    assert set(payload) == {"tool_name", "tool_plugin", "args", "args_digest", "digest_alg"}
+    assert payload["tool_plugin"] == "system"  # the test's tool is not a plugin's
     assert [c.payload["tool_name"] for c in post.seen] == ["look_up"]
 
 

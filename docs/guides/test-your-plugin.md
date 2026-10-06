@@ -61,8 +61,9 @@ assert h.model_calls() == ()   # a deterministic handler answered: no model was 
 
 `audit_rows` returns `TurnAuditRow`s: `hook_point`, `plugin` (the governance check
 that wrote the row), `decision`, `reason`, `run_id`, `step_id`, `classification`,
-`tier`, `session_id`, `tool`, and `deterministic` and `handler` on a deterministic
-handler's answer row. `h.audit_gaps()` is empty when every model call and every answer
+`tier`, `session_id`, `tool`, `caller` and `tool_plugin` (who invoked a tool call, and
+which plugin owns the tool: `system` for a core tool), and `deterministic` and `handler`
+on a deterministic handler's answer row. `h.audit_gaps()` is empty when every model call and every answer
 has its row.
 
 A turn that stops for the owner's approval (a destructive tool, a write declared

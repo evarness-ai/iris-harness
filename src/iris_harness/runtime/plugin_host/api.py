@@ -253,7 +253,7 @@ class PluginAPI:
         record = self._registry.get(self.plugin)
         manifest = record.manifest if record is not None else None
         if manifest is None:
-            return tool
+            return tool._replace(plugin=self.plugin)
         declared = manifest.tools.get(tool.name)
         if declared is None:
             self._registry.record_failure(
@@ -277,6 +277,7 @@ class PluginAPI:
             verify=declared.verify,
             sends_to=declared.sends_to,
             executes_code=declared.executes_code,
+            plugin=self.plugin,
         )
 
     # -- intent handler: a per-intent agent on the executor -----------------------

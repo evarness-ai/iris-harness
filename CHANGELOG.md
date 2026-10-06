@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 First public release of the IRIS harness.
 
+### Added
+
+- `search_docs`: the core can search its own shipped documentation (architecture, concepts,
+  guides, reference, usage-guides) by keyword at section level, as an internal read tool of
+  the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot
+  reach the identity files, the vault, `.env` files, the owner's data or any store, and a
+  document that classifies `secret` is dropped. An install without the docs says so.
+
 ### Changed
 
 - **Default flipped (issue #104): text a tool, capability or MCP server declares

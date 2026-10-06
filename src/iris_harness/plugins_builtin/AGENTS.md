@@ -4,7 +4,7 @@ The reference plugins, written exactly as an outside plugin would be.
 
 ## Map
 
-- `system/` — deterministic time/date answers and the `system_health` tool.
+- `system/` — deterministic time/date answers and the `system_health` tool, and `search_docs` (keyword search over IRIS's own shipped docs, an allow-listed corpus).
 - `research/` — the `research` tool over a pluggable provider chain, with its own egress guards.
 - `code_exec/` — a bounded model and sandbox loop.
 - `telegram_channel/`, `web_channel/`, `web_push_channel/` — delivery channels.

@@ -20,8 +20,8 @@ First public release of the IRIS harness.
   tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger
   row naming the pattern ids, the tool and the source, never the text. It is on by default
   (`IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`, a plain boolean: unset, blank and any
-  unrecognised value leave it on, only `0`/`false`/`no`/`off` turns it off, with a
-  warning; with the floor off, text a third party wrote reaches the model unmarked and
+  unrecognised value leave it on (an unrecognised one logs a warning), only
+  `0`/`false`/`no`/`off` turns it off, with a warning; with the floor off, text a third party wrote reaches the model unmarked and
   unscanned) and acts at `POST_TOOL_USE`, so the agent loop, `api.tools`, `iris mcp serve`,
   the MCP bridge and capability results all get it. A text that quotes an attack phrase is
   redacted too: see "The external-content floor" in `docs/concepts/governance.md` for the

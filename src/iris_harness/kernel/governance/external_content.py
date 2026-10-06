@@ -50,6 +50,25 @@ def floor_enabled() -> bool:
     return os.getenv(EXTERNAL_CONTENT_FLOOR_FLAG, "").strip().lower() not in _FLOOR_OFF_VALUES
 
 
+_FLOOR_ON_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def floor_setting_problem() -> str | None:
+    """A warning for a value that is neither an on nor an off spelling (it applies: on).
+
+    Unset and blank are valid (on). Anything else that is not one of the accepted boolean
+    spellings is most likely a typo for ``off`` ("of", "disable"): the floor stays on, and
+    the owner is told once that their value was not understood.
+    """
+    raw = os.getenv(EXTERNAL_CONTENT_FLOOR_FLAG, "").strip().lower()
+    if not raw or raw in _FLOOR_ON_VALUES or raw in _FLOOR_OFF_VALUES:
+        return None
+    return (
+        f"governance: {EXTERNAL_CONTENT_FLOOR_FLAG}={raw!r} is not recognised "
+        "(on: unset/blank/1/true/yes/on, off: 0/false/no/off); applying the default, on."
+    )
+
+
 #: What replaces a span the tripwire matched.
 MARKER = "[redacted: instruction-like text in external content]"
 
@@ -133,7 +152,7 @@ PATTERNS: tuple[FloorPattern, ...] = (
     FloorPattern(
         "tool_call_markup",
         _p(
-            r"<\s*/?\s*(?:tool_call|tool_use|function_calls?|invoke|antml:invoke"
+            r"<\s{0,8}/?\s{0,8}(?:tool_call|tool_use|function_calls?|invoke|antml:invoke"
             r"|antml:function_calls)\b[^>]{0,200}>"
         ),
         "tool-call markup, which would pose as the model calling a tool",
@@ -203,7 +222,7 @@ _HIDDEN_IDS = frozenset({"bidi_override", "invisible_run", "tag_characters"})
 
 #: Zero-width characters dropped before the phrase patterns read the text, so
 #: ``ig<ZWSP>nore all previous instructions`` is the phrase it reads as.
-_FOLD_RE = re.compile(r"[\u200b\u2060\ufeff]")
+_FOLD_RE = re.compile(r"[\u00ad\u200b\u2060\ufeff]")
 
 _SENTENCE_END_RE = re.compile(r"[.!?](?:\s|$)|\n")
 

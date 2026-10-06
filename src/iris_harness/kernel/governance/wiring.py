@@ -43,6 +43,7 @@ from iris_harness.kernel.governance.evaluator.signals import (
 from iris_harness.kernel.governance.external_content import (
     EXTERNAL_CONTENT_FLOOR_FLAG,
     floor_enabled,
+    floor_setting_problem,
 )
 from iris_harness.kernel.governance.hooks.types import DataClassification, Hook, HookPoint
 from iris_harness.kernel.governance.kernel import GovernanceKernel
@@ -856,10 +857,14 @@ def _external_content_floor_from_env() -> Hook | None:
     ON by default, unlike the model guard it sits under: it needs no weights and no network,
     so there is no install where it cannot run. ``IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`` is
     a plain boolean read by ``external_content.floor_enabled``: only ``0``/``false``/``no``/
-    ``off`` turns it off; unset, blank and anything unrecognised leave it on. Turning it off
+    ``off`` turns it off; unset, blank and anything unrecognised leave it on (an unrecognised
+    value logs one warning naming the accepted spellings). Turning it off
     logs a warning, because the owner then has neither the marker nor the tripwire on text a third
     party wrote.
     """
+    problem = floor_setting_problem()
+    if problem:
+        logger.warning("%s", problem)
     if not floor_enabled():
         logger.warning(
             "governance: %s is OFF; tool results declared `content: external` reach the model "

@@ -54,7 +54,10 @@ Expected output: `12 passed` in about 30 s (15 s with `--no-cov`).
   ledger: a `pre_tool_use` and `post_tool_use` row for every call, all naming the caller
   the harness stamped, a destructive tool or confirming write held for the owner, run
   once with the queued arguments when approved and never when rejected. A declared tool
-  with no example fails it. `check_conformance` returns the `Violation`s instead.
+  with no example fails it, and so does an approval check with nothing to check (no queued
+  approval, no argument digests to compare). Whether a tool must be held is read from your
+  manifest, so declare its `effect` honestly. `check_conformance` returns the `Violation`s
+  instead.
 
 ## Try changing
 

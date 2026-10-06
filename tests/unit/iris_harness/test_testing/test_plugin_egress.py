@@ -194,31 +194,49 @@ def test_a_redirect_is_returned_not_followed() -> None:
     assert [str(r.url.host) for r in sent] == ["api.open-meteo.com"]
 
 
-def test_a_request_outside_a_tool_call_is_attributed_to_the_plugin() -> None:
-    with fake_http({FORECAST: {"text": "ok"}}):
-        with harness(plugins=[_weather()], fake_model={"default": {"content": "hi"}}) as h:
-            GovernedHttp("weather").get(FORECAST)
-            [row] = _rows(h, "pre_egress")
-    assert (row.caller, row.tool_plugin, row.tool) == ("plugin:weather", "weather", None)
+def _in_call(plugin: str = "weather") -> Any:
+    """The scope the tool runner stamps around a plugin's tool call."""
+    return egress_scope(
+        EgressScope(run_id="r", agent_type="chat", tool="forecast", tool_plugin=plugin)
+    )
 
 
-def test_the_row_names_the_client_s_plugin_not_the_scope_s_claim() -> None:
-    """The plugin is the harness's stamp on the client; the surrounding call cannot rename it."""
-    scope = EgressScope(run_id="r", agent_type="chat", tool="t", tool_plugin="someone-else")
-    with fake_http({FORECAST: {"text": "ok"}}):
+def test_a_request_outside_a_tool_call_is_denied_and_recorded() -> None:
+    with fake_http({FORECAST: {"text": "ok"}}) as sent:
         with harness(plugins=[_weather()], fake_model={"default": {"content": "hi"}}) as h:
-            with egress_scope(scope):
+            with pytest.raises(EgressDenied, match="no governed"):
                 GovernedHttp("weather").get(FORECAST)
             [row] = _rows(h, "pre_egress")
-    assert (row.decision, row.tool_plugin, row.tool) == ("allow", "weather", "t")
+    assert sent == []
+    assert (row.decision, row.caller, row.tool_plugin, row.tool) == (
+        "deny",
+        "plugin:weather",
+        "weather",
+        None,
+    )
+
+
+def test_a_client_built_with_another_plugins_name_is_denied_and_the_row_names_the_real_one() -> (
+    None
+):
+    """Plugin ``evil`` runs the tool; ``weather``'s declaration is not its to use."""
+    with fake_http({FORECAST: {"text": "ok"}}) as sent:
+        with harness(plugins=[_weather()], fake_model={"default": {"content": "hi"}}) as h:
+            with _in_call("evil"):
+                with pytest.raises(EgressDenied, match="different plugin"):
+                    GovernedHttp("weather").get(FORECAST)
+            [row] = _rows(h, "pre_egress")
+    assert sent == []
+    assert (row.decision, row.tool_plugin, row.tool) == ("deny", "evil", "forecast")
 
 
 async def test_the_async_client_is_governed_the_same_way() -> None:
     with fake_http({FORECAST: {"text": "ok"}}) as sent:
         with harness(plugins=[_weather()], fake_model={"default": {"content": "hi"}}) as h:
-            reply = await GovernedHttp("weather").arequest("GET", FORECAST)
-            with pytest.raises(EgressDenied):
-                await GovernedHttp("weather").arequest("GET", "https://evil.example/")
+            with _in_call():
+                reply = await GovernedHttp("weather").arequest("GET", FORECAST)
+                with pytest.raises(EgressDenied):
+                    await GovernedHttp("weather").arequest("GET", "https://evil.example/")
             decisions = [r.decision for r in _rows(h, "pre_egress")]
             outcomes = _rows(h, "post_egress")
     assert reply.status_code == 200 and len(sent) == 1
@@ -253,10 +271,11 @@ def test_a_malformed_request_is_refused_and_still_leaves_a_row() -> None:
     """A refusal is a ledger row, never silence (#134)."""
     with fake_http({}) as sent:
         with harness(plugins=[_weather()], fake_model={"default": {"content": "hi"}}) as h:
-            with pytest.raises(EgressDenied, match="credentials"):
-                GovernedHttp("weather").get("https://user:pw@api.open-meteo.com/x")
-            with pytest.raises(EgressDenied, match="host"):
-                GovernedHttp("weather").get("/relative")
+            with _in_call():
+                with pytest.raises(EgressDenied, match="credentials"):
+                    GovernedHttp("weather").get("https://user:pw@api.open-meteo.com/x")
+                with pytest.raises(EgressDenied, match="host"):
+                    GovernedHttp("weather").get("/relative")
             rows = _rows(h, "pre_egress")
     assert sent == []
     assert [r.decision for r in rows] == ["deny", "deny"]
@@ -280,7 +299,7 @@ def test_an_address_or_odd_host_is_denied_not_crashed_even_with_open_web(url: st
                 plugins=[_weather(_manifest(egress=egress))],
                 fake_model={"default": {"content": "hi"}},
             ) as h:
-                with pytest.raises(EgressDenied):
+                with _in_call(), pytest.raises(EgressDenied, match="host|address|valid"):
                     GovernedHttp("weather").get(url)
                 rows = _rows(h, "pre_egress")
         assert sent == []
@@ -390,16 +409,15 @@ def test_a_failed_request_posts_a_row_with_the_same_id() -> None:
     assert post[0]["egress"]["error"] == "ConnectError"
 
 
-def test_a_request_outside_a_governed_call_has_an_id_and_no_parent() -> None:
+def test_a_refused_request_outside_a_governed_call_has_an_id_and_no_parent() -> None:
     with fake_http({FORECAST: {"text": "ok"}}):
         with harness(plugins=[_weather()], fake_model={"default": {"content": "hi"}}) as h:
-            GovernedHttp("weather").get(FORECAST)
+            with pytest.raises(EgressDenied):
+                GovernedHttp("weather").get(FORECAST)
             ledger = _ledger(h)
     rows = [p for r, p in ledger if r.hook_point in ("pre_egress", "post_egress")]
-    assert len(rows) == 2
-    assert all(is_ulid(p["call_id"]) for p in rows)
-    assert len({p["call_id"] for p in rows}) == 1
-    assert all("parent_call_id" not in p for p in rows)
+    assert len(rows) == 1  # the denial; nothing was sent, so no outcome row
+    assert is_ulid(rows[0]["call_id"]) and "parent_call_id" not in rows[0]
 
 
 def test_the_client_takes_no_caller_chosen_call_id() -> None:
@@ -407,9 +425,10 @@ def test_the_client_takes_no_caller_chosen_call_id() -> None:
     metadata-less context cannot (see kernel/test_governance/test_call_id_stamp.py)."""
     with fake_http({FORECAST: {"text": "ok"}}):
         with harness(plugins=[_weather()], fake_model={"default": {"content": "hi"}}) as h:
-            with pytest.raises(TypeError):
-                GovernedHttp("weather").get(FORECAST, call_id="FORGED")  # type: ignore[call-arg]
-            GovernedHttp("weather").get(FORECAST, headers={"call_id": "FORGED"})
+            with _in_call():
+                with pytest.raises(TypeError):
+                    GovernedHttp("weather").get(FORECAST, call_id="FORGED")  # type: ignore[call-arg]
+                GovernedHttp("weather").get(FORECAST, headers={"call_id": "FORGED"})
             ledger = _ledger(h)
     assert all("FORGED" not in p.get("call_id", "") for _, p in ledger)
 

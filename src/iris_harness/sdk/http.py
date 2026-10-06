@@ -13,10 +13,13 @@ Stable tier. A plugin that talks to a web service uses this instead of ``httpx``
 3. has the strings it carries read by the owner-PII guards' egress column.
 
 Get one from ``api.http`` in ``setup(api)`` (bound to your plugin's name by the harness), or
-from :func:`current_http` inside a declarative plugin's function. That binding is a
-convention: ``GovernedHttp("other")`` constructs, and an in-process plugin that does so is
-recorded under the name it passed. The boundary that stops a plugin acting as another is the
-out-of-process one (issue #111-#114), not this class.
+from :func:`current_http` inside a declarative plugin's function. A request is made only
+inside a tool or capability call, on that call's thread, and acts only for the plugin whose
+tool is running: ``GovernedHttp("other")`` constructs (the class is a stable name), but its
+requests from another plugin's tool are denied and recorded against the real plugin, and a
+request outside any call (for example from a ``threading.Thread`` you start) is denied.
+:class:`EgressDenied` is a ``RuntimeError``, not an ``OSError``, so ``except OSError`` around
+your network code does not swallow a denial.
 
     http = api.http
     reply = http.get("https://api.open-meteo.com/v1/forecast", params={"latitude": 52.5})

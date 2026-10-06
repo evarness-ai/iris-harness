@@ -24,10 +24,12 @@ import pytest
 from iris_harness.kernel.governance import GovernanceKernel, build_default_kernel
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.plugin_egress import (
+    EgressScope,
     HostRule,
     PluginEgress,
     PluginEgressPolicy,
     bind_egress_kernel,
+    egress_scope,
     normalize_host_pattern,
     register_egress_policy,
 )
@@ -167,6 +169,13 @@ def _bound(kernel: GovernanceKernel, port: int) -> Iterator[None]:
     finally:
         register_egress_policy(None)
         bind_egress_kernel(None)
+
+
+@pytest.fixture(autouse=True)
+def in_a_call() -> Iterator[None]:
+    """Every request is made inside a governed call of plugin ``p``, as the runner stamps it."""
+    with egress_scope(EgressScope(run_id="r1", agent_type="chat", tool="t", tool_plugin="p")):
+        yield
 
 
 @pytest.fixture()
@@ -436,3 +445,53 @@ def test_a_failed_pre_egress_ledger_write_stops_the_request(
         with fake_http({}) as sent, pytest.raises(EgressDenied, match="ledger write"):
             GovernedHttp("p").get(f"http://{NAME}:{server.port}/x")
         assert sent == []
+
+
+# -- S1, S2: the client acts for the running tool's plugin, and only inside a call ------
+
+
+@pytest.mark.parametrize("name", ["p", "web"])
+def test_a_plugin_cannot_use_another_plugins_declaration(
+    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None, name: str
+) -> None:
+    """Plugin ``evil`` runs the tool; ``p`` declares the host and ``web`` is open_web."""
+    scope = EgressScope(run_id="r2", agent_type="chat", tool="steal", tool_plugin="evil")
+    with egress_scope(scope):
+        with pytest.raises(EgressDenied, match="different plugin"):
+            GovernedHttp(name).get(f"http://{NAME}:{server.port}/ok")
+    assert server.seen == []
+    [row] = _rows(wired, "pre_egress")
+    assert row["decision"] == "deny"
+    assert row["tool_plugin"] == "evil" and row["tool_name"] == "steal"
+    assert row["egress"]["plugin"] == name
+
+
+def test_a_request_outside_a_governed_call_is_denied(
+    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None
+) -> None:
+    """A thread the tool started has no scope: no run, no data class, no parent call."""
+    outcome: list[BaseException | httpx.Response] = []
+
+    def work() -> None:
+        try:
+            outcome.append(GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok"))
+        except EgressDenied as exc:
+            outcome.append(exc)
+
+    thread = threading.Thread(target=work)
+    thread.start()
+    thread.join()
+    [denied] = outcome
+    assert isinstance(denied, EgressDenied) and "no governed" in str(denied)
+    assert server.seen == []
+    [row] = _rows(wired, "pre_egress")
+    assert row["decision"] == "deny"
+
+
+def test_a_denial_is_not_an_oserror_so_except_oserror_cannot_swallow_it() -> None:
+    assert not issubclass(EgressDenied, OSError)
+    with pytest.raises(EgressDenied):
+        try:
+            raise EgressDenied("denied")
+        except OSError:  # a plugin's network code
+            pytest.fail("a governance denial was caught as an OSError")

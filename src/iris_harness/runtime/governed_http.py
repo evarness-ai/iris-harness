@@ -47,6 +47,8 @@ _TOO_BIG = f"the response is larger than {MAX_RESPONSE_BYTES // (1024 * 1024)} M
 _TOO_SLOW = "the request did not finish within its time limit; it was cut off"
 _NOT_VALID = "the URL is not valid"
 _BAD_HEADER = "a Host or Proxy-* header is not sent"
+_NO_SCOPE = "no governed tool or capability call is running, so a request has no run to be held to"
+_OTHER_PLUGIN = "this client belongs to a different plugin than the tool being run"
 # What the body no longer matches once it is decoded and complete.
 _FRAMING = frozenset({"content-encoding", "content-length", "transfer-encoding"})
 _NO_KERNEL = "no governance kernel is bound, so governed requests fail closed"
@@ -56,10 +58,15 @@ _NO_HOOK = "the governance kernel has no plugin_egress hook, so governed request
 _transport: httpx.BaseTransport | httpx.AsyncBaseTransport | None = None
 
 
-class EgressDenied(PermissionError):
+class EgressDenied(RuntimeError):
     """A governed request was refused: the host is not declared, or governance said no.
 
-    ``host`` is the host the request was for; the message says why. Nothing was sent.
+    ``host`` is the host the request was for; the message says why. Nothing was sent (or, for
+    a response cut off at its size or time limit, the rest was not read).
+
+    Deliberately not an ``OSError`` (it was a ``PermissionError`` before release): a plugin's
+    ``except OSError`` around its network code would otherwise swallow a governance denial as
+    if it were a connection failure.
     """
 
     def __init__(self, message: str, *, host: str = "") -> None:
@@ -303,7 +310,16 @@ class GovernedHttp:
         egress["attempt"], egress["replay_of"] = _attempt(scope, egress, ids.call_id)
         # A request that cannot be addressed is still a record: the hook denies it, so a
         # refusal is a ledger row and never silence.
-        if not host or target.scheme not in ("http", "https"):
+        if scope is None or not scope.tool:
+            # A request outside the harness's call scope (a thread the tool started, a call
+            # made at import) has no run, no data class and no parent call to be held to:
+            # not sent. The harness stamps the scope; a plugin cannot supply one.
+            egress["malformed"] = _NO_SCOPE
+        elif scope.tool_plugin != self._plugin:
+            # The client acts for the plugin whose tool is running, whatever name it was
+            # constructed with: a plugin cannot borrow another's declaration.
+            egress["malformed"] = _OTHER_PLUGIN
+        elif not host or target.scheme not in ("http", "https"):
             egress["malformed"] = f"not an http(s) URL with a host ({target.scheme or 'no scheme'})"
         elif bad_host:
             egress["malformed"] = bad_host
@@ -327,8 +343,10 @@ class GovernedHttp:
     ) -> HookContext:
         scope = current_egress_scope()
         payload: dict[str, Any] = {
-            # Who owns the code making the request: this client's plugin, never the scope's.
-            "tool_plugin": self._plugin,
+            # Who owns the running tool: the harness's stamp (the scope), so a client built
+            # with another plugin's name is still attributed to the plugin actually running
+            # (``egress.plugin``, below, is the name the client was built with).
+            "tool_plugin": (scope.tool_plugin if scope and scope.tool_plugin else self._plugin),
             "egress": egress,
         }
         if scope is not None and scope.tool:

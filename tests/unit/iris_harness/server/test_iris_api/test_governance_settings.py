@@ -55,6 +55,9 @@ def test_governance_state_reports_flags(audit_client: TestClient) -> None:
     assert keys["IRIS_GOVERNANCE_PROMPT_GUARD"] is False  # default-off (opt-in)
     assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER"] is True  # default-on (issue #73)
     assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL"] is False  # scope: opt-in
+    # Issue #104: the deterministic external-content floor is on by default, the model
+    # guard above it is not.
+    assert keys["IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"] is True
 
 
 @pytest.mark.parametrize(
@@ -86,6 +89,24 @@ def test_governance_state_reports_both_side_effect_ledger_settings(
     keys = {f["key"]: f["on"] for f in audit_client.get("/governance/state").json()["flags"]}
     assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER"] is want_ledger
     assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL"] is want_all
+
+
+def test_governance_state_shows_the_floor_turned_off(
+    audit_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR", "off")
+    keys = {f["key"]: f["on"] for f in audit_client.get("/governance/state").json()["flags"]}
+    assert keys["IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"] is False
+
+
+@pytest.mark.parametrize("value", ["", "  ", "banana", "on"])
+def test_governance_state_shows_the_floor_on_for_a_blank_or_unrecognised_value(
+    audit_client: TestClient, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """The posture shown is the posture built: blank is on here, as in the kernel build."""
+    monkeypatch.setenv("IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR", value)
+    keys = {f["key"]: f["on"] for f in audit_client.get("/governance/state").json()["flags"]}
+    assert keys["IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"] is True
 
 
 def test_governance_audit_returns_recent_decisions_newest_first(audit_client: TestClient) -> None:

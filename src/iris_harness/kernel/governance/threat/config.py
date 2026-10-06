@@ -20,7 +20,25 @@ from pydantic import BaseModel, ConfigDict, Field
 #: Maps onto the kernel's ``HookOutcome`` set (plus ``transform`` for G2).
 #: Consumed by the enforcement hooks in later sub-phases; inert in 6a.1.
 OnDetect = Literal["allow", "warn", "require_approval", "deny", "transform"]
-FailMode = Literal["closed", "open"]
+
+
+class RemovedConfigKeyError(ValueError):
+    """A threat-detection override still carries a key a release removed.
+
+    A subclass of ``ValueError`` so existing handlers still see a config error, but the
+    guard builders re-raise it instead of degrading to "guards off": an operator who asked
+    for a guard must not lose it because of a line the release no longer reads.
+    """
+
+
+#: Keys an older release accepted and no release reads now: named in the error, so a config
+#: override that still has one says what to delete instead of a bare "extra inputs" error.
+_REMOVED_KEYS: dict[str, str] = {
+    "fail_mode": (
+        "It was parsed and never read; a guard that cannot run lets the text through and "
+        "writes a `guard unavailable` ledger row."
+    ),
+}
 
 #: Global enforcement mode. ``shadow`` downgrades every guard's ``on_detect`` to
 #: log-only (allow + audit) so thresholds can be tuned against real traffic
@@ -148,7 +166,6 @@ class ThreatDetectionConfig(BaseModel):
     retrieved: RetrievedConfig = Field(default_factory=RetrievedConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     input_safety: InputSafetyConfig = Field(default_factory=InputSafetyConfig)
-    fail_mode: FailMode = "closed"
 
     def input_safety_categories(self) -> tuple[frozenset[str], frozenset[str]]:
         """(enforce, log_only) for the input screen, defaulting to the output guard's."""
@@ -183,4 +200,9 @@ class ThreatDetectionConfig(BaseModel):
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise ValueError(f"threat-detection config must decode to a mapping: {path}")
+        for key, why in _REMOVED_KEYS.items():
+            if key in raw:
+                raise RemovedConfigKeyError(
+                    f"{path}: the `{key}` key was removed, so delete that line. {why}"
+                )
         return cls.model_validate(raw)

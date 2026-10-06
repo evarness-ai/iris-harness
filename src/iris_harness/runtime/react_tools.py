@@ -755,7 +755,7 @@ def builtin_react_tools(
             ),
             call=_wiki_search,
             # The wiki is compiled from ingested documents -- text third parties wrote --
-            # so its results are scanned for injected instructions.
+            # so its results are marked untrusted and tripwire-scanned (the floor).
             content="external",
         ),
         ToolSpec(

@@ -25,7 +25,7 @@ import sys
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Literal, TextIO
 
 from pydantic import BaseModel
 
@@ -88,6 +88,9 @@ class SkillTool:
     skill: str
     # The LangChain ``BaseTool`` instance; ``invoke(args)`` runs it.
     instance: Any
+    # What the tool's output is, from its manifest (``external``: text a third party wrote),
+    # so a served skill tool is marked and scanned like the same tool in the agent loop.
+    content: Literal["internal", "external"] = "internal"
 
     @property
     def verb(self) -> str:
@@ -125,6 +128,7 @@ def load_skill_tools(
         if package.manifest.name not in wanted:
             continue
         routes = {t.name: t.governor_route for t in package.manifest.tools}
+        contents = {t.name: t.content for t in package.manifest.tools}
         for tool_class in package.tool_classes:
             instance = tool_class()
             tools.append(
@@ -135,6 +139,7 @@ def load_skill_tools(
                     governor_route=routes.get(instance.name, ""),
                     skill=package.manifest.name,
                     instance=instance,
+                    content=contents.get(instance.name, "internal"),
                 )
             )
     return tools

@@ -11,6 +11,47 @@ First public release of the IRIS harness.
 
 ### Changed
 
+- **Default flipped (issue #104): text a tool, capability or MCP server declares
+  `content: external` is now marked and scanned on every install.** The new
+  external-content floor needs no model, no weights and no network. An external result
+  reaches the model inside an `<external_content source=... trust="untrusted">` envelope
+  (plugin or core code calling through `api.tools` gets the redaction only, no envelope),
+  and a short list of deterministic patterns (instruction overrides, chat-template and
+  tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger
+  row naming the pattern ids, the tool and the source, never the text. It is on by default
+  (`IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`, a plain boolean: unset, blank and any
+  unrecognised value leave it on (an unrecognised one logs a warning), only
+  `0`/`false`/`no`/`off` turns it off, with a warning; with the floor off, text a third party wrote reaches the model unmarked and
+  unscanned) and acts at `POST_TOOL_USE`, so the agent loop, `api.tools`, `iris mcp serve`,
+  the MCP bridge and capability results all get it. A text that quotes an attack phrase is
+  redacted too: see "The external-content floor" in `docs/concepts/governance.md` for the
+  pattern list and its limits. The model guard (`IRIS_GOVERNANCE_PROMPT_GUARD`) is
+  unchanged: opt-in, shadow-first, fail-open.
+- The retrieved-content guard's `guard unavailable` ledger row now records the tool, how
+  many segments went unscanned, and the classifier's backend and detail. Docs and manifest
+  comments that said external content is always scanned now say what is on by default.
+- **Behavior change:** `config/governance/threat-detection.yaml` no longer has a `fail_mode` key. It was
+  parsed and read by nothing, so `closed` promised what never happened; a guard that
+  cannot run still lets the text through and writes a `guard unavailable` row. A config
+  override that still sets `fail_mode` now stops startup: when a guard that reads the file is
+  requested (`IRIS_GOVERNANCE_PROMPT_GUARD`, `IRIS_GOVERNANCE_INPUT_SAFETY` or
+  `IRIS_CURATOR_OUTPUT_SAFETY`) the build raises an error that names the file and the key and
+  says to delete the line, instead of running on with the guards silently off (there is no
+  deprecation shim). Other config errors still turn the guards off with a warning, as before.
+- New stable name: `iris_harness.sdk.content.wrap_external_content(text, *, source, tool=None)`
+  applies the floor's tripwire and envelope (the kernel's own implementation) to external text
+  that plugin code puts into a prompt of its own. Idempotent and offline.
+- All nine email skill tools (`email-triage`: `email_inbox_summary`, `email_focus`,
+  `email_needs_reply`, `email_judged_yesterday`, `classify_email_by_id`, `run_email_triage`;
+  `gmail-inbox`: `fetch_new_emails`; `email-followup`: `detect_followups`,
+  `list_open_followups`) declare `content: external`. Everything they return is derived from
+  the mailbox pipeline, so they are external as a class, not because each returns email text:
+  six of them carry only counts, ids or status today, so the envelope is conservative there,
+  and a later change that adds free text to one cannot silently skip the floor. Code callers
+  get no envelope. `rag/docs-search` is undecided and unchanged.
+- A skill package's tool can declare `content: internal | external` in its manifest
+  (`web-fetch`'s `fetch_web_content` is external), served and in the loop alike.
+
 - Destructive tools and pinned writes now get a durable side-effect ledger row before
   they run (issue #73). This needs no flag: with `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`
   unset the ledger covers that high-risk class only, and plain writes and reads are

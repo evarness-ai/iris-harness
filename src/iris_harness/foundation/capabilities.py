@@ -50,8 +50,9 @@ CAPABILITY_TOOL_PREFIX = "capability:"
 
 CapabilityEffect = Literal["read", "write"]
 CapabilityConfirm = Literal["once", "never"]
-#: Whether a result is text a third party wrote (``external``), which the retrieved-content
-#: injection guard scans, or the owner's / IRIS's own data (``internal``).
+#: Whether a result is text a third party wrote (``external``), which the external-content
+#: floor tripwire-scans (and the opt-in model guard scans), or the owner's / IRIS's own data
+#: (``internal``).
 CapabilityContent = Literal["internal", "external"]
 #: How a method hands back its result. ``value``: a plain return. ``async``: ``async def``.
 #: ``stream`` / ``astream``: a method returning ``Iterator[X]`` / ``AsyncIterator[X]``, whose
@@ -111,7 +112,8 @@ class MethodSpec:
     (``never``). ``fields``: the text-bearing paths of the return value (per item for a
     stream), exactly the ``str`` leaves of its type (``capability_fields``). ``content``:
     ``external`` when those fields carry text a third party wrote (a web page, an email),
-    which the retrieved-content injection guard scans at ``POST_TOOL_USE``.
+    which the external-content floor redacts instruction-like text from, field by field, at
+    ``POST_TOOL_USE`` (the opt-in model guard scans it too). The typed value is not wrapped.
     """
 
     effect: CapabilityEffect = "read"
@@ -293,7 +295,7 @@ WEATHER_FORECAST = CapabilitySpec(
     protocol=WeatherForecast,
     methods={
         # A read: it leaves the owner's world as it was. The text it returns came from a
-        # weather service, so the injection guard scans it (``external``).
+        # weather service, so the floor tripwire-scans it (``external``).
         "forecast": MethodSpec(
             effect="read",
             fields=("location", "periods.[].summary"),

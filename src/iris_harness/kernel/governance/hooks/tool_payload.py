@@ -34,8 +34,9 @@ declaration, never chosen by the caller:
 
 - ``tool_effect``: ``read`` | ``write`` | ``destructive`` (ADR-0110 / ADR-0118).
 - ``tool_content``: ``internal`` (the owner's or IRIS's own data) | ``external`` (text a
-  third party wrote: web pages, email, retrieved documents) -- what the retrieved-content
-  injection guard scans.
+  third party wrote: web pages, email, retrieved documents) -- what the always-on
+  external-content floor marks and scans, and what the opt-in retrieved-content injection
+  guard (model) also scans.
 - ``tool_verify``: the side-effect probe that can tell whether a write landed, or None.
 - ``call_id`` (alias ``tool_call_id``, same value): this call attempt's ULID, minted once by the
   runner and stamped by the kernel on every audit row of the call (``kernel._audit``).

@@ -210,6 +210,7 @@ def _skill_spec(tool: SkillTool) -> ToolSpec:
         call,
         effect="read",
         confirm="never",
+        content=tool.content,
         plugin=f"skill:{tool.skill}",
     )
 

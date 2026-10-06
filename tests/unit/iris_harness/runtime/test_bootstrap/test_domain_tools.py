@@ -36,7 +36,10 @@ def _skill_registry(*tool_names: str) -> Any:
             description="a skill",
             kind="tool",
             brief=None,
-            tools=[SimpleNamespace(name=n, description=f"skill {n}") for n in tool_names],
+            tools=[
+                SimpleNamespace(name=n, description=f"skill {n}", content="internal")
+                for n in tool_names
+            ],
         ),
         tool_classes=[_Tool for _ in tool_names],
     )

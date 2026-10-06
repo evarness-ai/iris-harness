@@ -390,8 +390,9 @@ class MCPBridge:
         returned ``arguments`` -- keeps the arguments as the caller wrote them.
 
         Its result then passes ``PostToolUse``: an external server's output is
-        third-party text (``content: external``), so the retrieved-content
-        injection guard scans it. A ``deny`` raises :exc:`PermissionError`; a
+        third-party text (``content: external``), so the external-content floor
+        marks and scans it (and the opt-in retrieved-content injection guard, when
+        enabled). A ``deny`` raises :exc:`PermissionError`; a
         ``transform`` is what the caller receives.
         """
         server = self._require_enabled_server(server_name)

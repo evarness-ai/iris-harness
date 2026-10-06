@@ -337,8 +337,9 @@ class ToolDeclaration(BaseModel):
     # destructive tool is always approved this way and does not declare it.
     approval: ToolApproval | None = None
     # Whether the output is text a third party wrote (a web page, an email, a retrieved
-    # document). ``external`` has the retrieved-content injection guard scan every result
-    # at POST_TOOL_USE; ``internal`` (the owner's or IRIS's own data) is not scanned.
+    # document). ``external`` wraps every result in an untrusted-content envelope and redacts
+    # instruction-like text at POST_TOOL_USE (the always-on floor), and has the opt-in model
+    # guard scan it; ``internal`` (the owner's or IRIS's own data) is left as it is.
     content: ToolContent = "internal"
     # Where the call's arguments go, when that is a destination the owner-PII guards
     # treat on its own: ``search_engine`` for a tool that hands them to a web search

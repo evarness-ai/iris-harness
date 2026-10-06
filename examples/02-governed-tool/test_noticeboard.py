@@ -79,10 +79,16 @@ def test_a_read_tool_call_is_checked_before_and_after_it_runs() -> None:
         session = result.session_id
         before = h.audit_rows(hook_point="pre_tool_use", session_id=session)
         after = h.audit_rows(hook_point="post_tool_use", session_id=session)
-        # One row per governance check, each naming the tool; all of them allowed it.
+        # One row per governance check, each naming the tool; all of them allowed it. The
+        # one exception is the floor's row on the result: ``list_notes`` is ``external``, so
+        # the floor marks the result untrusted (a ``transform``) before the model reads it.
         assert before and {row.tool for row in before} == {"list_notes"}
         assert after and {row.tool for row in after} == {"list_notes"}
-        assert all(row.decision == "allow" for row in before + after)
+        assert all(row.decision == "allow" for row in before)
+        for row in after:
+            expected = "transform" if row.plugin == "external_content_floor" else "allow"
+            assert row.decision == expected, (row.plugin, row.decision)
+        assert any(row.plugin == "external_content_floor" for row in after)
         assert h.audit_gaps() == []
 
 

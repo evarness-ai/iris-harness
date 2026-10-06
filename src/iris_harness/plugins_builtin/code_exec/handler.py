@@ -24,7 +24,11 @@ import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from iris_harness.sdk.content import redact_external_content, wrap_external_content
+from iris_harness.sdk.content import (
+    _reset_audit_budget,
+    redact_external_content,
+    wrap_external_content,
+)
 from iris_harness.sdk.llm import friendly_llm_error as _friendly_llm_error
 from iris_harness.sdk.logging import agent_scope, log_tool_run
 from iris_harness.sdk.parsing import (
@@ -67,25 +71,19 @@ from iris_harness.sdk.types import (
 logger = logging.getLogger(__name__)
 
 
-#: Matching calls per run that go through the SDK helper (one counts-only ledger row each).
-_AUDITED_MATCHES_PER_RUN = 3
 _MEMO_MAX_CHARS = 4096
-_ENV_TAG = "external_content"
 
 
 class _RunRedaction:
-    """Per-run bookkeeping so one hostile run writes a bounded number of ledger rows.
+    """Per-run memo of texts that were redacted, so repeats cost nothing and write no row.
 
-    ``redact_external_content`` writes one row per matching call and this plugin calls it
-    per streamed line, hint and trace line. The first ``_AUDITED_MATCHES_PER_RUN`` matches
-    of a run go through it (so the ledger shows the run was hostile, with counts); later
-    matches are redacted by the same scan without a row and only counted. Identical texts
-    are memoised. What is redacted is the same either way.
+    Only a text that CHANGED is memoised: an unchanged result depends on the floor setting
+    at that moment, and a run that turns the floor off and on again must not replay it.
+    The ledger rows of a run are bounded by the SDK helper itself (see
+    ``redact_external_content``); :func:`_begin_run` opens a fresh budget for each run.
     """
 
     def __init__(self) -> None:
-        self.audited = 0
-        self.quiet_hits = 0
         self.memo: dict[str, str] = {}
 
 
@@ -95,15 +93,9 @@ _RUN: contextvars.ContextVar[_RunRedaction | None] = contextvars.ContextVar(
 
 
 def _begin_run() -> None:
-    """Start a fresh budget; called at the top of every handler run."""
+    """Start a fresh memo and ledger-row budget; called at the top of every handler run."""
     _RUN.set(_RunRedaction())
-
-
-def _quiet_scan(text: str) -> str:
-    """The SDK's tripwire without a ledger row: ``wrap_external_content`` minus its envelope."""
-    wrapped = wrap_external_content(text, source="code_exec", tool="redact")
-    body = wrapped.split("\n", 1)[1].rsplit(f"\n</{_ENV_TAG}>", 1)[0]
-    return body
+    _reset_audit_budget()
 
 
 def _redact_owner_text(text: str) -> str:
@@ -111,8 +103,8 @@ def _redact_owner_text(text: str) -> str:
 
     Every owner-facing site goes through here (streamed prose, the answer, activity hints,
     trace lines, the logged command, artifact names), so what scans it can change in one
-    place. It is the SDK's tripwire without the envelope, which honours the floor setting;
-    per run the ledger rows are bounded (see :class:`_RunRedaction`).
+    place. It is the SDK's tripwire without the envelope: it honours the floor setting and
+    its ledger rows are bounded per run.
     """
     if not text:
         return text
@@ -122,24 +114,8 @@ def _redact_owner_text(text: str) -> str:
         _RUN.set(run)
     if text in run.memo:
         return run.memo[text]
-    # The quiet path only for text it reproduces exactly: a literal envelope tag in the
-    # text would be escaped or unwrapped by the wrapper, so that text always takes the
-    # audited path.
-    if run.audited < _AUDITED_MATCHES_PER_RUN or _ENV_TAG in text:
-        out = redact_external_content(text)
-        if out is not text:
-            run.audited += 1
-    else:
-        out = _quiet_scan(text)
-        if out != text:
-            run.quiet_hits += 1
-            if run.quiet_hits == 1:
-                logger.warning(
-                    "code_exec: further instruction-like spans redacted this run "
-                    "(ledger rows capped at %d per run)",
-                    _AUDITED_MATCHES_PER_RUN,
-                )
-    if len(text) <= _MEMO_MAX_CHARS and len(run.memo) < 1024:
+    out = redact_external_content(text)
+    if out is not text and len(text) <= _MEMO_MAX_CHARS and len(run.memo) < 1024:
         run.memo[text] = out
     return out
 
@@ -151,6 +127,8 @@ _HOLD_LINES = 2
 _FLUSH_CAP = 64 * 1024
 #: The tail kept (unemitted) after a forced flush, so a phrase straddling the cut is caught.
 _OVERLAP_CHARS = 2 * 1024
+#: How far the floor extends a redaction past a phrase (the rest of its sentence or line).
+_MAX_EXTENT = 240
 
 
 class _ProseRedactor:
@@ -174,8 +152,37 @@ class _ProseRedactor:
         self._held = ""  # scanned, unemitted text
         self._partial: list[str] = []  # the current unterminated line, as pieces
         self._partial_len = 0
+        # After a forced flush that ended inside a redaction's extension: how many more
+        # characters (at most) still belong to the redacted sentence, and whether the last
+        # chunk ended on a sentence mark whose next character decides if it is the end.
+        self._swallow = 0
+        self._dot = False
+
+    def _skip_extension(self, chunk: str) -> str:
+        """``chunk`` without the rest of a sentence the previous flush already redacted."""
+        if self._dot:
+            self._dot = False
+            if chunk[:1].isspace():
+                self._swallow = 0
+                return chunk
+        window = min(self._swallow, len(chunk))
+        for i in range(window):
+            ch = chunk[i]
+            if ch == "\n":
+                self._swallow = 0
+                return chunk[i:]
+            if ch in ".!?":
+                if i + 1 >= len(chunk):
+                    self._dot = True
+                elif chunk[i + 1].isspace():
+                    self._swallow = 0
+                    return chunk[i + 1 :]
+        self._swallow -= window
+        return chunk[window:]
 
     def feed(self, chunk: str) -> str:
+        if self._swallow:
+            chunk = self._skip_extension(chunk)
         if not chunk:
             return ""
         cut = chunk.rfind("\n")
@@ -215,8 +222,17 @@ class _ProseRedactor:
 
     def _force(self) -> str:
         """Scan a long unterminated buffer and emit all but the overlap tail."""
-        self._held = _redact_owner_text(self._held + "".join(self._partial))
+        raw = self._held + "".join(self._partial)
+        self._held = _redact_owner_text(raw)
         self._partial, self._partial_len = [], 0
+        if self._held != raw and (self._held[-1:] != raw[-1:] or self._held[-1:] == "]"):
+            # The redaction runs into the end of the buffer (the last character differs
+            # from the raw text, or is the marker's closing bracket): its sentence may
+            # continue in the next chunk, which must be dropped up to the sentence end,
+            # not emitted raw. A redaction that ended
+            # earlier (a sentence mark, or the floor's own length limit) leaves the tail
+            # identical. A false positive costs at most one sentence of benign text.
+            self._swallow = _MAX_EXTENT
         keep = max(0, len(self._held) - _OVERLAP_CHARS)
         out, self._held = self._held[:keep], self._held[keep:]
         return out

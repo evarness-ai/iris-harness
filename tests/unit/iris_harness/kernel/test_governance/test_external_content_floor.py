@@ -466,14 +466,16 @@ def test_the_floor_is_on_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "prompt_guard_retrieved" not in _hook_names(kernel)
 
 
-@pytest.mark.parametrize("value", ["true", "TRUE", "1", "yes", "on", "banana"])
-def test_values_that_leave_it_on(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+@pytest.mark.parametrize("value", ["true", "TRUE", "1", "yes", "on", "banana", "", "   "])
+def test_values_that_leave_it_on_blank_included(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
     monkeypatch.setenv(EXTERNAL_CONTENT_FLOOR_FLAG, value)
     kernel = kernel_from_env()
     assert kernel is not None and "external_content_floor" in _hook_names(kernel)
 
 
-@pytest.mark.parametrize("value", ["false", "FALSE", "0", "no", "off", ""])
+@pytest.mark.parametrize("value", ["false", "FALSE", "0", "no", "off", " Off "])
 def test_values_that_turn_it_off_log_a_warning(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, value: str
 ) -> None:
@@ -506,5 +508,32 @@ def test_the_setting_is_a_guarded_default_on_bool_in_the_catalog() -> None:
 def test_the_env_example_lists_the_values_and_the_default() -> None:
     text = (Path(__file__).resolve().parents[5] / ".env.example").read_text(encoding="utf-8")
     block = text.split("IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR")[0].rsplit("\n\n", 1)[-1]
-    assert "true, false, 1, 0, yes, no, on, off" in block
-    assert "Default: true" in block
+    assert "On: unset, blank, 1, true, yes, on (default)" in block
+    assert "Off: 0, false, no, off only" in block
+
+
+def test_unset_blank_and_unrecognised_are_on_and_only_a_falsy_spelling_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``floor_enabled`` is the one reader (the kernel build and /governance/state): a blank
+    value is ON, unlike the shared ``env_flag`` where blank is off."""
+    from iris_harness.kernel.governance.external_content import floor_enabled
+
+    monkeypatch.delenv(EXTERNAL_CONTENT_FLOOR_FLAG, raising=False)
+    assert floor_enabled() is True
+    for value in ("", "  ", "banana", "1", "true", "yes", "on"):
+        monkeypatch.setenv(EXTERNAL_CONTENT_FLOOR_FLAG, value)
+        assert floor_enabled() is True, value
+    for value in ("0", "false", "no", "off", "OFF", " False "):
+        monkeypatch.setenv(EXTERNAL_CONTENT_FLOOR_FLAG, value)
+        assert floor_enabled() is False, value
+
+
+def test_the_settings_api_cannot_write_a_blank_for_it() -> None:
+    from iris_harness.foundation.settings.catalog import load_core_catalog
+    from iris_harness.foundation.settings.env_overrides import SettingValueError, normalize
+
+    declaration = load_core_catalog()[0][EXTERNAL_CONTENT_FLOOR_FLAG]
+    with pytest.raises(SettingValueError):
+        normalize(declaration, "")
+    assert normalize(declaration, "off") == "0" and normalize(declaration, "on") == "1"

@@ -767,7 +767,7 @@ settings:
       (a web page, a feed, an email, a retrieved document) reaches the model inside an untrusted-content
       envelope, and a small set of deterministic patterns (instruction overrides, chat-template and
       tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger row.
-      No model, no weights, no network. Plain boolean: true/false, 1/0, yes/no, on/off.
+      No model, no weights, no network. Plain boolean: on is unset, blank, 1, true, yes or on; off is only 0, false, no or off (anything else stays on).
       The model guard (IRIS_GOVERNANCE_PROMPT_GUARD) is separate and stays opt-in.'
     tab: guards
     guarded: true

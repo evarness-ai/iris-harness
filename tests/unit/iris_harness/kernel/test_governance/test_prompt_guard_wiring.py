@@ -36,3 +36,17 @@ def test_not_requested_is_silent(
     with caplog.at_level(logging.WARNING):
         assert _prompt_guards_from_env() == (None, None)
     assert "prompt guards" not in caplog.text
+
+
+def test_an_override_with_the_removed_fail_mode_key_says_what_to_delete(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The user sees the warning, not a traceback: it names the key and says to delete it."""
+    config = tmp_path / "threat.yaml"
+    config.write_text("version: 1\nfail_mode: closed\n")
+    monkeypatch.setenv("IRIS_GOVERNANCE_PROMPT_GUARD", "1")
+    monkeypatch.setenv("IRIS_THREAT_DETECTION_CONFIG", str(config))
+    with caplog.at_level(logging.WARNING):
+        assert _prompt_guards_from_env() == (None, None)
+    warning = next(r.getMessage() for r in caplog.records if "BOTH are OFF" in r.getMessage())
+    assert "`fail_mode` key was removed" in warning and "delete that line" in warning

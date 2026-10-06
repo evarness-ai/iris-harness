@@ -99,6 +99,16 @@ def test_governance_state_shows_the_floor_turned_off(
     assert keys["IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"] is False
 
 
+@pytest.mark.parametrize("value", ["", "  ", "banana", "on"])
+def test_governance_state_shows_the_floor_on_for_a_blank_or_unrecognised_value(
+    audit_client: TestClient, monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """The posture shown is the posture built: blank is on here, as in the kernel build."""
+    monkeypatch.setenv("IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR", value)
+    keys = {f["key"]: f["on"] for f in audit_client.get("/governance/state").json()["flags"]}
+    assert keys["IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"] is True
+
+
 def test_governance_audit_returns_recent_decisions_newest_first(audit_client: TestClient) -> None:
     body = audit_client.get("/governance/audit").json()
     assert body["total"] == 2

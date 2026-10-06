@@ -147,9 +147,11 @@ nothing more. The model guard is the layer that can judge meaning, which is why 
 Zero-width characters are dropped from a text only when a phrase pattern matched in it.
 
 **The setting.** `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR` is a plain boolean (`true`,
-`false`, `1`, `0`, `yes`, `no`, `on`, `off`), default on. Unset or any unrecognised value
-leaves it on; a blank value or an off value turns it off, and turning it off logs a
-warning at start-up. `GET /governance/state` lists it with the other posture flags. The
+`false`, `1`, `0`, `yes`, `no`, `on`, `off`), default on. Unset, blank, whitespace-only or any
+unrecognised value leaves it on; only `0`, `false`, `no` or `off` turns it off, and turning
+it off logs a warning at start-up. (Unlike most flags, a blank value is on: an empty line
+in `.env` must not switch off a safety floor. The Settings screen and `PUT /settings`
+cannot write a blank for a bool, so only `.env` or the shell can.) `GET /governance/state` lists it with the other posture flags. The
 model guard (`IRIS_GOVERNANCE_PROMPT_GUARD`) is separate: still opt-in, still shadow.
 `config/governance/threat-detection.yaml` no longer has a `fail_mode` key: it was parsed
 and read by nothing. A guard that cannot run lets the text through and writes a

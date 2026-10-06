@@ -26,6 +26,10 @@ from pydantic import BaseModel
 from iris_harness.foundation.env import env_flag
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.audit.view import audit_view
+from iris_harness.kernel.governance.external_content import (
+    EXTERNAL_CONTENT_FLOOR_FLAG,
+    floor_enabled,
+)
 from iris_harness.kernel.governance.plugins.owner_pii_shadow import (
     ENV_FLAG as OWNER_PII_FLAG,
 )
@@ -60,11 +64,6 @@ _GOVERNANCE_FLAGS: tuple[tuple[str, str, bool], ...] = (
     ("IRIS_GOVERNANCE_LOOP_DETECT_ENABLED", "Loop detection", False),
     ("IRIS_GOVERNANCE_COST_LIMITER_ENABLED", "Cost limiter", False),
     ("IRIS_GOVERNANCE_PROMPT_GUARD", "Prompt / threat guard", False),
-    (
-        "IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR",
-        "External-content floor (marker + instruction tripwire, no model)",
-        True,
-    ),
     ("IRIS_GOVERNANCE_INPUT_SAFETY", "Input safety screen", False),
 )
 
@@ -76,6 +75,16 @@ def _audit_log() -> AuditLog:
 
 def _flag_payload(spec: tuple[tuple[str, str, bool], ...]) -> list[dict[str, Any]]:
     return [{"key": k, "label": lbl, "on": _env_flag(k, default=d)} for k, lbl, d in spec]
+
+
+def _external_content_floor_flag() -> dict[str, Any]:
+    """The external-content floor, read by the parser the kernel build uses (a blank value
+    is on here, unlike the shared ``env_flag``), so the posture shown is the posture built."""
+    return {
+        "key": EXTERNAL_CONTENT_FLOOR_FLAG,
+        "label": "External-content floor (marker + instruction tripwire, no model)",
+        "on": floor_enabled(),
+    }
 
 
 def _owner_pii_flag() -> dict[str, Any]:
@@ -135,6 +144,7 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
             "flags": [
                 *_flag_payload(_GOVERNANCE_FLAGS),
                 *_side_effect_ledger_flags(),
+                _external_content_floor_flag(),
                 _owner_pii_flag(),
             ],
         }

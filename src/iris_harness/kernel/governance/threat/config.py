@@ -21,6 +21,15 @@ from pydantic import BaseModel, ConfigDict, Field
 #: Consumed by the enforcement hooks in later sub-phases; inert in 6a.1.
 OnDetect = Literal["allow", "warn", "require_approval", "deny", "transform"]
 
+#: Keys an older release accepted and no release reads now: named in the error, so a config
+#: override that still has one says what to delete instead of a bare "extra inputs" error.
+_REMOVED_KEYS: dict[str, str] = {
+    "fail_mode": (
+        "It was parsed and never read; a guard that cannot run lets the text through and "
+        "writes a `guard unavailable` ledger row."
+    ),
+}
+
 #: Global enforcement mode. ``shadow`` downgrades every guard's ``on_detect`` to
 #: log-only (allow + audit) so thresholds can be tuned against real traffic
 #: before anything is blocked; ``enforce`` honors the per-surface ``on_detect``.
@@ -181,4 +190,7 @@ class ThreatDetectionConfig(BaseModel):
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise ValueError(f"threat-detection config must decode to a mapping: {path}")
+        for key, why in _REMOVED_KEYS.items():
+            if key in raw:
+                raise ValueError(f"{path}: the `{key}` key was removed, so delete that line. {why}")
         return cls.model_validate(raw)

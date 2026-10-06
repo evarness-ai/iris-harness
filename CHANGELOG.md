@@ -19,7 +19,8 @@ First public release of the IRIS harness.
   and a short list of deterministic patterns (instruction overrides, chat-template and
   tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger
   row naming the pattern ids, the tool and the source, never the text. It is on by default
-  (`IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`, a plain boolean; turning it off logs a
+  (`IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`, a plain boolean: unset, blank and any
+  unrecognised value leave it on, only `0`/`false`/`no`/`off` turns it off, with a
   warning) and acts at `POST_TOOL_USE`, so the agent loop, `api.tools`, `iris mcp serve`,
   the MCP bridge and capability results all get it. A text that quotes an attack phrase is
   redacted too: see "The external-content floor" in `docs/concepts/governance.md` for the
@@ -28,11 +29,18 @@ First public release of the IRIS harness.
 - The retrieved-content guard's `guard unavailable` ledger row now records the tool, how
   many segments went unscanned, and the classifier's backend and detail. Docs and manifest
   comments that said external content is always scanned now say what is on by default.
-- `config/governance/threat-detection.yaml` no longer has a `fail_mode` key. It was
+- **Behavior change:** `config/governance/threat-detection.yaml` no longer has a `fail_mode` key. It was
   parsed and read by nothing, so `closed` promised what never happened; a guard that
   cannot run still lets the text through and writes a `guard unavailable` row. A config
   override that still sets `fail_mode` now fails to load (loudly, like any unknown key)
-  and the model guards stay off with a startup warning: delete the line.
+  and the model guards stay off with a startup warning that names the key and says to delete
+  the line (there is no deprecation shim).
+- New stable name: `iris_harness.sdk.content.wrap_external_content(text, *, source, tool=None)`
+  applies the floor's tripwire and envelope (the kernel's own implementation) to external text
+  that plugin code puts into a prompt of its own. Idempotent and offline.
+- The email skill tools that render email-derived text (`email_focus`, `email_needs_reply`,
+  `list_open_followups`) declare `content: external`; the ones that return counts, ids or
+  status do not. `rag/docs-search` is undecided and unchanged.
 - A skill package's tool can declare `content: internal | external` in its manifest
   (`web-fetch`'s `fetch_web_content` is external), served and in the loop alike.
 

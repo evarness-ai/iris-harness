@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
-from iris_harness.foundation.env import env_flag
 from iris_harness.foundation.paths import config_path as _resolved_config_path
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.cost import CostStore
@@ -40,6 +39,10 @@ from iris_harness.kernel.governance.evaluator.signals import (
     LoopDetectSignal,
     StepCapSignal,
     ToolFailureStreakSignal,
+)
+from iris_harness.kernel.governance.external_content import (
+    EXTERNAL_CONTENT_FLOOR_FLAG,
+    floor_enabled,
 )
 from iris_harness.kernel.governance.hooks.types import DataClassification, Hook, HookPoint
 from iris_harness.kernel.governance.kernel import GovernanceKernel
@@ -830,20 +833,17 @@ def _prompt_guards_from_env() -> tuple[Hook | None, Hook | None]:
                 shadow=shadow,
             )
         return inbound, retrieved
-    except Exception:  # opt-in guard; never break kernel construction
+    except Exception as exc:  # opt-in guard; never break kernel construction
         # The operator asked for the guards, so losing them is not a detail: an override
         # config that no longer loads (a key a release removed, like ``scan_tools``) must
         # not turn both off quietly.
         logger.warning(
             "governance: prompt guards requested (IRIS_GOVERNANCE_PROMPT_GUARD) but failed "
-            "to build; BOTH are OFF",
+            "to build; BOTH are OFF: %s",
+            str(exc).splitlines()[0] if str(exc) else type(exc).__name__,
             exc_info=True,
         )
         return None, None
-
-
-#: The flag behind the external-content floor (a plain boolean, default ON).
-EXTERNAL_CONTENT_FLOOR_FLAG: Final = "IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"
 
 
 def _external_content_floor_from_env() -> Hook | None:
@@ -851,12 +851,12 @@ def _external_content_floor_from_env() -> Hook | None:
 
     ON by default, unlike the model guard it sits under: it needs no weights and no network,
     so there is no install where it cannot run. ``IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`` is
-    a plain boolean read like every other flag (``foundation.env.env_flag``: unset is on,
-    ``0``/``false``/``no``/``off`` or blank is off, anything else on); turning it off logs a
-    warning, because the owner then has neither the marker nor the tripwire on text a third
+    a plain boolean read by ``external_content.floor_enabled``: only ``0``/``false``/``no``/
+    ``off`` turns it off; unset, blank and anything unrecognised leave it on. Turning it off
+    logs a warning, because the owner then has neither the marker nor the tripwire on text a third
     party wrote.
     """
-    if not env_flag(EXTERNAL_CONTENT_FLOOR_FLAG, default=True):
+    if not floor_enabled():
         logger.warning(
             "governance: %s is OFF; tool results declared `content: external` reach the model "
             "unmarked and unscanned unless the model guard (IRIS_GOVERNANCE_PROMPT_GUARD) is on "

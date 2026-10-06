@@ -29,8 +29,26 @@ test_external_content_floor.py``.
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
+
+#: The setting that turns the floor off.
+EXTERNAL_CONTENT_FLOOR_FLAG = "IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"
+
+_FLOOR_OFF_VALUES = frozenset({"0", "false", "no", "off"})
+
+
+def floor_enabled() -> bool:
+    """Whether the floor is on: only an explicit ``0``/``false``/``no``/``off`` turns it off.
+
+    Unset, blank, whitespace-only and any unrecognised value leave it on. This is not
+    ``foundation.env.env_flag`` (where a blank value is off) on purpose: a safety floor
+    must not be switched off by an empty line in a ``.env`` file. One reader, used by the
+    kernel build and by ``/governance/state``, so they cannot disagree.
+    """
+    return os.getenv(EXTERNAL_CONTENT_FLOOR_FLAG, "").strip().lower() not in _FLOOR_OFF_VALUES
+
 
 #: What replaces a span the tripwire matched.
 MARKER = "[redacted: instruction-like text in external content]"
@@ -300,10 +318,12 @@ def unwrap(text: str) -> str:
 __all__ = [
     "ENVELOPE_NOTE",
     "ENVELOPE_TAG",
+    "EXTERNAL_CONTENT_FLOOR_FLAG",
     "MARKER",
     "PATTERNS",
     "FloorPattern",
     "ScanResult",
+    "floor_enabled",
     "scan",
     "unwrap",
     "wrap",

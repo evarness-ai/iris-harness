@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
 from unittest import mock
+
+import pytest
 
 from iris_harness.foundation import ids
 from iris_harness.foundation.ids import ULID_LENGTH, is_ulid, new_ulid
@@ -108,3 +111,24 @@ def test_threads_in_one_millisecond_still_get_distinct_ids() -> None:
         sys.setswitchinterval(old)
     flat = [v for chunk in out for v in chunk]
     assert len(set(flat)) == len(flat) == workers * per_thread
+
+
+@pytest.mark.skipif(not hasattr(os, "fork"), reason="needs fork")
+def test_a_forked_child_never_mints_an_id_the_parent_also_mints() -> None:
+    """The child inherited the parent's counter, so both counted up from the same value."""
+    new_ulid()  # leave the parent mid-millisecond state behind
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - runs in the child
+        os.close(read_fd)
+        try:
+            os.write(write_fd, "\n".join(new_ulid() for _ in range(50)).encode())
+        finally:
+            os._exit(0)
+    os.close(write_fd)
+    with os.fdopen(read_fd, "rb") as pipe:
+        child_ids = pipe.read().decode().split("\n")
+    os.waitpid(pid, 0)
+    parent_ids = [new_ulid() for _ in range(50)]
+    assert len(child_ids) == 50 and not set(child_ids) & set(parent_ids)
+    assert all(is_ulid(i) for i in child_ids)

@@ -270,6 +270,8 @@ class GovernanceKernel:
             held = ctx.metadata.get(HELD_CALL_ID)
             if isinstance(held, str) and held:
                 payload[HELD_CALL_ID] = held
+            else:
+                payload.pop(HELD_CALL_ID, None)  # only the kernel's metadata names the held call
             trace_id = _current_trace_id_hex()
             if trace_id is not None:
                 payload.setdefault("trace_id", trace_id)

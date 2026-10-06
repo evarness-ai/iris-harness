@@ -27,6 +27,24 @@ _last_ms = -1
 _last_random = 0
 
 
+def _reset_after_fork() -> None:
+    """A forked child starts from a clean slate, never from the parent's counter.
+
+    The child inherits ``_last_ms`` and ``_last_random``, so without this a parent and a
+    child minting in the same millisecond would count up from the same value and hand out
+    the same id. It also gets a fresh lock: a thread of the parent could have held the old
+    one at the moment of the fork, and that thread does not exist in the child.
+    """
+    global _lock, _last_ms, _last_random
+    _lock = threading.Lock()
+    _last_ms = -1
+    _last_random = 0
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_after_fork)
+
+
 def _encode(value: int, length: int) -> str:
     chars = []
     for _ in range(length):

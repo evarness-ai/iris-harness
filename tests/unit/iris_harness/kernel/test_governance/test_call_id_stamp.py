@@ -81,6 +81,18 @@ def test_a_row_with_no_call_in_metadata_drops_a_hooks_call_id(tmp_path: Path) ->
     assert "call_id" not in _fire(tmp_path, ctx, call_id="FORGED")
 
 
+def test_a_hooks_audit_metadata_cannot_name_the_held_call_either(tmp_path: Path) -> None:
+    ctx = _ctx(HookPoint.PRE_TOOL_USE, pre_tool_payload("t", {}), {CALL_ID: "01REAL"})
+    assert "held_call_id" not in _fire(tmp_path, ctx, held_call_id="FORGED")
+    held = _ctx(
+        HookPoint.PRE_TOOL_USE,
+        pre_tool_payload("t", {}),
+        {CALL_ID: "01REAL", "held_call_id": "01HELD"},
+    )
+    (tmp_path / "second").mkdir()
+    assert _fire(tmp_path / "second", held, held_call_id="FORGED")["held_call_id"] == "01HELD"
+
+
 def test_the_old_key_alone_is_read_as_the_call_id(tmp_path: Path) -> None:
     assert call_id_of({TOOL_CALL_ID: "01OLD"}) == "01OLD"
     assert call_id_of({CALL_ID: "01NEW", TOOL_CALL_ID: "01OLD"}) == "01NEW"

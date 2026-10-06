@@ -200,7 +200,7 @@ def test_discover_isolates_a_skill_whose_import_fails(tmp_path: Path, caplog) ->
         registry.discover()  # per-turn re-discovery must not repeat the warning
 
     assert [p.manifest.name for p in packages] == ["z_fine"]
-    (failed_dir, reason), = registry.load_failures.items()
+    ((failed_dir, reason),) = registry.load_failures.items()
     assert failed_dir.name == "a_broken"
     assert reason == "ModuleNotFoundError: No module named 'no_such_optional_dependency_xyz'"
     skipped = [r for r in caplog.records if "skipped" in r.getMessage()]

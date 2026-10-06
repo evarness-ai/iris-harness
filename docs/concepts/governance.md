@@ -16,6 +16,7 @@ kernel with a priority:
 | `pre_llm_call` | Before each model call | The egress gate, the cost limiter |
 | `pre_tool_use` | Before each tool call | Tool policy, approvals, the filesystem jail, network and command allowlists, vault handles |
 | `post_tool_use` | After each tool call | The side-effect ledger, scanning external content |
+| `pre_egress` / `post_egress` | A plugin's request through the governed HTTP client (`api.http`), before it is sent and after it ends | The plugin's declared hosts, the owner-PII egress read; one row per request ([plugin egress](../architecture/plugin-egress.md)) |
 | `post_step` | After each step of the loop | The evaluator: loops, goal drift, the step cap |
 | `pre_response` | Before an answer ships | Credentials, identity secrets, internal details |
 

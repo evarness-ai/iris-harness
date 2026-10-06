@@ -347,7 +347,7 @@ on a row is the governance check that wrote it): the plugin that registered the 
 (stamped on `ToolSpec.plugin` by `PluginAPI.declare_tool` / `PluginRegistry.add_tool`),
 `skill:<name>` for a skill package's tool, `mcp:<server>` for a bridged server's tool
 (`tools/mcp_bridge.py`), the capability's provider for a capability call, and `system` for
-a core tool. Both are in the audit whitelist (`kernel._AUDITED_PAYLOAD_KEYS`) and the
+a core tool. A request a plugin makes through the governed HTTP client fires `pre_egress` / `post_egress` (`plugin_egress` hook; `docs/architecture/plugin-egress.md`), whose rows carry the same `tool_plugin`, `tool_name` and `caller` plus an `egress` value (host, port, scheme, method, outcome; never a path, query or body). Both are in the audit whitelist (`kernel._AUDITED_PAYLOAD_KEYS`) and the
 public fields (`audit_view.PUBLIC_PAYLOAD_FIELDS`, so `model`, `provider` and `tool_plugin`
 reach `GET /governance/audit`, `iris governance audit` (its `by` column) and the trace); the stable `TurnAuditRow` exposes
 `caller` and `tool_plugin`.

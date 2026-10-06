@@ -18,10 +18,11 @@ First public release of the IRIS harness.
   document that classifies `secret` is dropped. An install without the docs says so.
 
 - Plugin manifests can declare `egress:` (issue #103): the hosts a plugin's code may
-  contact. Declared only, not enforced until the governed client lands (#103b). The host
+  contact through the SDK's governed HTTP client (#103b; see below). The host
   grammar refuses IP literals in any spelling, `localhost`, newlines, repeated dots,
   suffix-only wildcards (`*.com`) and over-long hosts; `iris plugins show` and
-  `--dump-config` print `none declared (egress not enforced yet)` for a plugin without one.
+  `--dump-config` print `none declared (the governed client contacts no host)` for a plugin
+  without one.
 
 ### Changed
 

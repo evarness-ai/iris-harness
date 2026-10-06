@@ -23,7 +23,7 @@ entrypoint: plugin:setup   # module:function (default)
 trust: in-process          # in-process (default) | mcp (out-of-process, M2+)
 party: untrusted           # untrusted (default) | trusted-third-party | first-party
 provides: [intercept, tool]   # advisory; feeds --dump-config and the drift panel
-egress:                    # the hosts the plugin's code may contact (declared only, NOT ENFORCED until #103b; see plugin-egress.md)
+egress:                    # the hosts the plugin's code may contact via api.http (default: none)
   hosts: [api.example.org]    # or {host: ..., schemes: [...], ports: [...], data: public|internal|personal}
 requires:                  # checked before setup(); unmet → plugin not loaded
   packages: []
@@ -180,7 +180,19 @@ except CapabilityUnavailable:
     messages = []  # degraded: no mail source right now
 ```
 
-**Who you are is the harness's stamp.** `api.tools`, `api.capability` and
+**Outbound HTTP goes through `api.http`.** A plugin that talks to a web service uses the
+governed client (`iris_harness.sdk.http`), not `httpx` or `requests`. Each request goes only
+to a host the manifest's `egress:` declares (scheme, host, port, and the data class that host
+receives), fails with `EgressDenied` otherwise, and leaves a `pre_egress` and a `post_egress`
+ledger row (host, method, caller, tool, run, status, bytes, duration; never a path, query,
+header or body). A plugin that declares no `egress` may contact no host through it. In a
+test, `iris_harness.testing.fake_http` replaces the transport only;
+`check_network_imports` fails a plugin whose source imports a raw network library, and the
+conformance suite fails an example call that contacted an undeclared host. This governs the
+calls made through the client; an in-process plugin can still open its own socket
+([plugin egress](plugin-egress.md) says exactly what is and is not proven).
+
+**Who you are is the harness's stamp.** `api.tools`, `api.http`, `api.capability` and
 `api.register_owner_identity_source` are bound to your plugin, and they are the only bound
 entries: the registry is private and `services.tools` is
 a catalogue (`describe` only). Your plugin runs in the harness's process (`trust:

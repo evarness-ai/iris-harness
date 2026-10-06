@@ -126,7 +126,7 @@ def test_the_dump_config_tree_shows_declared_egress(monkeypatch: pytest.MonkeyPa
     assert rows["system"]["egress"] == {"open_web": False, "hosts": []}
     text = render_text(tree)
     assert "egress: any host (open_web)" in text
-    assert "egress: none declared (egress not enforced yet)" in text
+    assert "egress: none declared (the governed client contacts no host)" in text
 
 
 def test_the_shipped_gmail_manifest_names_its_google_hosts() -> None:

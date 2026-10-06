@@ -1,22 +1,28 @@
-# Plugin egress: the manifest declaration (issue #103)
+# Plugin egress: declared, allowed, recorded (issue #103)
 
-Status: the declaration is implemented; **nothing enforces it yet**. Epic #85, exit
-criterion G3. Sequenced before the MCP rung (#111-#114), which reuses the declaration.
+Status: implemented (issue #103). Epic #85, exit criterion G3. Sequenced
+before the MCP rung (#111-#114), which reuses the declaration designed here.
 
 ## The problem
 
-A plugin's own outbound HTTP passes through no governance and leaves no ledger row. The
+A plugin's own outbound HTTP passed through no governance and left no ledger row. The
 only governance on a tool's network use is the `network_egress` `PRE_TOOL_USE` hook, which
-inspects tool *names* in a built-in list; for a plugin's tool its row reads
-`network_egress: not a network tool`. The manifest had no place to say which hosts a plugin
-talks to (`egress:` was rejected as an extra field), and `sends_to` accepted only
-`search_engine`.
+inspects tool *names* in a built-in list and a coding persona's domain allowlist; for a
+plugin's tool its row reads `network_egress: not a network tool`. The manifest had no
+place to say which hosts a plugin talks to (`egress:` was rejected as an extra field),
+`sends_to` accepted only `search_engine`, and `config/governance/egress.yaml` is the
+LLM-prompt class-to-tier policy, not a plugin network policy. The operator's only record
+was whatever the plugin chose to log through `sdk.logging.log_egress`.
 
-## What this change adds
+## The invariant
 
-The first of two steps. This one is the *declaration* and its compiled policy; the second
-adds the governed client that reads it. Until then the declaration changes no plugin's
-behaviour: nothing in the kernel reads the compiled policy.
+> Every outbound network call a plugin makes **through the SDK** is declared in its
+> manifest, allowed by policy, and recorded in the governance ledger.
+
+The invariant is about calls that go through the governed client. It is not a claim about
+the process (see "What this does not prove").
+
+## Shape
 
 1. **Manifest declaration.** `egress:` lists the hosts a plugin may contact:
 
@@ -29,34 +35,64 @@ behaviour: nothing in the kernel reads the compiled policy.
        - host: "*.example.org"                # a subdomain pattern, never a bare "*"
          schemes: [https]
          ports: [443, 8443]
-     open_web: false                          # true: any host (a page fetcher)
+     open_web: false                          # true: any host (a page fetcher); see below
    ```
 
    Unknown keys are rejected. `data` is `public | internal | personal` (never `secret`);
    the default is `internal`, so a plugin that sends something personal must say so.
-   `open_web: true` is the explicit, loud form of "any host", for a tool whose job is to
-   fetch pages the owner or model choose (the research plugin). Absent or empty is a closed
-   door, not "unrestricted".
+   `open_web: true` is the explicit, loud form of "any host": it is for a tool whose job
+   is to fetch pages the owner or model choose (the research plugin). It still records
+   every call.
 
-2. **A compiled policy.** The harness compiles every mounted manifest into one
-   `PluginEgressPolicy` (`runtime/egress_access.py`, `kernel/governance/plugin_egress.py`)
-   and registers it after plugins mount, exactly as it does the caller policy
-   (`runtime/tool_access.py`, `kernel/governance/caller_policy.py`). Config, not code: no
-   plugin name is hard-coded in the kernel. `decide(plugin, scheme=, host=, port=,
-   classification=)` fails closed: no policy, an unmounted plugin or an unknown host is a
-   denial with a reason.
+   The harness compiles every mounted manifest into one `PluginEgressPolicy`
+   (`runtime/egress_access.py`) and registers it after plugins mount, exactly as it does
+   the caller policy (`runtime/tool_access.py`, `kernel/governance/caller_policy.py`).
+   Config, not code: no plugin name is hard-coded in the kernel.
 
-3. **Visibility.** `iris plugins show`, `iris --dump-config` and `GET /plugins` list each
-   plugin's declared hosts.
+2. **A governed HTTP client** (`iris_harness.sdk.http`). A plugin gets one from
+   `api.http` (bound to its own name by the harness; the plugin cannot claim another's
+   identity) or, in a declarative plugin's function, from `current_http()` (bound to the
+   tool being run). Each request:
+   - fires a new kernel hook point `PRE_EGRESS`; the `plugin_egress` hook allows only a
+     scheme/host/port the plugin declared and refuses a run whose data class is above the
+     host's declared `data` (fail closed, no policy or no kernel means deny);
+   - runs the owner-PII shadow observation over what leaves (same `egress` column the
+     network tools use; shadow only, like the column itself, ADR-0125);
+   - makes the request (redirects are not followed; each hop is a new, governed call);
+   - fires `POST_EGRESS`, which records the outcome.
+
+   The ledger rows carry host, port, scheme, method, the declared data class, the plugin
+   (`tool_plugin`), the tool (`tool_name`), the caller, the run id and session, and on
+   the outcome row status, bytes sent and received, duration and an exception class on
+   failure. **Never** a path, query, header, body or secret. A `log_egress` line is also
+   written, so `iris.egress` stays one trail.
+
+   The harness stamps the call's run, step, tool, caller and classification around the
+   tool invocation (`EgressScope`, a `ContextVar` set in `GovernedToolRunner` for both
+   tool calls and capability provider calls), so the rows join the turn's other rows on
+   `chat` and `chat_stream` alike: both run the one tool runner.
+
+   Tests: `iris_harness.testing.fake_http(...)` replaces only the transport, so the
+   policy, the hooks and the rows run exactly as in production. This replaces each
+   plugin's own `make_setup(transport)` (GAP-4). `no_network()` still refuses real
+   sockets.
+
+3. **Drift check.** At runtime, a host the manifest does not declare is denied and
+   recorded (a `deny` row naming the host). In the conformance suite,
+   `check_conformance` fails a plugin whose example call was denied for an undeclared
+   host, and `testing.check_network_imports(paths)` flags plugin source that imports a
+   raw network library (httpx, requests, urllib.request, http.client, socket, ssl,
+   aiohttp, urllib3, smtplib, imaplib, ftplib, websockets, ...). A plugin CI runs it as it
+   runs `check_stable_imports`.
 
 4. **A generic `sends_to` destination.** `external_service` joins `search_engine`: a tool
    declaring it hands its arguments to a service outside the machine, so the owner-PII
-   `egress` column (shadow mode, ADR-0125) reads its `PRE_TOOL_USE` arguments as leaving.
-   A tool declaring it must belong to a plugin that declares `egress` hosts (or
-   `open_web`), checked at manifest load. No shipped manifest declares it yet.
+   `egress` column treats its `PRE_TOOL_USE` arguments as leaving (destination = the tool).
+   `search_engine` stays: it names a destination with its own guard column
+   (`web_search`). A tool declaring `external_service` must belong to a plugin that
+   declares `egress` hosts (or `open_web`), checked at manifest load.
 
-The shipped `research` manifest declares `open_web: true` and the `gmail` manifest its four
-Google hosts (`data: personal`).
+5. **Not solved.** See "What this does not prove".
 
 ## The host grammar
 
@@ -71,16 +107,144 @@ numeric, and a wildcard whose base is a single label (`*.com`).
 Known gap: the repo ships no public-suffix list, so a wildcard over a multi-label public
 suffix (`*.co.uk`) is accepted. Review such a declaration by eye until a list is added.
 
-## Why the manifest key `egress` is stable surface
+## Record identity (issue #134)
 
-`egress` is a top-level manifest key, and the stable tier lists every manifest key
-(`stable_tier.yaml`, `manifest_fields`): a plugin author writes it, and a plugin written
-against 0.1.0 must keep loading. It is the only stable name this change adds. Because a
-manifest with an unknown key is rejected, the key cannot be introduced later without it
-being a breaking change for older harnesses; adding it first lets plugins declare before the
-client that enforces it exists.
+Built on #134 stage 1 (the runner mints one ULID `call_id` per call attempt, the kernel
+stamps it on every audit row from metadata). An egress request is a call of its own, so it
+gets the same identity, through the same path:
 
-## What this does not do
+| Field | On the row (top level of the payload, `GET /governance/audit`, the CLI `call` column) | Where it comes from |
+|---|---|---|
+| `call_id` | the request's own id: a 26-character ULID, shared by its `pre_egress` and `post_egress` rows (and every hook that fired for them) | minted by the governed client with `iris_harness.foundation.ids.new_ulid`, the runner's minter; there is no argument to pass one; carried in the hook context's **metadata** and written by `kernel._audit`, never read from the payload |
+| `parent_call_id` | the calling tool's (or capability call's) runner-minted `call_id`, i.e. the id on that call's own `pre_tool_use` / `post_tool_use` rows. Absent for a request made outside a governed call | read by the client from the harness's call scope (`EgressScope.tool_call_id`, set around the tool or provider invocation by the runner), carried as metadata `parent_call_id`, stamped by `kernel._audit` |
+| `attempt`, `replay_of` | inside the nested `egress` value: a repeat of the same method, host and port inside one governed call is attempt 2, 3, ... and `replay_of` names the first request's `call_id` | the client |
 
-Declared is not enforced. No hook point, SDK name or audit field is added here; no request a
-plugin makes is checked, blocked or recorded because of the declaration.
+`parent_call_id` is a public payload field next to `call_id` and `held_call_id`
+(`audit_view.PUBLIC_PAYLOAD_FIELDS`), so the audit API and CLI show it. `TurnAuditRow.egress`
+(additive) is the nested record with the two stamped ids merged in, so a plugin's test reads
+`row.egress["call_id"]` and `row.egress["parent_call_id"]` without a new row field. The row
+already carries `run_id`, `step_id`, `session_id`, `caller`, `tool_name` and `tool_plugin`
+(#124/#131). A denied request is a `pre_egress` deny row; a malformed one (no host, a URL
+with credentials) is a deny row too, flagged `malformed`; a failed one has a `post_egress`
+row with `error`. Each carries the same ids. None is silent.
+
+What #134 stage 1 provides: the ULID format and minter, kernel-side stamping from metadata
+only, `held_call_id`, and the `call_id` public field. What stage 2 will standardise: the
+ids as first-class audit columns rather than payload keys (so `parent_call_id` and `attempt`
+become queryable and survive Parquet compaction), a record id minted inside the store write,
+`attempt` / `replay_of` as the generic retry edge (today only the client sets them, for
+egress), a parent edge for every child call (plugin `api.tools`, capability calls), and
+replay across a resumed run. Not covered today: a request made by a streamed capability
+method after it returns (its generator body runs outside the call scope), which has an id
+but no parent.
+
+## Interplay with the external-content floor (#137)
+
+The floor applies to **tool results** (`content: external` tools): the kernel's
+`external_content_floor` hook scans and envelopes what a tool returns to the loop's model.
+It does not see the governed client's response: `http.get(...)` hands the plugin the
+third-party body as an ordinary return value, and nothing is scanned, wrapped or redacted on
+that path. What is and is not covered:
+
+- Covered: a tool that returns the fetched text and declares `content: external` (the
+  `forecast` example in the tests) is enveloped and scanned by the floor on its way to the
+  model, as before. The egress rows record the request (host, status, byte counts), never
+  the body.
+- Not covered: text the plugin itself puts into a prompt of its own, shows to the owner, or
+  stores, before or without returning it. A plugin that does this should pass the body
+  through `iris_harness.sdk.content.wrap_external_content(body, source=...)` first. The
+  governed client does not do it for the plugin, because the same body may be JSON the
+  plugin parses; wrapping is a decision about prose.
+- The client never wraps, redacts or caps a response; `fake_http` bodies are returned
+  untouched. A plugin that needs redaction beyond the floor's tripwire waits for the
+  redaction helpers being consolidated separately; this design adds none.
+
+## Decisions
+
+**Default for a plugin that declares no `egress`: deny all, through the governed client.**
+An empty declaration is a closed door, not "unrestricted". Nothing breaks on migration:
+the client is opt-in, so a plugin that does not use it is unaffected by the policy, and
+a plugin that adopts it must declare first. The only nudge for plugins that stay on raw
+libraries is the lint and the conformance check; no mount-time notice (the loader's
+existing notices cover `party`).
+
+**`party` does not change the policy.** `party` is a declaration of provenance; nothing
+enforces it. The same rule applies to first-party and untrusted plugins; what differs is
+the lint. Untrusted and trusted-third-party plugins must not import raw network
+libraries (conformance fails them). First-party plugins that do today are on an explicit,
+tested, shrinking list (below), so a *new* raw import in a first-party plugin fails
+`tests/` instead of passing silently. That is not an exemption: it is a visible debt.
+
+**First-party network use today** (verified in source; `tests/unit/iris_harness/test_testing/
+test_network_imports.py` pins the files):
+
+| Plugin | What it connects to | In this change |
+|---|---|---|
+| `research` | SearXNG (operator URL), `api.tavily.com`, `api.exa.ai`, `api.search.brave.com`, `duckduckgo.com`, and any page it fetches (urllib, Trafilatura, Crawl4AI) | `egress: {open_web: true}` declared; its SSRF checks stay; five files on the debt list |
+| `gmail` | `gmail.googleapis.com`, `www.googleapis.com`, `oauth2.googleapis.com`, `accounts.google.com` (Google API client, OAuth) | the four hosts declared (`data: personal`); three files on the debt list |
+| `imap` | the owner's IMAP server over TCP (`imaplib`, `ssl`) | not an HTTP host, so nothing to declare; one file on the debt list |
+| `email_workflows` | job-posting fetch (`httpx`), discovery (`requests`), a demo that guards sockets | three files on the debt list; no declaration yet |
+| `telegram_channel`, `web_push_channel` | `api.telegram.org`, browser push endpoints, through `services/channels` | the plugin files import nothing raw, so the lint is silent; no declaration yet |
+
+Migrating each onto the governed client is separate work (their SSRF checks, DNS handling,
+OAuth transports and streaming need care); declaring their hosts now makes `iris plugins
+show` truthful and gives the debt list a name per file.
+
+**Stable-tier additions** (each is a public name a plugin or its CI needs):
+`sdk.http.GovernedHttp` (the client's type, for annotations), `sdk.http.EgressDenied`
+(what a denied call raises, a `PermissionError`), `sdk.http.current_http` (declarative
+plugins have no `api`), `testing.fake_http` (the one injection point for tests),
+`testing.check_network_imports`, `testing.NetworkImportViolation` and
+`testing.NETWORK_MODULES` (the lint and what it reads). `PluginAPI.http` is an attribute of
+an already stable class. Also new: the manifest key `egress`, `TurnAuditRow.egress`, and
+the conformance check name `egress`.
+
+**Fail closed in three more places.** No policy registered: every host denied. No kernel
+bound, or a kernel without the `plugin_egress` hook (an empty kernel would otherwise
+answer "allow, no hooks registered"): the client raises before sending. A host the policy
+does not know, or a plugin that is not mounted: denied.
+
+**Built here, left for later.** An operator-side narrowing file (the egress counterpart of
+`config/governance/tool-access.yaml`), a capability `MethodSpec.sends_to` (#100), egress
+rows for the items a *streamed* capability method yields after it returns (the generator
+runs outside the call's scope; such a request is still checked and recorded, attributed to
+the plugin without the tool and run), and moving the first-party files above onto the
+client.
+
+**Relation to `sends_to: search_engine`.** Orthogonal. `sends_to` says which owner-PII
+column reads a tool's *arguments*; `egress` says which *hosts* the plugin's code may
+contact and records each contact. A tool can have both; the research plugin does.
+
+**Capability `MethodSpec`** (#100, third bullet): a capability method cannot yet declare
+that its arguments leave the machine. Not done here; the governed client already records
+the host of the call such a method makes.
+
+## What this does not prove
+
+An in-process plugin (`trust: in-process`) is a contract, not a sandbox. It runs in the
+harness's interpreter and can open its own socket, import `urllib`, or shell out. The
+governed client proves: *a call made through it* was declared, allowed and recorded, and a
+denied host was not contacted by it. The lint proves the plugin's *own source files*
+import no raw network library; it does not see dynamic imports, a dependency's own
+network use, or `subprocess`. A ledger with no row for a host is therefore not proof the
+host was never contacted by a plugin; it is proof the governed client never contacted it.
+`no_network()` proves a test path made no socket in the test process.
+
+OS-level enforcement (a launch wrapper, proxy environment, sandbox profile or network
+namespace) belongs to the MCP rung, which isolates the process. #111-#114 build on this
+design: the same manifest `egress` block, compiled by the same `PluginEgressPolicy`, and
+the same `PRE_EGRESS` / `POST_EGRESS` rows for contacts a launch wrapper reports.
+
+## Behaviour matrix
+
+| Situation | Result | Rows |
+|---|---|---|
+| Host declared (scheme, port, data class fit) | request made | `pre_egress` allow, `post_egress` outcome |
+| Host not declared | `EgressDenied`, no request | `pre_egress` deny naming the host |
+| Plugin declares no `egress` | every host denied | `pre_egress` deny |
+| `open_web: true` | any host allowed | both rows |
+| Run classified above the host's `data` | denied | `pre_egress` deny |
+| First-party vs untrusted | same policy | same rows |
+| No policy or kernel bound | denied (fail closed) | none possible; raises |
+| `fake_http` active | transport faked, everything else as production | both rows |
+| `no_network()` active, real transport | the socket is refused; outcome row records the error | both rows |

@@ -120,9 +120,10 @@ class EgressHostDecl(BaseModel):
 class PluginEgressDecl(BaseModel):
     """The hosts this plugin's code may contact (``egress:``), compiled into kernel policy.
 
-    Declared only, NOT ENFORCED until #103b: nothing reads this yet. Once the governed client
-    lands, absent or empty will mean a plugin may contact no host
-    (docs/architecture/plugin-egress.md). ``open_web: true`` is the explicit form of
+    Read by the kernel's ``plugin_egress`` hook on every call made through the SDK's governed
+    HTTP client: absent or empty means that client contacts no host for this plugin. A plugin
+    that opens its own socket is not stopped (docs/architecture/plugin-egress.md).
+    ``open_web: true`` is the explicit form of
     "any host", for a tool whose job is to fetch pages the owner or the model choose; every
     call is still recorded.
     """

@@ -4,8 +4,8 @@
 write runs, or denies the call when it cannot; ``PostToolUseLedgerHook`` settles that row
 (``SideEffectLedger.finalize``). That class is always recorded (the ledger is created on
 first use); ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL=1`` records every non-read call too, and
-``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0`` turns high-risk calls off. The runner's side is ``tests/unit/iris_harness/agent/test_agent/
-test_pre_execution_record.py``.
+``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0`` turns high-risk calls off. The runner's side is
+``tests/unit/iris_harness/agent/test_agent/test_pre_execution_record.py``.
 """
 
 from __future__ import annotations

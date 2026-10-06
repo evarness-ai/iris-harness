@@ -16,8 +16,8 @@ First public release of the IRIS harness.
   unset the ledger covers that high-risk class only, and plain writes and reads are
   unchanged (no row, no file). Behavior change for deployments that set
   `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0`: a destructive tool or pinned write is now denied
-  rather than run with no durable record. Remove the setting, or set it to `1` to also
-  record every non-read call, to run them again.
+  rather than run with no durable record. Remove the setting, or set it to `1`, to run
+  them again.
 
 - Behavior change: `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1` (or `true`/`yes`/`on`) is now
   the same as leaving it unset: the high-risk class only. It used to also record every

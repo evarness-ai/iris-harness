@@ -12,6 +12,7 @@ import asyncio
 import contextvars
 import time
 import uuid
+import zlib
 from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -46,7 +47,26 @@ MAX_RESPONSE_BYTES = 10 * 1024 * 1024
 _TOO_BIG = f"the response is larger than {MAX_RESPONSE_BYTES // (1024 * 1024)} MiB; it was cut off"
 _TOO_SLOW = "the request did not finish within its time limit; it was cut off"
 _NOT_VALID = "the URL is not valid"
-_BAD_HEADER = "a Host or Proxy-* header is not sent"
+_BAD_HEADER = (
+    "a Host, Proxy-*, Connection, Upgrade, TE, Transfer-Encoding or Content-Length header "
+    "is not sent"
+)
+#: Headers the client alone sets: a caller's value is refused, in whatever spelling.
+_FORBIDDEN_HEADERS = frozenset(
+    {"host", "connection", "upgrade", "te", "transfer-encoding", "content-length"}
+)
+_BAD_ENCODING = "the response uses a content encoding that is not accepted"
+_BAD_BODY = "the response body could not be decoded"
+#: How much a bounded decompressor may produce per step (and so the most memory one step adds).
+_DECODE_STEP = 64 * 1024
+# zlib window bits per accepted Content-Encoding; None = the bytes are the body.
+_ENCODINGS: dict[str, int | None] = {
+    "": None,
+    "identity": None,
+    "gzip": 16 + zlib.MAX_WBITS,
+    "x-gzip": 16 + zlib.MAX_WBITS,
+    "deflate": zlib.MAX_WBITS,
+}
 _NO_SCOPE = "no governed tool or capability call is running, so a request has no run to be held to"
 _OTHER_PLUGIN = "this client belongs to a different plugin than the tool being run"
 # What the body no longer matches once it is decoded and complete.
@@ -217,7 +237,7 @@ class GovernedHttp:
             ) as client:
                 reply = client.send(request, stream=True)
                 try:
-                    for chunk in reply.iter_bytes():
+                    for chunk in _decoded(reply, host, egress):
                         read.bytes_in += len(chunk)
                         if read.bytes_in > MAX_RESPONSE_BYTES:
                             egress["aborted"] = "max_bytes"
@@ -326,12 +346,14 @@ class GovernedHttp:
         elif target.userinfo:
             # Credentials in the address would be sent where the ledger cannot see them.
             egress["malformed"] = "a URL with credentials in it is not sent"
-        elif any(
-            str(k).lower() == "host" or str(k).lower().startswith("proxy-") for k in (headers or {})
-        ):
+        elif _bad_headers(headers):
             # A Host header names a different site than the one the policy checked
-            # (domain fronting); Proxy-* headers have no meaning on a direct request.
+            # (domain fronting); Proxy-* headers have no meaning on a direct request; the
+            # framing and connection headers are the client's own.
             egress["malformed"] = _BAD_HEADER
+        else:
+            # Only the identity encoding is asked for: the body is decoded here, bounded.
+            request.headers["Accept-Encoding"] = "identity"
         return request, egress, ids
 
     def _context(
@@ -418,6 +440,51 @@ class GovernedHttp:
         _log(egress, response, error)
 
 
+def _decoded(reply: httpx.Response, host: str, egress: dict[str, Any]) -> Iterator[bytes]:
+    """The response body, decoded here with a bounded decompressor, never by httpx.
+
+    httpx decodes a whole wire chunk in one call, so a small compressed body (layered gzip,
+    zstd, brotli, a deep gzip) could expand to gigabytes inside one step, before any size
+    check. So the request asks for ``identity``; a server that compresses anyway is accepted
+    only for a single ``gzip`` or ``deflate`` layer, decoded at most ``_DECODE_STEP`` bytes at
+    a time; any other encoding is refused before its body is read.
+    """
+    if reply.is_stream_consumed:  # a test's fake response: already complete, no socket
+        yield reply.content
+        return
+    label = reply.headers.get("content-encoding", "").strip().lower()
+    if label not in _ENCODINGS:
+        egress["aborted"] = "encoding"
+        raise EgressDenied(_BAD_ENCODING, host=host)
+    wbits = _ENCODINGS[label]
+    if wbits is None:
+        yield from reply.iter_raw()
+        return
+    inflater = zlib.decompressobj(wbits)
+    first = True
+    try:
+        for raw in reply.iter_raw():
+            if first and label == "deflate":
+                first = False
+                try:  # some servers send raw deflate without the zlib wrapper
+                    probe = zlib.decompressobj(wbits)
+                    probe.decompress(raw, 1)
+                except zlib.error:
+                    inflater = zlib.decompressobj(-zlib.MAX_WBITS)
+            data = raw
+            while data:
+                piece = inflater.decompress(data, _DECODE_STEP)
+                if piece:
+                    yield piece
+                data = inflater.unconsumed_tail
+        tail = inflater.flush()
+        if tail:
+            yield tail
+    except zlib.error:
+        egress["aborted"] = "decode"
+        raise EgressDenied(_BAD_BODY, host=host) from None
+
+
 class _Read:
     """Decoded response bytes read so far (also when the transfer is cut off)."""
 
@@ -425,9 +492,24 @@ class _Read:
         self.bytes_in = 0
 
 
+def _bad_headers(headers: Any) -> bool:
+    """Did the caller supply a header the client alone may set? Judged on the normalised
+    names (dict, list of pairs, tuples, bytes keys, any case), not on the caller's spelling;
+    headers that cannot be normalised are refused."""
+    if not headers:
+        return False
+    try:
+        names = {str(name).lower() for name in httpx.Headers(headers).keys()}
+    except Exception:  # noqa: BLE001 - whatever httpx cannot read is not sent
+        return True
+    return bool(names & _FORBIDDEN_HEADERS) or any(n.startswith("proxy-") for n in names)
+
+
 def _seconds(value: float | None, default: float) -> float:
     """A request's total time budget: the default for None, zero, negative or not-a-number,
     never more than ``_MAX_TIMEOUT``."""
+    if isinstance(value, bool):
+        return default  # True is not "1 second"
     try:
         seconds = float(value) if value is not None else default
     except (TypeError, ValueError):

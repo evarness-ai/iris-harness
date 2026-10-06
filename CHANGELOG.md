@@ -47,6 +47,11 @@ First public release of the IRIS harness.
   before release). `check_network_imports` also reports attribute use of an imported
   package (`urllib.request.urlopen`), `asyncio.open_connection` / `start_server`, `httpcore`,
   `h11` and `http.server`, and an unparsable file as a finding.
+  The response body is decoded by the client with a bounded decompressor, never by httpx:
+  it asks for `identity`, accepts at most one `gzip` or `deflate` layer, and refuses any other
+  encoding (layered, `zstd`, `br`) before reading it, so a compression bomb cannot exceed the
+  10 MiB cap in memory. A `Host`, `Proxy-*`, `Connection`, `Upgrade`, `TE`, `Transfer-Encoding`
+  or `Content-Length` request header is refused in any spelling (dict, pairs, bytes keys).
 
 ### Changed
 

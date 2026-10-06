@@ -68,7 +68,7 @@ the process (see "What this does not prove").
      network tools use; shadow only, like the column itself, ADR-0125);
    - makes the request: redirects are not followed (each hop is a new, governed call); the
      environment is not read (`trust_env=False`: no proxy variables, netrc or CA-bundle
-     variables); a `Host` or `Proxy-*` header is refused with a recorded deny; the name is
+     variables); a `Host`, `Proxy-*`, `Connection`, `Upgrade`, `TE`, `Transfer-Encoding` or `Content-Length` header is refused (judged on the normalised names, any spelling) with a recorded deny; the name is
      resolved once and the connection goes to the address that was checked (below); the whole
      transfer has one time budget and the decoded body a size cap (below);
    - fires `POST_EGRESS`, which records the outcome.
@@ -150,6 +150,12 @@ decoded body is read up to 10 MiB (fixed: not manifest-configurable). Either lim
 request with a `post_egress` row (`error: EgressDenied`, `aborted: max_bytes | deadline`,
 `bytes_in` = the decoded bytes actually read) and an `EgressDenied` with a fixed message.
 The returned response holds the decoded body, without `Content-Encoding` and length headers.
+httpx never decodes: it would expand a whole wire chunk in one step, before any size check, so
+a small compressed body (layered gzip, zstd, brotli) could take gigabytes. The client asks for
+`Accept-Encoding: identity`; a server that compresses anyway is accepted only for a single
+`gzip` or `deflate` layer, decoded by a bounded decompressor at most 64 KiB per step (memory
+stays near the cap), and any other `Content-Encoding` is refused before its body is read
+(`aborted: encoding`; an undecodable body is `aborted: decode`).
 
 A request whose URL cannot be parsed is a `pre_egress` deny row (`malformed: the URL is not
 valid`) and an `EgressDenied` with a fixed message: the URL is never echoed. A request whose
@@ -291,7 +297,7 @@ host was never contacted by a plugin; it is proof the governed client never cont
 | A plugin that bypasses the call scope | Inside a call the client acts only for the running tool's plugin (enforced). An in-process plugin that goes around the client altogether (own socket) is the row above |
 | A request made on a thread the tool started | Denied, not governed: it has no call scope. The plugin must request on the tool's thread |
 | The name lookup's own duration and the lookup's integrity | `getaddrinfo` has no timeout (the deadline starts at the connect); a resolver that lies about a public name is the operator's DNS concern. The returned addresses ARE checked |
-| A decoded chunk before the cap trips | The cap is checked per decoded chunk (a compressed chunk of up to 64 KiB can expand to tens of MiB at once), so memory can briefly exceed 10 MiB |
+| Memory just past the cap | Decoding is bounded to 64 KiB per step, so memory is about the cap plus one step |
 | Ledger completeness | A request through the client with no `pre_egress` row is not sent; a request that does not go through the client leaves no row. A `post_egress` row that fails to write is logged and not retried |
 | A wildcard over a multi-label public suffix (`*.co.uk`) | No public-suffix list ships |
 

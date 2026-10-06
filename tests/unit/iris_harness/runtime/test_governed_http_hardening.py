@@ -12,6 +12,8 @@ import gzip
 import json
 import threading
 import time
+import tracemalloc
+import zlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -38,6 +40,15 @@ from iris_harness.runtime.governed_http import MAX_RESPONSE_BYTES, EgressDenied,
 from iris_harness.testing import fake_http
 
 NAME = "good.test"
+_ZEROS = 48 * 1024 * 1024  # decoded size of the bombs: well over the 10 MiB cap
+
+
+def _gz(data: bytes) -> bytes:
+    return gzip.compress(data, compresslevel=9)
+
+
+_LAYERS = _gz(_gz(b"\0" * _ZEROS))
+_BOMB = _gz(b"\0" * _ZEROS)  # ~50 KB on the wire: one wire chunk decodes to 48 MiB
 CHUNK = b"x" * 65536
 
 
@@ -53,7 +64,13 @@ class _Server:
                 return
 
             def do_GET(self) -> None:
-                outer.seen.append({"path": self.path, "host": self.headers.get("Host", "")})
+                outer.seen.append(
+                    {
+                        "path": self.path,
+                        "host": self.headers.get("Host", ""),
+                        "ae": self.headers.get("Accept-Encoding", ""),
+                    }
+                )
                 try:
                     getattr(self, "_" + self.path.strip("/"))()
                 except (BrokenPipeError, ConnectionResetError):
@@ -75,13 +92,38 @@ class _Server:
                 for _ in range(total // len(CHUNK)):
                     self.wfile.write(CHUNK)
 
-            def _bomb(self) -> None:
-                body = gzip.compress(b"\0" * (MAX_RESPONSE_BYTES + 2_000_000))
+            def _send(self, body: bytes, encoding: str = "") -> None:
                 self.send_response(200)
-                self.send_header("Content-Encoding", "gzip")
+                if encoding:
+                    self.send_header("Content-Encoding", encoding)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _bomb(self) -> None:
+                self._send(_BOMB, "gzip")
+
+            def _gz(self) -> None:
+                self._send(_gz(b"hello gzip"), "gzip")
+
+            def _deflate(self) -> None:
+                self._send(zlib.compress(b"hello deflate"), "deflate")
+
+            def _rawdeflate(self) -> None:
+                comp = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+                self._send(comp.compress(b"hello raw") + comp.flush(), "deflate")
+
+            def _layers(self) -> None:
+                self._send(_LAYERS, "gzip, gzip")
+
+            def _zstd(self) -> None:
+                self._send(b"\x28\xb5\x2f\xfd" + b"\0" * 64, "zstd")
+
+            def _br(self) -> None:
+                self._send(b"\x1b" + b"\0" * 64, "br")
+
+            def _badgz(self) -> None:
+                self._send(b"this is not gzip", "gzip")
 
             def _trickle(self) -> None:
                 self.send_response(200)
@@ -245,6 +287,12 @@ def test_a_local_network_name_cannot_be_declared(host: str) -> None:
         "fe80::1%en0",
         "::ffff:127.0.0.1",
         "::ffff:169.254.169.254",
+        "::7f00:1",
+        "::a00:5",
+        "::ffff:0:7f00:1",
+        "::ffff:0:a00:5",
+        "64:ff9b:1::1",
+        "5f00::1",
         "64:ff9b::7f00:1",
         "2002:7f00:1::1",
         "not-an-address",
@@ -300,13 +348,71 @@ def test_a_response_over_the_cap_is_cut_off_and_recorded(
     assert MAX_RESPONSE_BYTES < row["egress"]["bytes_in"] < MAX_RESPONSE_BYTES + 1_000_000
 
 
-def test_the_cap_counts_decoded_bytes(
+def _peak(fn: Any) -> tuple[Any, int]:
+    tracemalloc.start()
+    try:
+        tracemalloc.reset_peak()
+        try:
+            result: Any = fn()
+        except EgressDenied as exc:
+            result = exc
+        return result, tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_a_decompression_bomb_is_bounded_in_memory_and_counted_truthfully(
     wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None
 ) -> None:
-    with pytest.raises(EgressDenied, match="larger than"):
-        GovernedHttp("p").get(f"http://{NAME}:{server.port}/bomb")
+    result, peak = _peak(lambda: GovernedHttp("p").get(f"http://{NAME}:{server.port}/bomb"))
+    assert isinstance(result, EgressDenied) and "larger than" in str(result)
+    assert peak < MAX_RESPONSE_BYTES + 8 * 1024 * 1024  # the cap plus a step, not 48 MiB
     [row] = _rows(wired, "post_egress")
-    assert row["egress"]["bytes_in"] > MAX_RESPONSE_BYTES  # decoded, not the ~10 KB on the wire
+    assert row["egress"]["aborted"] == "max_bytes"
+    cap_and_a_step = MAX_RESPONSE_BYTES + governed_http._DECODE_STEP
+    assert MAX_RESPONSE_BYTES < row["egress"]["bytes_in"] <= cap_and_a_step
+
+
+@pytest.mark.parametrize("path", ["layers", "zstd", "br"])
+def test_an_encoding_that_cannot_be_bounded_is_refused_before_it_is_read(
+    wired: AuditLog,
+    server: _Server,
+    resolver: _Dns,
+    loopback_allowed: None,
+    path: str,
+) -> None:
+    result, peak = _peak(lambda: GovernedHttp("p").get(f"http://{NAME}:{server.port}/{path}"))
+    assert isinstance(result, EgressDenied) and "encoding" in str(result)
+    assert peak < 4 * 1024 * 1024
+    [row] = _rows(wired, "post_egress")
+    assert row["egress"]["aborted"] == "encoding" and row["egress"]["bytes_in"] == 0
+
+
+def test_only_the_identity_encoding_is_asked_for(
+    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None
+) -> None:
+    GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok", headers={"Accept-Encoding": "br"})
+    assert server.seen[0]["ae"] == "identity"
+
+
+@pytest.mark.parametrize(
+    "path, body",
+    [("gz", b"hello gzip"), ("deflate", b"hello deflate"), ("rawdeflate", b"hello raw")],
+)
+def test_a_single_gzip_or_deflate_layer_is_decoded(
+    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None, path: str, body: bytes
+) -> None:
+    reply = GovernedHttp("p").get(f"http://{NAME}:{server.port}/{path}")
+    assert reply.content == body and "content-encoding" not in reply.headers
+
+
+def test_a_body_that_is_not_what_its_encoding_says_is_a_recorded_abort(
+    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None
+) -> None:
+    with pytest.raises(EgressDenied, match="could not be decoded"):
+        GovernedHttp("p").get(f"http://{NAME}:{server.port}/badgz")
+    [row] = _rows(wired, "post_egress")
+    assert row["egress"]["aborted"] == "decode"
 
 
 def test_a_slow_body_is_cut_off_at_the_total_deadline(
@@ -354,6 +460,8 @@ def test_the_deadline_also_holds_on_the_fake_transport_between_chunks(
         (-5, 10.0, 10.0),
         (float("nan"), 10.0, 10.0),
         ("soon", 10.0, 10.0),
+        (True, 10.0, 10.0),
+        (False, 10.0, 10.0),
         (2.5, 10.0, 2.5),
         (1e9, 10.0, governed_http._MAX_TIMEOUT),
         (float("inf"), 10.0, governed_http._MAX_TIMEOUT),
@@ -406,14 +514,32 @@ def test_an_invalid_url_is_a_recorded_denial_that_does_not_echo_it(wired: AuditL
     assert "notaport" not in json.dumps(row)
 
 
-@pytest.mark.parametrize(
-    "header", ["Host", "host", "HOST", "Proxy-Authorization", "proxy-connection"]
-)
-def test_a_host_or_proxy_header_is_refused_and_recorded(
-    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None, header: str
+_BAD_HEADERS: list[Any] = [
+    {"Host": "other.test"},
+    {"host": "other.test"},
+    {"HOST": "other.test"},
+    {"Proxy-Authorization": "x"},
+    {"proxy-connection": "x"},
+    {"Transfer-Encoding": "chunked"},
+    {"Connection": "upgrade"},
+    {"Upgrade": "websocket"},
+    {"TE": "trailers"},
+    {"Content-Length": "5"},
+    [("Host", "other.test")],
+    (("Host", "other.test"),),
+    [("Proxy-Authorization", "x")],
+    {b"Host": b"other.test"},
+    [(b"host", b"other.test")],
+    [("Accept", "text/plain"), ("hOsT", "other.test")],
+]
+
+
+@pytest.mark.parametrize("headers", _BAD_HEADERS)
+def test_a_host_framing_or_proxy_header_is_refused_in_any_spelling_and_recorded(
+    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None, headers: Any
 ) -> None:
-    with pytest.raises(EgressDenied, match="Host or Proxy"):
-        GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok", headers={header: "other.test"})
+    with pytest.raises(EgressDenied, match="header is not sent"):
+        GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok", headers=headers)
     assert server.seen == []
     [row] = _rows(wired, "pre_egress")
     assert row["decision"] == "deny"
@@ -495,3 +621,25 @@ def test_a_denial_is_not_an_oserror_so_except_oserror_cannot_swallow_it() -> Non
             raise EgressDenied("denied")
         except OSError:  # a plugin's network code
             pytest.fail("a governance denial was caught as an OSError")
+
+
+def test_a_resolver_that_raises_anything_is_a_recorded_refusal(
+    wired: AuditLog, server: _Server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(*_: Any, **__: Any) -> Any:
+        raise ValueError("resolver bug")
+
+    monkeypatch.setattr(egress_transport, "_resolve", broken)
+    with pytest.raises(EgressDenied, match="not sent"):
+        GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok")
+    [row] = _rows(wired, "post_egress")
+    assert row["egress"]["aborted"] == "address"
+
+
+def test_the_httpx_this_runs_on_has_the_pool_and_httpcore_the_pinned_transport_needs() -> None:
+    """Fails loudly if an httpx or httpcore upgrade moves what ``PinnedTransport`` swaps."""
+    import httpcore
+
+    assert httpcore.__version__.startswith("1.")
+    assert type(httpx.HTTPTransport()._pool) is httpcore.ConnectionPool
+    egress_transport.PinnedTransport(egress_transport.PinnedBackend(1.0)).close()

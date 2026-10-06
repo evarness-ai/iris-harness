@@ -46,11 +46,13 @@ NETWORK_MODULES: tuple[str, ...] = (
     "httplib2",
     "httpx",
     "imaplib",
+    "multiprocessing.connection",
     "poplib",
     "pycurl",
     "requests",
     "smtplib",
     "socket",
+    "socketserver",
     "ssl",
     "telnetlib",
     "urllib.request",
@@ -99,7 +101,14 @@ def _imported(tree: ast.AST) -> Iterator[tuple[int, str]]:
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             yield node.lineno, node.module
             for alias in node.names:
-                yield node.lineno, f"{node.module}.{alias.name}"
+                if alias.name == "*":
+                    # ``from asyncio import *`` brings every name of the module in: report
+                    # each listed library under it (an over-approximation, on purpose).
+                    for banned in NETWORK_MODULES:
+                        if banned.startswith(node.module + "."):
+                            yield node.lineno, banned
+                else:
+                    yield node.lineno, f"{node.module}.{alias.name}"
 
 
 def _aliases(tree: ast.AST) -> dict[str, str]:

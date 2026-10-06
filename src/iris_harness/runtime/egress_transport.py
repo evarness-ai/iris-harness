@@ -36,6 +36,17 @@ _NO_ADDRESS = "the host name did not resolve"
 
 _NAT64 = ipaddress.ip_network("64:ff9b::/96")
 _SIX_TO_FOUR = ipaddress.ip_network("2002::/16")
+# IPv6 blocks that embed or alias an IPv4 address, or are reserved: refused outright.
+_RESERVED_V6 = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "::/96",  # IPv4-compatible (::127.0.0.1 and the like), deprecated
+        "::ffff:0:0/96",  # v4-mapped (unwrapped first)
+        "::ffff:0:0:0/96",  # SIIT (::ffff:0:a.b.c.d)
+        "64:ff9b:1::/48",  # local-use NAT64
+        "5f00::/16",  # SRv6 segment identifiers
+    )
+)
 
 # The resolver is a seam for tests (no real DNS): ``socket.getaddrinfo`` in production.
 _resolve: typing.Callable[..., list[tuple[typing.Any, ...]]] = socket.getaddrinfo
@@ -61,6 +72,8 @@ def blocked_address(address: str) -> bool:
             return blocked_address(str(ip.ipv4_mapped))
         if ip in _NAT64:
             return blocked_address(str(ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)))
+        if any(ip in net for net in _RESERVED_V6):
+            return True
         if ip in _SIX_TO_FOUR:
             return blocked_address(str(ipaddress.IPv4Address((int(ip) >> 80) & 0xFFFFFFFF)))
     # ``is_global`` is False for loopback, private (incl. fc00::/7), link-local (incl.
@@ -73,7 +86,7 @@ def resolve_checked(host: str, port: int) -> list[str]:
     """Resolve ``host`` once; every address must be allowed. Raises :class:`BlockedAddress`."""
     try:
         infos = _resolve(host, port, type=socket.SOCK_STREAM)
-    except OSError:
+    except Exception:  # noqa: BLE001 - any resolver failure is "did not resolve"
         raise BlockedAddress(_NO_ADDRESS) from None
     addresses: list[str] = []
     for info in infos:

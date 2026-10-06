@@ -24,7 +24,7 @@ import re
 from collections.abc import Callable, Iterator
 from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from iris_harness.agent.agent_executor import (
     ActivityChunk,
@@ -420,10 +420,32 @@ def _skills_to_react_tools(
                     name=brief_tool_name,
                     description=brief_description,
                     call=_make_brief_call(runner),
+                    # The rendered brief carries every slot's text: external when any slot's
+                    # tool is, so the runner envelopes what the model reads.
+                    content=_brief_content(package, skill_registry),
                     plugin=f"skill:{package.manifest.name}",
                 )
             )
     return specs
+
+
+def _brief_content(package: Any, skill_registry: SkillRegistry) -> Literal["internal", "external"]:
+    """``external`` when a tool slot of the brief calls a tool declaring ``content: external``."""
+    from iris_harness.runtime.handlers.skill_brief import _build_external_index
+    from iris_harness.tools.skills.models import BriefToolSlot
+
+    brief = package.manifest.brief
+    if brief is None:
+        return "internal"
+    external = _build_external_index(skill_registry)
+    return (
+        "external"
+        if any(
+            isinstance(slot, BriefToolSlot) and (slot.skill, slot.tool) in external
+            for slot in brief.slots.values()
+        )
+        else "internal"
+    )
 
 
 # The core's own always-kept tools: memory_search (recall) and ask_user (the loop's

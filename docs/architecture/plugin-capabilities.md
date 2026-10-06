@@ -318,7 +318,8 @@ contract to catch.
   (runtime) and the core's own consumers (services) must import it, and neither may import
   the SDK above them; nothing is registered at import time, so the host works in a process
   that never imported the SDK (pinned by a test), and the map is a read-only
-  `MappingProxyType`. A new capability ships in an SDK release. Empty until step 4.
+  `MappingProxyType`. A new capability ships in an SDK release. It publishes `weather.forecast` so far; the
+  rest arrive with step 4.
 - **Plain data, declared.** Protocol methods return plain data — dataclasses, pydantic
   models, `TypedDict`s, sequences, scalars — never live objects or handles. Each method has a
   `MethodSpec`: its `effect` (`read`, or `write` with `confirm: once|never`, as a tool's

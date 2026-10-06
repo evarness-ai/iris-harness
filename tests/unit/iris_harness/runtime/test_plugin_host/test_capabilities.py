@@ -281,6 +281,36 @@ def test_declared_provider_reaches_declared_consumer() -> None:
     assert registry.describe()["capabilities"] == {"test.ping": ["prov"]}
 
 
+async def test_weather_forecast_mounts_through_the_registry_and_resolves() -> None:
+    """The published capability, end to end: provide, resolve, governed call, tool name."""
+    from datetime import UTC, datetime
+
+    real = {s.name: s for s in (catalogue.WEATHER_FORECAST,)}
+    registry = _new_registry()
+    _record(registry, "weather", provides=["weather.forecast"])
+    _record(registry, "trip", uses=["weather.forecast"])
+    now = datetime(2026, 10, 5, tzinfo=UTC)
+
+    class Impl:
+        async def forecast(self, location: str, days: int = 3) -> catalogue.Forecast:
+            return catalogue.Forecast(location, now, ())
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(catalogue, "CAPABILITIES", MappingProxyType(real))
+        assert registry.provide_capability("weather", "weather.forecast", Impl()) is True
+        assert registry.capability_providers("weather.forecast") == ("weather",)
+        impl = registry.resolve_capability("trip", "weather.forecast")
+        assert impl is not None
+        result = await impl.forecast("Lisbon")
+        assert result.location == "Lisbon"
+
+    tool = catalogue.capability_tool_name("weather.forecast", "forecast")
+    assert tool == "capability:weather.forecast.forecast"
+    assert catalogue.split_capability_tool(tool) == ("weather.forecast", "forecast")
+    assert registry.caller_denial("plugin:trip", tool) is None
+    assert registry.caller_denial("plugin:weather", tool) is not None  # provider does not consume
+
+
 def test_undeclared_provide_is_refused_and_recorded() -> None:
     registry = _new_registry()
     rec = _record(registry, "prov")

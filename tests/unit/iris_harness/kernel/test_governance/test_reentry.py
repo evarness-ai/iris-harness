@@ -25,6 +25,7 @@ from iris_harness.kernel.governance.reentry import (
     CUT_MARKER,
     MAX_CALL_CHARS,
     MAX_ITEM_CHARS,
+    REENTRY_MARKER,
     SPENT_MARKER,
     ReentryAudit,
     audit_recorder,
@@ -51,7 +52,8 @@ def test_an_assistant_turn_is_redacted_and_a_user_turn_is_not() -> None:
     mine = f"Remember: {RAW} is in my old checklist."
     assert reenter_text(mine, reader="t", origin="transcript", role="user").text == mine
     out = reenter_text(f"Oslo is mild. {RAW}", reader="t", origin="transcript", role="assistant")
-    assert RAW not in out.text and MARKER in out.text and out.spans == 1
+    assert RAW not in out.text and REENTRY_MARKER in out.text and out.spans == 1
+    assert MARKER not in out.text and "external content" not in out.text  # worded for stored text
 
 
 def test_a_summary_is_scanned() -> None:

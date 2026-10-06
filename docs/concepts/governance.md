@@ -196,7 +196,8 @@ retriever adds, and the recent-turns block of the intent router's prompt. `kerne
   patterns are not copied). A `user` turn is the owner's words and comes back verbatim: a
   note that says "ignore previous instructions" is not rewritten. The stored rows are never
   altered; the redaction is on the copy that goes to the prompt. A match is replaced with
-  the same visible marker the floor uses.
+  `[redacted: instruction-like text in stored content]` (the floor's own marker says "external
+  content", which is wrong for the model's own earlier text).
 - **Where.** Where the text is read back, shared by every path: `rt.chat`, `rt.chat_stream`,
   the general lane, `code_exec` and escalation actions all read the window built in
   `SessionMemory.build_memory_context`, and the intent router's "Conversation so far" block

@@ -389,6 +389,10 @@ def sync_all(
     )
 
 
+class EmbedderConflict(RuntimeError):
+    """The persisted collection was made under another embedding model (``--reset-collection``)."""
+
+
 class EmptyStoreRefused(RuntimeError):
     """A rebuild would wipe a populated index because the store has no chunks."""
 
@@ -412,6 +416,13 @@ def reindex_all(*, store: DocumentStore, index: DocumentIndex, force: bool = Fal
     ``docs/architecture/memory-subsystem.md``.
     """
     if not index.is_ready:
+        if index.embedder_conflict:
+            raise EmbedderConflict(
+                "the document index is unavailable: it was built with a different "
+                "embedding model than the one now configured. Your documents, labels and "
+                "sources are safe in rag.db. Run `iris docs reindex --reset-collection` "
+                "to delete the vector index and rebuild it from them"
+            )
         raise RuntimeError("document index unavailable; cannot rebuild it")
     if not force and store.count_all_chunks() == 0 and index.count() > 0:
         raise EmptyStoreRefused(
@@ -422,8 +433,39 @@ def reindex_all(*, store: DocumentStore, index: DocumentIndex, force: bool = Fal
     return index.rebuild(store.iter_chunks())
 
 
+def reset_and_reindex(*, store: DocumentStore, index: DocumentIndex, force: bool = False) -> int:
+    """Delete the docs collection and rebuild it from the store; return chunks indexed.
+
+    The explicit repair for an embedding-model change, which leaves the persisted
+    collection unopenable (``EmbedderConflict`` from ``reindex_all``). Only the
+    ``iris_documents`` collection is deleted; ``rag.db`` (every source and every label)
+    is read, never written, and no source file is read. ``store.iter_chunks()`` carries each
+    chunk's label, so the rebuilt index mirrors them exactly. Never calls the file-domain
+    ingest seam. Idempotent: running it again rebuilds the same contents.
+
+    Same safety rule as ``reindex_all``: a store with zero chunks would leave an empty
+    index in place of a populated (or unreadable) one, so it raises ``EmptyStoreRefused``
+    unless ``force=True``; the check runs before anything is deleted.
+
+    Invalidates other handles on the collection (a running server's); see
+    ``DocumentIndex.reset_collection``.
+    """
+    if not force and store.count_all_chunks() == 0 and (index.count() > 0 or not index.is_ready):
+        raise EmptyStoreRefused(
+            "the chunk store is empty, so resetting the vector index would leave it empty. "
+            "Check IRIS_DATA_DIR points at the right rag.db, or re-run with --force to "
+            "empty the index deliberately"
+        )
+    index.reset_collection()
+    count = index.rebuild(store.iter_chunks())
+    logger.info("document index reset and rebuilt from the store (chunks=%d)", count)
+    return count
+
+
 __all__ = [
     "SecretIngestError",
+    "reset_and_reindex",
+    "EmbedderConflict",
     "ingest_path",
     "sync_all",
     "reindex_all",

@@ -10,7 +10,9 @@ The index is a projection, not a source of truth: the canonical chunk text lives
 ``DocumentStore`` (``data/rag.db``) and the documents themselves stay where the user
 keeps them. Losing or corrupting ``data/chroma_docs`` loses nothing: ``rebuild`` (driven
 by ``iris_harness.services.rag.ingest.reindex_all``, ``iris docs reindex``) recreates
-its contents from the store's chunks. Re-running ``sync_all`` is NOT a rebuild: it skips
+its contents from the store's chunks. If the persisted collection cannot be opened at all
+(the embedding model changed, so Chroma refuses it), ``reset_collection`` deletes and
+re-creates it (``iris docs reindex --reset-collection``). Re-running ``sync_all`` is NOT a rebuild: it skips
 every file whose mtime/hash is unchanged, so it never re-populates an empty index.
 """
 
@@ -40,6 +42,10 @@ class DocumentIndex:
         self._ok = False
         self._client: Any = None
         self._col: Any = None
+        # Why the collection could not be opened (None when it opened or Chroma is not in
+        # use), and whether the cause is the embedding-model conflict `reset_collection` fixes.
+        self.open_error: str | None = None
+        self.embedder_conflict = False
         if os.environ.get("IRIS_TEST_NULL_EMBEDDINGS"):
             return
         try:
@@ -60,7 +66,13 @@ class DocumentIndex:
             )
             self._ok = True
             logger.info("document index ready (chunks=%d)", self._col.count())
-        except Exception:
+        except Exception as exc:
+            self.open_error = str(exc)
+            self.embedder_conflict = (
+                self._client is not None
+                and isinstance(exc, ValueError)
+                and "embedding function" in str(exc).lower()
+            )
             logger.warning("document index unavailable — keyword fallback", exc_info=True)
 
     @property
@@ -133,6 +145,37 @@ class DocumentIndex:
         for i in range(0, len(stale), _REBUILD_BATCH):
             self._col.delete(ids=stale[i : i + _REBUILD_BATCH])
         return total
+
+    def reset_collection(self) -> None:
+        """Delete the docs collection and create it again, empty, under the current embedder.
+
+        The repair for a collection Chroma will not open (a persisted one made under a
+        different embedding model). Touches only ``iris_documents``: no other collection of
+        the client, not ``rag.db``, no source file. The caller refills it with ``rebuild``.
+
+        A reset invalidates any other handle on the old collection (a running server's
+        ``app.state.rag_handles`` index): that handle keeps pointing at the deleted
+        collection until its process restarts, so queries fall back to keyword search and
+        new chunks are not indexed. ``rebuild`` keeps handles valid; this does not.
+
+        Raises ``RuntimeError`` when Chroma itself is not in use (nothing to reset).
+        """
+        if self._client is None:
+            raise RuntimeError(
+                "the vector index cannot be reset: ChromaDB is not available "
+                "(or embeddings are disabled)"
+            )
+        from iris_harness.foundation.persistence.embedding import collection_kwargs
+
+        existing = {getattr(c, "name", c) for c in self._client.list_collections()}
+        if _COLLECTION in existing:
+            self._client.delete_collection(_COLLECTION)
+        self._col = self._client.get_or_create_collection(
+            _COLLECTION, metadata={"hnsw:space": "cosine"}, **collection_kwargs()
+        )
+        self._ok = True
+        self.open_error = None
+        self.embedder_conflict = False
 
     def delete_source(self, source_id: str) -> None:
         if not self._ok:

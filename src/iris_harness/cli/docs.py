@@ -90,22 +90,43 @@ def cmd_reindex(
             "--force", help="Rebuild even if the chunk store is empty (empties the index)."
         ),
     ] = False,
+    reset_collection: Annotated[
+        bool,
+        typer.Option(
+            "--reset-collection",
+            help="Delete and re-create the vector collection first, then rebuild it. "
+            "The repair after the embedding model changed. Stop a running IRIS server "
+            "before it and restart it after.",
+        ),
+    ] = False,
 ) -> None:
     """Rebuild the vector index from the stored chunks (after a lost or damaged index).
 
     Reads no source file: the chunk store is canonical, the vector index only mirrors it.
     `sync` cannot do this, since it skips files that have not changed.
     Refuses when the store is empty but the index is not, unless --force.
+    After an embedding-model change the index cannot be opened; --reset-collection deletes
+    only the vector collection and rebuilds it from the store, keeping every source and label.
     """
-    from iris_harness.services.rag.ingest import reindex_all
+    from iris_harness.services.rag.ingest import reindex_all, reset_and_reindex
 
     store, index = _store_and_index()
     try:
-        count = reindex_all(store=store, index=index, force=force)  # type: ignore[arg-type]
+        if reset_collection:
+            count = reset_and_reindex(
+                store=store, index=index, force=force  # type: ignore[arg-type]
+            )
+        else:
+            count = reindex_all(store=store, index=index, force=force)  # type: ignore[arg-type]
     except Exception as exc:
         print_error(str(exc))
         raise typer.Exit(1) from exc
     console.print(f"  [bold green]✓[/bold green]  rebuilt the vector index: {count} chunk(s)")
+    if reset_collection:
+        console.print(
+            "  [dim]restart any running IRIS server so it reopens the rebuilt index "
+            "(until then it searches by keyword)[/dim]"
+        )
 
 
 @docs_app.command("list")

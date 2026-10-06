@@ -9,7 +9,8 @@ stays. These tests pin that for each way the index gets rebuilt:
 * the index is lost (a fresh, empty collection) and ``reindex_all`` refills it;
 * the embedding model changes (a different embedder over the same persisted collection);
 * the same rebuild through the ``iris docs reindex`` command;
-* a forced rebuild of an empty store (the documented way to empty the index).
+* a forced rebuild of an empty store (the documented way to empty the index);
+* the explicit `--reset-collection` repair (issue 144) for a changed embedding model.
 
 ``iris docs sync`` has no ``--force``, and ``sync_all`` is not a rebuild (it skips unchanged
 files), so it is pinned only as "does not touch a label". The embedder stub is the hashing
@@ -32,7 +33,15 @@ from typer.testing import CliRunner
 import iris_harness.foundation.persistence.embedding as embedding
 from iris_harness.cli.docs import docs_app
 from iris_harness.services.rag.index import DocumentIndex
-from iris_harness.services.rag.ingest import _source_id, ingest_path, reindex_all, sync_all
+from iris_harness.services.rag.ingest import (
+    EmbedderConflict,
+    EmptyStoreRefused,
+    _source_id,
+    ingest_path,
+    reindex_all,
+    reset_and_reindex,
+    sync_all,
+)
 from iris_harness.services.rag.ingest_source import (
     IndexedDocument,
     KnownFile,
@@ -205,7 +214,7 @@ def _model_changed(
 def test_a_model_change_leaves_every_label_and_source_in_the_store(
     tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Chroma refuses the persisted collection under a new embedder (see the xfail below).
+    """Chroma refuses the persisted collection under a new embedder (the reset test below repairs it).
 
     That must not cost a label: the store is untouched, the sources stay, retrieval falls
     back to keyword search and still carries each chunk's label, and the file domain is not
@@ -244,19 +253,228 @@ def test_a_rebuild_into_a_fresh_collection_after_a_model_change_keeps_every_labe
     assert recorder.removed == []
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="issue 144: a changed embedding model makes the persisted collection unopenable, "
-    "so `iris docs reindex` cannot rebuild it (Chroma embedding-function conflict, index.py:58)",
-)
 def test_reindex_can_rebuild_after_the_embedding_model_changes(
     tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    changed, before, _ = _model_changed(tmp_path, store, docs, monkeypatch)
+    """Issue 144: the explicit reset deletes the unopenable collection and refills it."""
+    changed, before, recorder = _model_changed(tmp_path, store, docs, monkeypatch)
+    indexed_before = len(recorder.indexed)
 
-    reindex_all(store=store, index=changed)
+    assert reset_and_reindex(store=store, index=changed) == len(before["chunks"])
 
+    assert changed.is_ready
     assert _mirror(changed) == before["chunks"]
+    assert _state(store) == before
+    assert len(recorder.indexed) == indexed_before and recorder.removed == []
+    hits = search_documents("mitochondria", store=store, index=changed)
+    assert {h.classification for h in hits} == set(before["sources"].values())
+
+
+def test_plain_reindex_after_a_model_change_names_the_reset_flag(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    changed, _, _ = _model_changed(tmp_path, store, docs, monkeypatch)
+
+    assert changed.embedder_conflict
+    with pytest.raises(EmbedderConflict, match=r"iris docs reindex --reset-collection"):
+        reindex_all(store=store, index=changed)
+    assert isinstance(EmbedderConflict("x"), RuntimeError)  # callers catching RuntimeError still do
+
+
+def test_other_open_failures_are_not_called_an_embedder_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IRIS_TEST_NULL_EMBEDDINGS", "1")
+    index = DocumentIndex(persist_dir=tmp_path / "chroma")
+    assert not index.is_ready and not index.embedder_conflict
+    with pytest.raises(RuntimeError, match="cannot be reset"):
+        index.reset_collection()
+
+
+def test_the_reset_is_idempotent_and_a_healthy_index_can_be_reset(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, before, _ = _model_changed(tmp_path, store, docs, monkeypatch)
+    index = DocumentIndex(persist_dir=tmp_path / "chroma")
+
+    reset_and_reindex(store=store, index=index)
+    once = _snapshot(index)
+    reset_and_reindex(store=store, index=index)  # now a healthy collection: reset again
+
+    assert _snapshot(index) == once
+    assert _mirror(index) == before["chunks"]
+    assert _state(store) == before
+    assert {s.id for s in store.list_sources()} == set(before["sources"])
+
+
+def test_the_reset_keeps_a_label_above_a_fresh_scan(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file labelled personal then edited to read as public keeps personal through a reset."""
+    index = _indexed(tmp_path, store, docs)
+    docs["personal"].write_text(_PUBLIC)
+    st = docs["personal"].stat()
+    os.utime(docs["personal"], (st.st_mtime + 10, st.st_mtime + 10))
+    sync_all(store=store, index=index)
+    sid = _source_id(docs["personal"].resolve())
+    before = _state(store)
+    monkeypatch.setattr(embedding, "_shared", _OtherEmbedder())
+    changed = DocumentIndex(persist_dir=tmp_path / "chroma")
+
+    reset_and_reindex(store=store, index=changed)
+
+    assert _state(store) == before
+    assert store.get_source(sid).classification == "personal"  # type: ignore[union-attr]
+    assert {v for k, v in _mirror(changed).items() if k.startswith(sid)} == {"personal"}
+
+
+def test_the_reset_touches_only_the_docs_collection(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import chromadb
+
+    _indexed(tmp_path, store, docs)
+    raw = chromadb.PersistentClient(path=str(tmp_path / "chroma"))
+    other = raw.get_or_create_collection("some_other_collection")
+    other.add(ids=["k"], documents=["keep me"], embeddings=[[0.1, 0.2]])
+    monkeypatch.setattr(embedding, "_shared", _OtherEmbedder())
+    changed = DocumentIndex(persist_dir=tmp_path / "chroma")
+    files_before = {p.name: p.read_text() for p in docs["personal"].parent.iterdir()}
+    rows_before = [(c.id, c.text, c.classification) for c in store.iter_chunks()]
+
+    reset_and_reindex(store=store, index=changed)
+
+    names = {getattr(c, "name", c) for c in changed._client.list_collections()}
+    assert names == {"iris_documents", "some_other_collection"}
+    survivor = changed._client.get_collection("some_other_collection")
+    assert survivor.get(include=["documents"])["documents"] == ["keep me"]
+    assert {p.name: p.read_text() for p in docs["personal"].parent.iterdir()} == files_before
+    assert [(c.id, c.text, c.classification) for c in store.iter_chunks()] == rows_before
+
+
+def test_the_reset_refuses_an_empty_store_before_deleting_anything(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+    populated = _snapshot(index)
+    empty = DocumentStore(db_path=tmp_path / "empty.db")
+    empty.ensure_schema()
+
+    with pytest.raises(EmptyStoreRefused, match="--force"):
+        reset_and_reindex(store=empty, index=index)
+    assert _snapshot(index) == populated  # nothing was deleted
+
+    assert reset_and_reindex(store=empty, index=index, force=True) == 0
+    assert _snapshot(index) == {}
+
+
+def test_the_reset_refuses_an_empty_store_when_the_collection_is_unopenable(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unopenable collection reports count 0, so only ``is_ready`` shows it holds vectors."""
+    changed, _, _ = _model_changed(tmp_path, store, docs, monkeypatch)
+    empty = DocumentStore(db_path=tmp_path / "empty.db")
+    empty.ensure_schema()
+
+    with pytest.raises(EmptyStoreRefused):
+        reset_and_reindex(store=empty, index=changed)
+
+    assert not changed.is_ready  # nothing was deleted or recreated
+
+
+def test_the_reset_logs_one_info_line_with_counts_and_no_text(
+    tmp_path: Path,
+    store: DocumentStore,
+    docs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    changed, before, _ = _model_changed(tmp_path, store, docs, monkeypatch)
+    caplog.set_level("INFO", logger="iris_harness.services.rag.ingest")
+
+    reset_and_reindex(store=store, index=changed)
+
+    lines = [r for r in caplog.records if r.name == "iris_harness.services.rag.ingest"]
+    assert len(lines) == 1 and lines[0].levelname == "INFO"
+    assert f"chunks={len(before['chunks'])}" in lines[0].getMessage()
+    assert "mitochondria" not in lines[0].getMessage()
+
+
+def _cli_on(tmp_path: Path, store: DocumentStore, monkeypatch: pytest.MonkeyPatch) -> DocumentIndex:
+    """Make the CLI open the test's persisted collection under whichever embedder is set."""
+    index = DocumentIndex(persist_dir=tmp_path / "chroma")
+    monkeypatch.setattr("iris_harness.cli.docs._store_and_index", lambda: (store, index))
+    return index
+
+
+def test_the_cli_explains_a_model_change_and_names_the_flag(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, before, _ = _model_changed(tmp_path, store, docs, monkeypatch)
+    _cli_on(tmp_path, store, monkeypatch)
+
+    result = CliRunner().invoke(docs_app, ["reindex"])
+
+    assert result.exit_code == 1
+    assert "iris docs reindex --reset-collection" in result.output
+    assert "different embedding model" in " ".join(result.output.split())
+    assert "Traceback" not in result.output
+    assert _state(store) == before
+
+
+def test_the_cli_reset_collection_flag_rebuilds_and_exits_zero(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, before, recorder = _model_changed(tmp_path, store, docs, monkeypatch)
+    index = _cli_on(tmp_path, store, monkeypatch)
+    register_ingest_source(recorder)
+    seen = (len(recorder.indexed), len(recorder.removed))
+
+    result = CliRunner().invoke(docs_app, ["reindex", "--reset-collection"])
+
+    assert result.exit_code == 0, result.output
+    assert f"{len(before['chunks'])} chunk(s)" in result.output
+    assert "restart" in result.output
+    assert _mirror(index) == before["chunks"] and _state(store) == before
+    assert (len(recorder.indexed), len(recorder.removed)) == seen
+
+
+def test_the_reset_flag_is_off_by_default(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Plain `reindex` never resets: it neither calls the reset nor touches the collection."""
+    index = _indexed(tmp_path, store, docs)
+    _cli_on(tmp_path, store, monkeypatch)
+    before = _snapshot(index)
+
+    def boom(*_: Any, **__: Any) -> None:
+        raise AssertionError("reset must be explicit")
+
+    monkeypatch.setattr(DocumentIndex, "reset_collection", boom)
+
+    result = CliRunner().invoke(docs_app, ["reindex"])
+
+    assert result.exit_code == 0, result.output
+    assert "restart" not in result.output
+    assert _snapshot(index) == before
+
+
+def test_the_cli_reset_collection_refuses_an_empty_store_without_force(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+    before = _snapshot(index)
+    empty = DocumentStore(db_path=tmp_path / "empty.db")
+    empty.ensure_schema()
+    monkeypatch.setattr("iris_harness.cli.docs._store_and_index", lambda: (empty, index))
+
+    refused = CliRunner().invoke(docs_app, ["reindex", "--reset-collection"])
+    assert refused.exit_code == 1 and "--force" in refused.output
+    assert _snapshot(index) == before
+
+    forced = CliRunner().invoke(docs_app, ["reindex", "--reset-collection", "--force"])
+    assert forced.exit_code == 0, forced.output
+    assert _snapshot(index) == {}
 
 
 def test_the_cli_reindex_keeps_every_label_and_does_not_touch_the_file_domain(

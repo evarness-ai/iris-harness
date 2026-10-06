@@ -45,6 +45,20 @@ server ingests during the rebuild is missing from the snapshot, so the prune can
 from the index until the next `iris docs sync` (or re-ingest) puts it back; it stays safe
 in `rag.db`. Run the rebuild while ingestion is quiet.
 
+One failure `reindex_all` cannot repair by itself: if the embedding model changed, Chroma
+refuses to open the persisted collection under the new embedder (an "embedding function
+already exists" conflict), so the index is unavailable and retrieval falls back to keyword
+search; labels and sources in `rag.db` are untouched. `iris docs reindex` then says so and
+names the fix: `iris docs reindex --reset-collection` (`reset_and_reindex`), explicit and
+off by default. It deletes and re-creates only the `iris_documents` collection (no other
+collection, never `rag.db`, never a source file) and refills it from `store.iter_chunks()`,
+so every source and chunk keeps its label; it applies the same empty-store refusal (and
+`--force`) before it deletes anything, and logs one INFO line with the chunk count. Unlike a
+plain rebuild, a reset invalidates other handles on the collection: the API server keeps
+one on `app.state` for its lifetime and nothing can detect it from the CLI, so stop the
+server before the reset and restart it after (until then it searches by keyword and does not
+index new chunks). There is no HTTP route for either `reindex` or the reset, by design.
+
 ## Components
 
 | Component | File | Role |

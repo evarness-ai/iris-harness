@@ -50,6 +50,17 @@ _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 ProbeStatus = str  # "pending" | "completed" | "not_completed" | "ambiguous" | "error"
 
 
+class SideEffectKeyExists(Exception):
+    """An exclusive ``record`` found its key already holding a row (nothing was written).
+
+    Carries the key only: it is a call's id, never an argument or a result.
+    """
+
+    def __init__(self, side_effect_id: str) -> None:
+        super().__init__(side_effect_id)
+        self.side_effect_id = side_effect_id
+
+
 @dataclass(frozen=True)
 class SideEffectRow:
     side_effect_id: str
@@ -140,25 +151,35 @@ class SideEffectLedger:
         verification_probe: str,
         probe_metadata: dict[str, Any] | None = None,
         side_effect_id: str | None = None,
+        exclusive: bool = False,
     ) -> str:
         """Insert a new pending side-effect row; returns the side_effect_id.
 
         ``side_effect_id`` is the caller's key for the effect (the ledger hook's
-        ``<run_id>:<step_id>:<tool_call_id>``); a key already recorded is left as it is,
-        so recording one call twice is a no-op. Without one, a fresh UUID is minted.
+        ``<run_id>:<step_id>:<tool_call_id>``). Without one, a fresh UUID is minted.
+
+        A key that already has a row is, by default, left as it is and the call returns as
+        if it had recorded: recording one effect twice is a no-op, but the caller cannot
+        tell that nothing was written. A caller that must know passes ``exclusive=True``:
+        a taken key raises ``SideEffectKeyExists`` and the existing row is untouched. The
+        ledger hooks do (a row they believe they wrote must be theirs).
         """
         side_effect_id = side_effect_id or str(uuid.uuid4())
         meta_json = json.dumps(probe_metadata or {}, default=str, sort_keys=True)
+        verb = "INSERT" if exclusive else "INSERT OR IGNORE"
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO side_effect_ledger
-                    (side_effect_id, run_id, step_id, tool,
-                     verification_probe, probe_metadata, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'pending')
-                """,
-                (side_effect_id, run_id, step_id, tool, verification_probe, meta_json),
-            )
+            try:
+                conn.execute(
+                    f"""
+                    {verb} INTO side_effect_ledger
+                        (side_effect_id, run_id, step_id, tool,
+                         verification_probe, probe_metadata, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                    """,
+                    (side_effect_id, run_id, step_id, tool, verification_probe, meta_json),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise SideEffectKeyExists(side_effect_id) from exc
             conn.commit()
         logger.debug(
             "side_effect recorded %s run=%s step=%d tool=%s probe=%s",
@@ -294,17 +315,50 @@ class DeferredSideEffectLedger(SideEffectLedger):
         arrived while another was still creating the schema would query a table that is not
         there yet. A failure leaves ``_opened`` unset, so the next call tries again.
         """
-        if self._opened:
+        if self._opened and self.db_path.exists():
             return
         with self._open_lock:
-            if self._opened:
+            # A file removed since the schema was made (a cleared data dir, a test's temp
+            # dir) is a database that needs its schema again: this handle is shared.
+            if self._opened and self.db_path.exists():
                 return
+            self._opened = False
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._init_schema()
             self._opened = True
+
+    def open(self) -> None:
+        """Create the database and its schema now (an eager caller; raises if it cannot)."""
+        self._open()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         self._open()
         with super()._connect() as conn:
             yield conn
+
+
+_SHARED: dict[Path, DeferredSideEffectLedger] = {}
+_SHARED_LOCK = threading.Lock()
+
+
+def shared_side_effect_ledger(db_path: Path | None = None) -> DeferredSideEffectLedger:
+    """The process's one ledger for the database at ``db_path`` (default path when ``None``).
+
+    Kernels are built at many sites of one process (the runtime, the ReAct handler, the
+    API server, each model client). A ledger per kernel meant a schema script and a commit
+    per kernel on its first use, and an open-lock (one instance only) that did not cover the
+    others. The ledger holds no connection -- each operation opens and closes its own -- so
+    what is shared is the one thing worth sharing: the database being known to exist with
+    its schema, created once under one lock.
+
+    Keyed by the resolved path, so a process that moves ``IRIS_HOME`` (or a test that gives
+    each case its own directory) gets a ledger for the new file, never the old one. Deferred:
+    nothing is created until ``open()`` or the first operation.
+    """
+    path = Path(os.path.abspath((db_path or default_ledger_db_path()).expanduser()))
+    with _SHARED_LOCK:
+        ledger = _SHARED.get(path)
+        if ledger is None:
+            ledger = _SHARED[path] = DeferredSideEffectLedger(path)
+        return ledger

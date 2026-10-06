@@ -18,6 +18,10 @@ First public release of the IRIS harness.
   `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0`: a destructive tool or pinned write is now denied
   rather than run with no durable record. Remove the setting, or set it to `1` to also
   record every non-read call, to run them again.
+- The side-effect ledger is one shared handle per database, not one per kernel, and a ledger
+  key that already holds a row is no longer ignored silently (issue #102). A destructive or
+  pinned call whose key is taken is denied before it runs; a call's post-run record that
+  finds its key taken is reported as a warning instead of confirmed.
 
 ### Added
 

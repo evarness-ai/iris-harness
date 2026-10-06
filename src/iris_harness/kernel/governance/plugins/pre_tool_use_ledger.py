@@ -34,6 +34,11 @@ not have run, and a probe run against it could only guess (a declared probe woul
 "not landed" for a call that did land). ``resume`` therefore asks the owner. The post hook
 sets the declared probe, and the effect's own id for a ``TOOL_PROBE_MAP`` tool, once the call
 has returned and the effect is known.
+
+The row is inserted exclusively (``record(..., exclusive=True)``): a key that already holds a
+row -- a reused call id, a second call under the same run and step with none -- denies the
+call. Letting the insert be ignored would confirm to the runner a record that is another
+call's, so this call would run with no row of its own.
 """
 
 from __future__ import annotations
@@ -54,6 +59,7 @@ from iris_harness.kernel.governance.plugins.post_tool_use_ledger import (
     side_effect_key,
 )
 from iris_harness.kernel.governance.side_effects.probes import NO_PROBE
+from iris_harness.kernel.governance.side_effects.store import SideEffectKeyExists
 
 if TYPE_CHECKING:
     from iris_harness.kernel.governance.side_effects import SideEffectLedger
@@ -106,7 +112,18 @@ class PreToolUseLedgerHook:
                     "effect": ctx.metadata.get(TOOL_EFFECT),
                     PRE_RECORDED: True,
                 },
+                exclusive=True,
             )
+        except SideEffectKeyExists:
+            # The key already has a row: another call's. This hook cannot show it is this
+            # same call (it never reads arguments), so the row it would have confirmed is
+            # not provably this call's record, and the call would run on someone else's.
+            logger.error(
+                "pre_tool_use_ledger: the ledger key for run=%s tool=%s is already taken",
+                ctx.run_id,
+                tool,
+            )
+            return self._deny(tool, "its ledger key already holds a record of another call")
         except Exception as exc:  # noqa: BLE001
             # The class only: the message of a storage error can carry a path or a value.
             logger.error(

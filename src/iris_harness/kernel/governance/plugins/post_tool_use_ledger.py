@@ -16,8 +16,9 @@ Read from the context:
              tool_call_id  : str | None -- makes the row's key unique within the step
     ctx      run_id, step_id
 
-The row's key is ``<run_id>:<step_id>:<tool_call_id>`` -- one row per call, and recording
-the same call twice (a capability stream's items) is a no-op.
+The row's key is ``<run_id>:<step_id>:<tool_call_id>`` -- one row per call. A key that
+already holds a row (not this call's pre-record) is reported as a warning, never confirmed
+as recorded; a capability stream's items are one call and are settled once, at the end.
 
 Which probe verifies it, in order:
 
@@ -64,6 +65,7 @@ from iris_harness.kernel.governance.hooks.tool_payload import (
 from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
 from iris_harness.kernel.governance.plugins.destructive_approval import pinned_by_declaration
 from iris_harness.kernel.governance.side_effects.probes import NO_PROBE
+from iris_harness.kernel.governance.side_effects.store import SideEffectKeyExists
 
 if TYPE_CHECKING:
     from iris_harness.kernel.governance.side_effects import SideEffectLedger
@@ -185,6 +187,25 @@ class PostToolUseLedgerHook:
                 tool=tool,
                 verification_probe=probe_name,
                 probe_metadata={**meta, "subject": subject or key, "effect": effect},
+                exclusive=True,
+            )
+        except SideEffectKeyExists:
+            if self._is_own_stream_row(key, tool, ctx):
+                return HookDecision(
+                    outcome="allow", reason="post_tool_use_ledger: stream already recorded"
+                )
+            # The call has run; the ledger already holds a row under its key that is not a
+            # pre-record of it. Say so, never confirm a record that was not written.
+            logger.warning(
+                "post_tool_use_ledger: the ledger key for run=%s tool=%s is already taken; "
+                "this call's side effect was not recorded",
+                ctx.run_id,
+                tool,
+            )
+            return HookDecision(
+                outcome="allow",
+                reason=f"post_tool_use_ledger: could not record {tool}: its key is already taken",
+                severity="warn",
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -205,11 +226,27 @@ class PostToolUseLedgerHook:
             audit_metadata={"side_effect_id": key, "probe": probe_name or "none"},
         )
 
-    def _written_before(self, key: str) -> bool:
-        """Whether ``key`` is a row ``PreToolUseLedgerHook`` wrote before the call ran.
+    def _is_own_stream_row(self, key: str, tool: str, ctx: HookContext) -> bool:
+        """Whether the taken ``key`` is this call's own row: a later item of its stream.
 
-        A ledger that cannot be read answers no: the insert below is then tried, as it
-        always was, and is a no-op on a key already there (``record``).
+        A stream is one call under one key; its first item (or its end) inserts the row and
+        the rest find it there, which is expected and not a collision.
+        """
+        if ctx.payload.get("stream_item") is None and ctx.payload.get("stream_end") is not True:
+            return False
+        try:
+            row = self._ledger.get(key)
+        except Exception:  # noqa: BLE001
+            return False
+        return row is not None and row.tool == tool
+
+    def _written_before(self, key: str) -> bool:
+        """Whether ``key`` is a row ``PreToolUseLedgerHook`` wrote and nothing has settled yet.
+
+        A pre-row that is no longer ``pending`` was settled by a call already; settling it
+        again would rewrite that call's outcome, so it answers no and the insert below
+        reports the taken key. A ledger that cannot be read answers no: the insert is then
+        tried, and a key already there is reported (``record(..., exclusive=True)``).
         """
         try:
             row = self._ledger.get(key)
@@ -220,7 +257,11 @@ class PostToolUseLedgerHook:
                 type(exc).__name__,
             )
             return False
-        return row is not None and row.probe_metadata.get(PRE_RECORDED) is True
+        return (
+            row is not None
+            and row.probe_metadata.get(PRE_RECORDED) is True
+            and row.status == "pending"
+        )
 
     def _settle(
         self,

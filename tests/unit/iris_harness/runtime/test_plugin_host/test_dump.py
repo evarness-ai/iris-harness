@@ -53,3 +53,12 @@ def test_the_search_providers_a_plugin_declares_are_shown(monkeypatch) -> None: 
     assert rows["research"]["search_providers"] == ["searxng", "tavily", "exa", "brave", "ddg"]
     assert rows["system"]["search_providers"] == []
     assert "search providers: searxng, tavily, exa, brave, ddg" in render_text(tree)
+
+
+def test_party_shows_beside_trust(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    monkeypatch.delenv("IRIS_PLUGINS_DISABLE", raising=False)
+    monkeypatch.delenv("IRIS_PLUGINS_ENABLE", raising=False)
+    tree = dump_config(_SHIPPED_CONFIG, profile_name="default")
+    rows = {r["name"]: r for r in tree["plugins"]}
+    assert rows["system"]["party"] == "first-party"
+    assert "trust=in-process  party=first-party" in render_text(tree)

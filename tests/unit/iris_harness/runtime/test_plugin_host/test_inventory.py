@@ -116,6 +116,9 @@ def test_inventory_lists_every_profile_plugin_with_status(loaded: Any) -> None:
     assert mine["registration_counts"] == {"tool": 1, "intent_handler": 1}
     assert mine["declared_tools"] == 2
     assert mine["enabled"] is True
+    # ``party`` rides beside ``trust``; this manifest declares none, so it fails closed.
+    assert (mine["trust"], mine["party"]) == ("in-process", "untrusted")
+    assert by_name["ghost"]["party"] is None
 
     # A disabled plugin never loaded, but its manifest is still read for display.
     assert by_name["sleepy"]["status"] == "disabled"

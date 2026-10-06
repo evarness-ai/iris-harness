@@ -574,6 +574,7 @@ def describe_sources(
                     "source": source.label,
                     "version": source.manifest.version,
                     "trust": ref.trust or source.manifest.trust,
+                    "party": source.manifest.party,
                     "provides": [k.value for k in source.manifest.provides],
                     "capabilities": {
                         "provides": list(source.manifest.capabilities.provides),

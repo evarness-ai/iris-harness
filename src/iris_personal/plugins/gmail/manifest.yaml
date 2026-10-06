@@ -12,6 +12,7 @@ description: >-
 entrypoint: plugin:setup
 flavor: python
 trust: in-process
+party: first-party
 cli: cli:register
 provides: []
 # The Google API client the fetcher, the attachment reader and the OAuth flow import:

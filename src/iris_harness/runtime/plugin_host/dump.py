@@ -62,7 +62,7 @@ def render_text(tree: dict[str, Any]) -> str:
             provides = ", ".join(row.get("provides") or []) or "-"
             lines.append(
                 f"  [{flag}] {row['name']:<20} {row['source']:<40} v{row.get('version', '?')}"
-                f"  trust={row.get('trust')}  provides={provides}  (set by {row['set_by']})"
+                f"  trust={row.get('trust')}  party={row.get('party')}  provides={provides}  (set by {row['set_by']})"
             )
             if row.get("identity"):
                 lines.append(f"        owner identity: {', '.join(row['identity'])}")

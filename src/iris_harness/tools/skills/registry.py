@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from langchain_core.tools import BaseTool
 
 from .loader import discover_skill_dirs, load_skill_package
 from .models import SkillPackage
+
+logger = logging.getLogger(__name__)
 
 
 class SkillRegistry:
@@ -23,15 +26,39 @@ class SkillRegistry:
         self.repo_root = Path(repo_root).resolve()
         self.environment = dict(environment or {})
         self._packages: tuple[SkillPackage, ...] = ()
+        self._load_failures: dict[Path, str] = {}
+        self._reported_failures: set[tuple[Path, str]] = set()
+
+    @property
+    def load_failures(self) -> dict[Path, str]:
+        """Skills the last :meth:`discover` skipped, as ``skill_dir -> one-line reason``."""
+        return dict(self._load_failures)
 
     def discover(self) -> tuple[SkillPackage, ...]:
-        """Discover and load all skill packages from config/skills."""
+        """Discover and load all skill packages from config/skills.
+
+        One skill that cannot load (invalid manifest, a tools module whose import
+        fails) is skipped and recorded in :attr:`load_failures`; it never aborts the
+        pass, so the skills after it still load. A skill whose *declared* prerequisites
+        are missing is not a failure: it loads as a blocked package
+        (``missing_prerequisites``) without its tools module being imported.
+        """
         packages: list[SkillPackage] = []
+        failures: dict[Path, str] = {}
         for skill_dir in discover_skill_dirs(self.repo_root):
-            packages.append(
-                load_skill_package(self.repo_root, skill_dir, environment=self.environment)
-            )
+            try:
+                packages.append(
+                    load_skill_package(self.repo_root, skill_dir, environment=self.environment)
+                )
+            except Exception as exc:  # noqa: BLE001 - isolate one skill's fault from the rest
+                reason = _one_line_reason(exc)
+                failures[skill_dir] = reason
+                # discover() also runs per chat turn and on hot reload: say it once.
+                if (skill_dir, reason) not in self._reported_failures:
+                    self._reported_failures.add((skill_dir, reason))
+                    logger.warning("skill %s skipped: %s", skill_dir.name, reason)
         self._packages = tuple(packages)
+        self._load_failures = failures
         return self._packages
 
     def list_packages(
@@ -67,6 +94,12 @@ class SkillRegistry:
             ):
                 indexed[tool_manifest.name] = tool_class
         return indexed
+
+
+def _one_line_reason(exc: BaseException) -> str:
+    """``ExcType: first line of message`` -- no traceback, no multi-line payload."""
+    message = (str(exc).strip().splitlines() or [""])[0]
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
 
 
 # Backwards-compatible alias used by earlier drafts and generated code.

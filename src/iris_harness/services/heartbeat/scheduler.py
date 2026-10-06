@@ -191,8 +191,14 @@ class HeartbeatScheduler:
             return False
         handler = self._handlers.get(definition.handler)
         if handler is None:
-            logger.warning(
-                "heartbeat %s references unknown handler %s; skipping",
+            # Not a fault: config/heartbeats.yaml declares the schedules of every
+            # domain's jobs, and a handler arrives with its plugin, so on a harness
+            # without that plugin the job is simply unavailable. That state is surfaced
+            # (unavailable_reason, the Heartbeats screen); register_all() logs one
+            # summary line. A plugin that IS installed and failed is reported by the
+            # plugin host, not here.
+            logger.debug(
+                "heartbeat %s: no handler %s registered; unavailable",
                 definition.name,
                 definition.handler,
             )
@@ -219,7 +225,22 @@ class HeartbeatScheduler:
         return True
 
     def register_all(self, definitions: list[HeartbeatDefinition]) -> int:
-        return sum(1 for d in definitions if self.register(d))
+        registered = sum(1 for d in definitions if self.register(d))
+        with self._lock:
+            unavailable = sorted(
+                d.name
+                for d in definitions
+                if d.enabled
+                and d.handler not in self._handlers
+                and not (d.platforms and self._platform not in d.platforms)
+            )
+        if unavailable:
+            logger.info(
+                "%d heartbeat(s) unavailable, no handler registered (plugin not installed): %s",
+                len(unavailable),
+                ", ".join(unavailable),
+            )
+        return registered
 
     def _unschedule(self, name: str) -> None:
         self._definitions.pop(name, None)

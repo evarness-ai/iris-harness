@@ -204,3 +204,52 @@ def test_no_plugin_lookup_bound_warns_even_for_a_named_plugin(caplog) -> None:  
     assert "unknown handler h" in warnings[0].getMessage()
     assert not [r for r in caplog.records if r.levelname == "INFO"]
     assert "no handler 'h' is registered" in (scheduler.unavailable_reason(definition) or "")
+
+
+def test_plugin_typo_is_a_warning_not_a_quiet_not_installed(caplog) -> None:  # type: ignore[no-untyped-def]
+    """`plugin: emial_workflows` is in no list and not mounted: a fault, not an absence."""
+    scheduler = HeartbeatScheduler(handlers={})
+    scheduler.bind_plugin_gap(_gap({"emial_workflows": "not in this profile, or not installed"}))
+    scheduler.bind_known_plugins({"email_workflows", "calendar"})
+    typo = HeartbeatDefinition(
+        name="j", handler="h", schedule="interval:60", plugin="emial_workflows"
+    )
+    with caplog.at_level("DEBUG", logger=_SCHED_LOGGER):
+        assert scheduler.register_all([typo]) == 0
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "heartbeat j names plugin emial_workflows" in message
+    assert "typo in `plugin:`?" in message
+    assert not [r for r in caplog.records if r.levelname == "INFO"]  # not in the summary
+    reason = scheduler.unavailable_reason(typo)
+    assert reason is not None and "not a known plugin (typo?)" in reason
+
+
+def test_declared_external_plugin_that_is_absent_stays_quiet(caplog) -> None:  # type: ignore[no-untyped-def]
+    scheduler = HeartbeatScheduler(handlers={})
+    scheduler.bind_plugin_gap(_gap({"calendar": "not in this profile, or not installed"}))
+    scheduler.bind_known_plugins({"email_workflows", "calendar"})
+    definition = HeartbeatDefinition(
+        name="j", handler="h", schedule="interval:60", plugin="calendar"
+    )
+    with caplog.at_level("DEBUG", logger=_SCHED_LOGGER):
+        assert scheduler.register_all([definition]) == 0
+
+    assert not [r for r in caplog.records if r.levelname in {"WARNING", "ERROR"}]
+    (summary,) = [r for r in caplog.records if r.levelname == "INFO"]
+    assert "1 heartbeat(s) unavailable, plugin not mounted (calendar)" in summary.getMessage()
+    assert "plugin calendar is not mounted" in (scheduler.unavailable_reason(definition) or "")
+
+
+def test_no_declared_owners_means_nothing_is_judged_a_typo(caplog) -> None:  # type: ignore[no-untyped-def]
+    """A user file that declares no lists keeps the quiet behaviour for an absent plugin."""
+    scheduler = HeartbeatScheduler(handlers={})
+    scheduler.bind_plugin_gap(_gap({"anything": "x"}))
+    definition = HeartbeatDefinition(
+        name="j", handler="h", schedule="interval:60", plugin="anything"
+    )
+    with caplog.at_level("DEBUG", logger=_SCHED_LOGGER):
+        scheduler.register_all([definition])
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]

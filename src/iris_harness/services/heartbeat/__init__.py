@@ -1,6 +1,6 @@
 """IRIS Heartbeat System — APScheduler-driven periodic checks."""
 
-from .config import HeartbeatConfigError, load_heartbeats
+from .config import HeartbeatConfigError, load_heartbeats, load_plugin_owners
 from .models import HeartbeatDefinition, HeartbeatRun, HeartbeatStatus
 from .scheduler import SETTINGS_SECTION, HeartbeatHandler, HeartbeatScheduler
 
@@ -13,4 +13,5 @@ __all__ = [
     "SETTINGS_SECTION",
     "HeartbeatStatus",
     "load_heartbeats",
+    "load_plugin_owners",
 ]

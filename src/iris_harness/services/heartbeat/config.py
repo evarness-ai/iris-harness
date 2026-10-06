@@ -32,6 +32,28 @@ def load_heartbeats(path: Path) -> list[HeartbeatDefinition]:
     return [_parse_entry(entry, path) for entry in entries]
 
 
+def load_plugin_owners(path: Path) -> frozenset[str]:
+    """The plugin names a ``plugin:`` value in this file may legitimately use.
+
+    Two lists beside ``heartbeats:``: ``plugins_in_tree`` (plugins whose manifest ships in
+    this tree) and ``plugins_external`` (owners shipped elsewhere, e.g. a private domain
+    plugin, which this tree cannot check). A ``plugin:`` naming neither is a typo. Empty
+    when the file or the lists are absent (a user file that declares none is not policed).
+    """
+    if not path.exists():
+        return frozenset()
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        return frozenset()
+    names: set[str] = set()
+    for key in ("plugins_in_tree", "plugins_external"):
+        value = raw.get(key, [])
+        if not isinstance(value, list) or not all(isinstance(n, str) and n for n in value):
+            raise HeartbeatConfigError(f"{path}: {key!r} must be a list of plugin names")
+        names.update(value)
+    return frozenset(names)
+
+
 def _parse_entry(entry: Any, path: Path) -> HeartbeatDefinition:
     if not isinstance(entry, dict):
         raise HeartbeatConfigError(

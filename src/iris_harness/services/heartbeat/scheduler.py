@@ -120,6 +120,9 @@ class HeartbeatScheduler:
         # Why a plugin is not mounted here (None when it is): bound by the runtime once
         # plugins have mounted. Unbound, a missing handler cannot be explained and warns.
         self._plugin_gap: Callable[[str], str | None] | None = None
+        # The plugin names heartbeats.yaml declares as owners; empty = none declared, so
+        # nothing is judged a typo.
+        self._known_plugins: frozenset[str] = frozenset()
         self._runs: list[HeartbeatRun] = []
         self._definitions: dict[str, HeartbeatDefinition] = {}
         self._declared: dict[str, HeartbeatDefinition] = {}
@@ -149,6 +152,22 @@ class HeartbeatScheduler:
         sentence) or ``None`` when ``name`` is mounted. Lets a definition whose handler
         belongs to an absent plugin be skipped quietly instead of warning."""
         self._plugin_gap = plugin_gap
+
+    def bind_known_plugins(self, names: frozenset[str] | set[str]) -> None:
+        """Say which plugin names ``plugin:`` may use (heartbeats.yaml declares them). A
+        definition naming a plugin that is neither mounted nor one of these is a typo,
+        not an absent plugin, and is reported as a fault."""
+        self._known_plugins = frozenset(names)
+
+    def _unknown_owner(self, definition: HeartbeatDefinition) -> bool:
+        """True when ``definition`` names a plugin that is not mounted and not declared."""
+        return (
+            bool(definition.plugin)
+            and bool(self._known_plugins)
+            and definition.plugin not in self._known_plugins
+            and self._plugin_gap is not None
+            and self._plugin_gap(definition.plugin) is not None
+        )
 
     def _missing_plugin(self, definition: HeartbeatDefinition) -> str | None:
         """Why the plugin that owns ``definition`` is not mounted, or None when no plugin
@@ -188,6 +207,8 @@ class HeartbeatScheduler:
                 f"this harness runs on {self._platform}"
             )
         if definition.handler not in self._handlers:
+            if self._unknown_owner(definition):
+                return f"names plugin {definition.plugin!r}, which is not a known plugin (typo?)"
             gap = self._missing_plugin(definition)
             if gap is not None:
                 return gap
@@ -211,8 +232,16 @@ class HeartbeatScheduler:
             return False
         handler = self._handlers.get(definition.handler)
         if handler is None:
-            gap = self._missing_plugin(definition)
-            if gap is not None:
+            gap = None if self._unknown_owner(definition) else self._missing_plugin(definition)
+            if self._unknown_owner(definition):
+                logger.warning(
+                    "heartbeat %s names plugin %s, which is not mounted and not a declared "
+                    "plugin (typo in `plugin:`?); handler %s is not registered; skipping",
+                    definition.name,
+                    definition.plugin,
+                    definition.handler,
+                )
+            elif gap is not None:
                 # Not a fault: config/heartbeats.yaml declares the schedules of every
                 # domain's jobs, and a handler arrives with its plugin, so on a harness
                 # without that plugin the job is simply unavailable. That state is shown
@@ -266,6 +295,7 @@ class HeartbeatScheduler:
                     d.enabled
                     and d.handler not in self._handlers
                     and not (d.platforms and self._platform not in d.platforms)
+                    and not self._unknown_owner(d)
                     and self._missing_plugin(d) is not None
                 ):
                     by_plugin.setdefault(d.plugin, []).append(d.name)

@@ -24,7 +24,9 @@ class SkillRegistry:
         environment: Mapping[str, str] | None = None,
     ) -> None:
         self.repo_root = Path(repo_root).resolve()
-        self.environment = dict(environment or {})
+        # None = the process environment, read at each discover() (a hot reload sees a
+        # variable set since startup); a mapping is what the caller says the environment is.
+        self.environment = None if environment is None else dict(environment)
         self._packages: tuple[SkillPackage, ...] = ()
         self._load_failures: dict[Path, str] = {}
         self._reported_failures: set[tuple[Path, str]] = set()
@@ -68,26 +70,30 @@ class SkillRegistry:
         return self._packages
 
     def _note_unavailable(self, package: SkillPackage) -> None:
-        """One INFO line for a skill that a missing declared package leaves blocked.
+        """One INFO line for a skill that a missing declared prerequisite leaves blocked.
 
-        Not a fault: the skill declared what it needs and the install lacks it. Said
-        once (``discover()`` re-runs per turn), naming the extra that installs it.
+        Not a fault: the skill declared what it needs (a package, an env var, a config
+        file, a credential, a Python version) and this install lacks it. Said once
+        (``discover()`` re-runs per turn), naming what is missing, never a value; a missing
+        package also names the extra that installs it. The same items, spelled the same,
+        fill ``blocked:`` in ``iris skills list``.
         """
-        missing = tuple(
-            item.removeprefix("package:")
-            for item in package.missing_prerequisites
-            if item.startswith("package:")
-        )
+        missing = package.missing_prerequisites
         key = (package.manifest.name, missing)
         if not missing or key in self._reported_unavailable:
             return
         self._reported_unavailable.add(key)
         extra = package.manifest.requires.extra
-        fix = f"; install it with: pip install 'iris-harness[{extra}]'" if extra else ""
+        has_package = any(item.startswith("package:") for item in missing)
+        fix = (
+            f"; install it with: pip install 'iris-harness[{extra}]'"
+            if extra and has_package
+            else ""
+        )
         logger.info(
-            "skill %s unavailable: missing package %s%s",
+            "skill %s unavailable: missing %s%s",
             package.manifest.name,
-            ", ".join(missing),
+            ", ".join(_describe_missing(item) for item in missing),
             fix,
         )
 
@@ -124,6 +130,12 @@ class SkillRegistry:
             ):
                 indexed[tool_manifest.name] = tool_class
         return indexed
+
+
+def _describe_missing(item: str) -> str:
+    """``package:foo`` -> ``package foo``: the prerequisite kind, then its name."""
+    kind, _, name = item.partition(":")
+    return f"{kind} {name}"
 
 
 def _one_line_reason(exc: BaseException) -> str:

@@ -11,6 +11,12 @@ First public release of the IRIS harness.
 
 ### Added
 
+- An operator can declare what an MCP tool does: `governance.tools: {<name>: {effect:
+  read|write|destructive}}` under a server in `mcp-servers.yaml` (issue #102). A destructive
+  tool is refused before the server is reached unless `invoke_external_tool` is given
+  `approved_by`, an approved queue row that pinned exactly that call, and it leaves a pending
+  write-ahead ledger row before it runs. A tool not listed behaves as before.
+
 - `search_docs`: the core can search its own shipped documentation (architecture, concepts,
   guides, reference, usage-guides) by keyword at section level, as an internal read tool of
   the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot

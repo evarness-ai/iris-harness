@@ -202,6 +202,14 @@ def _load_trust_store(repo_root: Path, config: MCPSigningConfig) -> TrustStore:
         return TrustStore.empty()
 
 
+def declared_effect(server: MCPServerConfig, tool_name: str) -> str | None:
+    """The effect the operator declared for ``tool_name`` on ``server``, else None."""
+    if server.governance is None:
+        return None
+    declared = server.governance.tools.get(tool_name)
+    return declared.effect if declared is not None else None
+
+
 class MCPBridge:
     """Bridge local skill tools into MCP definitions and guard external tool calls."""
 
@@ -375,6 +383,7 @@ class MCPBridge:
         executor: Callable[[MCPServerConfig, str, dict[str, Any]], Any] | None = None,
         persona: str | None = None,
         run_id: str | None = None,
+        approved_by: str | None = None,
     ) -> MCPInvocationResult:
         """Guard an outbound MCP tool call, then delegate to the supplied executor.
 
@@ -394,8 +403,15 @@ class MCPBridge:
         marks and scans it (and the opt-in retrieved-content injection guard, when
         enabled). A ``deny`` raises :exc:`PermissionError`; a
         ``transform`` is what the caller receives.
+
+        A tool the operator declared in the server's ``governance.tools`` carries that
+        effect through both steps (issue #102). A ``destructive`` one is refused before the
+        server is reached unless ``approved_by`` names an approved queue row that pinned
+        exactly this call, and it leaves a pending write-ahead ledger row before it runs,
+        settled after. A tool nobody declared behaves as before.
         """
         server = self._require_enabled_server(server_name)
+        effect = declared_effect(server, tool_name)
         call_arguments = dict(arguments)
         # One id for this outbound call, minted here and nowhere else: its PRE and POST rows
         # both carry it (#134). Not the caller's to supply.
@@ -410,6 +426,8 @@ class MCPBridge:
                 persona=persona,
                 run_id=run_id,
                 call_id=call_id,
+                effect=effect,
+                approved_by=approved_by,
             )
 
         decision = self._guard_mcp_action(
@@ -440,6 +458,7 @@ class MCPBridge:
                 persona=persona,
                 run_id=run_id,
                 call_id=call_id,
+                effect=effect,
             )
         return MCPInvocationResult(
             server_name=server.name,
@@ -458,6 +477,8 @@ class MCPBridge:
         persona: str | None,
         run_id: str | None,
         call_id: str,
+        effect: str | None = None,
+        approved_by: str | None = None,
     ) -> dict[str, Any]:
         """Fire ``PreToolUse`` through the governance kernel for an MCP dispatch.
 
@@ -480,6 +501,7 @@ class MCPBridge:
         from iris_harness.kernel.governance.hooks.tool_payload import (
             CALL_ID,
             TOOL_CALL_ID,
+            TOOL_EFFECT,
             args_of,
             pre_tool_payload,
         )
@@ -508,7 +530,15 @@ class MCPBridge:
                 tool_plugin=f"mcp:{server_name}",
                 **digester.args_fields(arguments),
             ),
-            metadata={CALL_ID: call_id, TOOL_CALL_ID: call_id},
+            metadata={
+                CALL_ID: call_id,
+                TOOL_CALL_ID: call_id,
+                # What the operator declared for this tool, or None: an MCP server declares
+                # no effect of its own. A destructive declaration makes the call wait for an
+                # approval (``approved_by``) and gives it a write-ahead ledger row.
+                TOOL_EFFECT: effect,
+                **({"approved_by": approved_by} if approved_by else {}),
+            },
         )
         decision, final_ctx = self._governance_kernel.fire_sync(HookPoint.PRE_TOOL_USE, ctx)
         if decision.outcome == "deny":
@@ -527,13 +557,15 @@ class MCPBridge:
         persona: str | None,
         run_id: str | None,
         call_id: str,
+        effect: str | None = None,
     ) -> Any:
         """Fire ``PostToolUse`` over an MCP server's result; what the caller may receive.
 
         An external server's output is third-party text, so it is declared
-        ``content: external``; its effect is unknown (an MCP server declares none), so
-        no effect is stamped. ``deny`` / ``require_approval`` raise
-        :exc:`PermissionError` (the result is withheld); a ``transform`` is returned.
+        ``content: external``; its effect is the one the operator declared for the tool, or
+        none (an MCP server declares none itself), so a call nobody declared stamps no
+        effect. ``deny`` / ``require_approval`` raise :exc:`PermissionError` (the result is
+        withheld); a ``transform`` is returned.
         """
         from iris_harness.kernel.governance.audit.digest import audit_digester
         from iris_harness.kernel.governance.hooks.tool_payload import (
@@ -564,7 +596,7 @@ class MCPBridge:
                 **audit_digester().result_fields(result),
             ),
             metadata=tool_post_metadata(
-                effect=None, content="external", verify=None, tool_call_id=call_id
+                effect=effect, content="external", verify=None, tool_call_id=call_id
             ),
         )
         decision, final_ctx = self._governance_kernel.fire_sync(HookPoint.POST_TOOL_USE, ctx)

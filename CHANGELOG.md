@@ -14,14 +14,15 @@ First public release of the IRIS harness.
 - **Default flipped (issue #104): text a tool, capability or MCP server declares
   `content: external` is now marked and scanned on every install.** The new
   external-content floor needs no model, no weights and no network. An external result
-  reaches the model inside an `<external_content source=... trust="untrusted">` envelope,
-  (not for plugin or core code calling through `api.tools`, which gets the redaction only),
+  reaches the model inside an `<external_content source=... trust="untrusted">` envelope
+  (plugin or core code calling through `api.tools` gets the redaction only, no envelope),
   and a short list of deterministic patterns (instruction overrides, chat-template and
   tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger
   row naming the pattern ids, the tool and the source, never the text. It is on by default
   (`IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`, a plain boolean: unset, blank and any
   unrecognised value leave it on, only `0`/`false`/`no`/`off` turns it off, with a
-  warning) and acts at `POST_TOOL_USE`, so the agent loop, `api.tools`, `iris mcp serve`,
+  warning; with the floor off, text a third party wrote reaches the model unmarked and
+  unscanned) and acts at `POST_TOOL_USE`, so the agent loop, `api.tools`, `iris mcp serve`,
   the MCP bridge and capability results all get it. A text that quotes an attack phrase is
   redacted too: see "The external-content floor" in `docs/concepts/governance.md` for the
   pattern list and its limits. The model guard (`IRIS_GOVERNANCE_PROMPT_GUARD`) is

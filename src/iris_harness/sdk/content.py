@@ -23,10 +23,11 @@ def wrap_external_content(text: str, *, source: str, tool: str | None = None) ->
     """``text`` with instruction-like spans redacted, inside the untrusted-content envelope.
 
     ``source`` names where the text came from (your plugin, a site, a mailbox); ``tool``
-    the tool or step that fetched it (defaults to ``source``). Idempotent: text that is
-    already in an envelope is returned with only the tripwire re-applied, never wrapped
-    twice. A literal closing tag inside ``text`` is escaped, so the text cannot end the
-    envelope early. No model, no network.
+    the tool or step that fetched it (defaults to ``source``). Never wrapped twice: text
+    that is already in an envelope is unwrapped first, scanned again and wrapped once more,
+    so the result carries ONE envelope whose ``source`` and ``tool`` are the ones given
+    here (an envelope's own claimed source never survives). A literal closing tag inside
+    ``text`` is escaped, so the text cannot end the envelope early. No model, no network.
     """
     bare = unwrap(text) if text.lstrip().startswith(f"<{ENVELOPE_TAG} ") else text
     return wrap(scan(bare).text, source=source, tool=tool or source)

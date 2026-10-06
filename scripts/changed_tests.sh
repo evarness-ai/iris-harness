@@ -25,11 +25,16 @@
 #   FULL=1 scripts/changed_tests.sh       # force the full suite (what CI runs)
 #   IRIS_PYTEST_WORKERS=4 scripts/changed_tests.sh   # cap xdist workers (default auto)
 #   CHANGED_OVERRIDE=$'a.py\nb.py' ...     # bypass git: map these paths (tests use this)
+#   NO_FULL=1 scripts/changed_tests.sh    # hosted PR policy: never escalate to the full suite.
+#                                         # Where it would, run `-m smoke` plus the tests the
+#                                         # changed paths DO map to, and say so. BASE=<sha> names
+#                                         # the comparison point (CI passes the PR base / push before).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 PRINT=0
+ESCALATED=0
 [[ "${1:-}" == "--print" ]] && PRINT=1
 
 # pytest-xdist worker count: IRIS_PYTEST_WORKERS=<n>|auto|logical, default auto (one per
@@ -93,8 +98,13 @@ done < "$ROOT/scripts/changed_tests_full_triggers.txt"
 if printf '%s\n' "$CHANGED" | grep -qE "$FULL_TRIGGERS"; then
   echo "changed_tests: a core file changed → full suite:"
   printf '%s\n' "$CHANGED" | grep -E "$FULL_TRIGGERS" | sed 's/^/    /'
-  [[ $PRINT -eq 1 ]] || exec poetry run pytest --no-cov -n "$WORKERS" -q
-  exit 0
+  if [[ "${NO_FULL:-0}" == "1" ]]; then
+    echo "changed_tests: NO_FULL=1 -> full-suite escalation SKIPPED by policy; smoke + mapped tests run instead"
+    ESCALATED=1
+  else
+    [[ $PRINT -eq 1 ]] || exec poetry run pytest --no-cov -n "$WORKERS" -q
+    exit 0
+  fi
 fi
 
 # macOS ships bash 3.2 (no associative arrays): accumulate lines, dedupe with sort -u.
@@ -199,8 +209,13 @@ done <<< "$CHANGED"
 if [[ -n "$MISSES" ]]; then
   echo "changed_tests: no test directory maps to these source paths → full suite:"
   printf '%s' "$MISSES" | grep -v '^$' | sort -u | sed 's/^/    /'
-  [[ $PRINT -eq 1 ]] || exec poetry run pytest --no-cov -n "$WORKERS" -q
-  exit 0
+  if [[ "${NO_FULL:-0}" == "1" ]]; then
+    echo "changed_tests: NO_FULL=1 -> full-suite escalation SKIPPED by policy; smoke + mapped tests run instead"
+    ESCALATED=1
+  else
+    [[ $PRINT -eq 1 ]] || exec poetry run pytest --no-cov -n "$WORKERS" -q
+    exit 0
+  fi
 fi
 
 # Test directories whose files were touched (so a changed fixture re-runs its siblings).
@@ -240,13 +255,26 @@ if [[ -n "$NESTED" ]]; then
   SELECTED=$(printf '%s\n' "$SELECTED" | grep -vxF -f <(printf '%s' "$NESTED" | grep -v '^$') || true)
 fi
 
-if [[ -z "$SELECTED" ]]; then
+if [[ -z "$SELECTED" && $ESCALATED -eq 1 ]]; then
+  echo "changed_tests: no mapped test directory; running the smoke marker only"
+elif [[ -z "$SELECTED" ]]; then
   echo "changed_tests: changes touch no tested code (docs only) → nothing to run"
   exit 0
 fi
 
 echo "changed_tests: $(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') changed path(s) → running:"
 printf '%s\n' "$SELECTED" | sed 's/^/    /'
+[[ $ESCALATED -eq 1 ]] && echo "    + -m smoke (stands in for the skipped full suite)"
 [[ $PRINT -eq 1 ]] && exit 0
-# shellcheck disable=SC2086
-exec poetry run pytest --no-cov -n "$WORKERS" -q $SELECTED
+if [[ $ESCALATED -eq 0 ]]; then
+  # shellcheck disable=SC2086
+  exec poetry run pytest --no-cov -n "$WORKERS" -q $SELECTED
+fi
+# Escalated under NO_FULL: the mapped tests, then the smoke marker; fail if either fails.
+RC=0
+if [[ -n "$SELECTED" ]]; then
+  # shellcheck disable=SC2086
+  poetry run pytest --no-cov -n "$WORKERS" -q $SELECTED || RC=$?
+fi
+poetry run pytest --no-cov -n "$WORKERS" -q -m smoke || RC=$?
+exit "$RC"

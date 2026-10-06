@@ -19,4 +19,4 @@ The pytest suite. `unit/` mirrors the source tree: `src/iris_harness/<layer>/<pk
 
 ## Running
 
-`IRIS_AUTH_SECRET="test-secret-for-testing" IRIS_DISABLE_WARMUP=1 poetry run pytest <narrow path>`. Markers `real_llm`, `real_embeddings` and `smoke` are deselected by default. `scripts/changed_tests.sh` picks the tests for a change.
+`IRIS_AUTH_SECRET="test-secret-for-testing" IRIS_DISABLE_WARMUP=1 poetry run pytest <narrow path>`. Markers `real_llm`, `real_embeddings` and `smoke` are deselected by default. `scripts/changed_tests.sh` picks the tests for a change (hosted PRs run it with `NO_FULL=1` on 3.12; the full suite is `gh workflow run ci -f full=true`).

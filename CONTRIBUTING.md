@@ -75,6 +75,12 @@ scripts/ci_local.sh --fast     # ruff, black, mypy, import contracts, changed-sc
 scripts/ci_local.sh            # the full gate (full suite, playground smoke, secret scan)
 ```
 
+Hosted CI runs the **changed-scope** tests on Python 3.12 for every pull request and push
+to `main` (`scripts/changed_tests.sh`, which never escalates to the whole suite there: when a
+core file such as `pyproject.toml` changes it runs `-m smoke` plus the mapped tests and says
+so in the job summary). The entire suite on 3.12 and 3.13 runs on demand:
+`gh workflow run ci -f full=true`, or Actions, ci, Run workflow, full.
+
 Tests mirror the source tree under `tests/unit/`. Async tests run with
 `asyncio_mode = "auto"`: never add `@pytest.mark.asyncio`. Tests never reach a model or the
 network; use the scripted fake model in `iris_harness.testing`. New behaviour ships with

@@ -24,13 +24,14 @@ SCRIPT = ROOT / "scripts" / "changed_tests.sh"
 TRIGGERS = ROOT / "scripts" / "changed_tests_full_triggers.txt"
 
 
-def _plan(*paths: str) -> str:
+def _plan(*paths: str, no_full: bool = False) -> str:
     result = subprocess.run(
         ["bash", str(SCRIPT), "--print"],
         cwd=ROOT,
         env={
             "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
             "CHANGED_OVERRIDE": "\n".join(paths),
+            **({"NO_FULL": "1"} if no_full else {}),
         },
         capture_output=True,
         text=True,
@@ -85,6 +86,18 @@ def test_source_path_with_no_test_home_escalates_to_full_suite() -> None:
     plan = _plan("src/iris_harness/no_such_package/module.py")
     assert "full suite" in plan
     assert "nothing to run" not in plan
+
+
+def test_no_full_policy_skips_the_full_suite_but_keeps_smoke_and_mapped_tests() -> None:
+    """The hosted PR job sets NO_FULL=1: a trigger file or an unmapped source path must not
+    run the whole suite, and must not become a green line with no tests either."""
+    trigger = _plan("pyproject.toml", "src/iris_harness/memory/retriever.py", no_full=True)
+    assert "SKIPPED by policy" in trigger and "-m smoke" in trigger
+    assert "tests/unit/iris_harness/memory" in trigger
+    unmapped = _plan("src/iris_harness/no_such_package/module.py", no_full=True)
+    assert "SKIPPED by policy" in unmapped
+    assert "smoke marker only" in unmapped or "-m smoke" in unmapped
+    assert "nothing to run" not in unmapped
 
 
 def test_a_root_dir_that_only_contains_layers_is_not_a_test_home() -> None:

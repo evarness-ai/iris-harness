@@ -20,6 +20,11 @@
 #   scripts/ci_local.sh --smoke      # ONLY the smoke tests: pytest -m smoke + playground run
 #   IRIS_PYTEST_WORKERS=4 scripts/ci_local.sh   # cap xdist workers (default auto = one per core)
 #
+# Hosted CI (.github/workflows/ci.yml) does NOT run the full suite on pull requests or pushes:
+# it runs scripts/changed_tests.sh with NO_FULL=1 on Python 3.12. The full suite on 3.12 and
+# 3.13 is on demand: `gh workflow run ci -f full=true`. This script's no-flag run stays the
+# full local gate.
+#
 # Smoke tests (`@pytest.mark.smoke`: end-to-end playground runs against a real
 # in-process runtime) are deselected by pyproject's addopts, so plain `pytest`
 # and --fast skip them. The full-suite path runs them as their own step, so the

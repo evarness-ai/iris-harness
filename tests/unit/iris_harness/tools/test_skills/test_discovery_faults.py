@@ -38,6 +38,8 @@ def _write_skill(
     tools_src: str | None = None,
     packages: tuple[str, ...] = (),
     extra: str | None = None,
+    env_vars: tuple[str, ...] = (),
+    config_files: tuple[str, ...] = (),
 ) -> None:
     skill_dir = root / "config" / "skills" / name
     skill_dir.mkdir(parents=True)
@@ -46,6 +48,10 @@ def _write_skill(
         requires += "  packages:\n" + "".join(f"    - {p}\n" for p in packages)
     if extra:
         requires += f"  extra: {extra}\n"
+    if env_vars:
+        requires += "  env_vars:\n" + "".join(f"    - {v}\n" for v in env_vars)
+    if config_files:
+        requires += "  config_files:\n" + "".join(f"    - {c}\n" for c in config_files)
     (skill_dir / "manifest.yaml").write_text(
         f"name: {name}\nversion: 1.0.0\ndescription: d\nauthor: t\nlicense: Apache-2.0\n"
         f"tools:\n  - name: {name}_tool\n    description: d\n    governor_route: system/read\n"
@@ -192,3 +198,106 @@ def test_shipped_skills_all_load_when_the_extra_is_present() -> None:
     by_name = {p.manifest.name: p for p in registry.discover()}
     assert by_name["gmail-inbox"].is_loadable
     assert registry.load_failures == {}
+
+
+# -- env / config prerequisites: blocked exactly like a missing package ---------------
+
+
+def test_skill_blocked_by_a_missing_env_var_logs_one_info_line(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("IRIS_TEST_SKILL_KEY", raising=False)
+    _write_skill(tmp_path, "needs_env", env_vars=("IRIS_TEST_SKILL_KEY",))
+    registry = SkillRegistry(tmp_path)
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER):
+        (package,) = registry.discover()
+        registry.discover()  # every turn re-runs discovery: still one line
+
+    assert not package.is_loadable
+    assert package.missing_prerequisites == ("env:IRIS_TEST_SKILL_KEY",)
+    assert registry.load_failures == {}
+    (record,) = _records(caplog)
+    assert record.levelno == logging.INFO and record.exc_info is None
+    assert record.getMessage() == "skill needs_env unavailable: missing env IRIS_TEST_SKILL_KEY"
+
+
+def test_skill_blocked_by_a_missing_config_file_logs_one_info_line(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _write_skill(tmp_path, "needs_cfg", config_files=("config/absent-xyz.yaml",))
+    registry = SkillRegistry(tmp_path)
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER):
+        (package,) = registry.discover()
+        registry.discover()
+
+    assert package.missing_prerequisites == ("config:config/absent-xyz.yaml",)
+    (record,) = _records(caplog)
+    assert record.levelno == logging.INFO
+    assert record.getMessage() == (
+        "skill needs_cfg unavailable: missing config config/absent-xyz.yaml"
+    )
+
+
+def test_every_missing_prerequisite_is_named_in_one_line(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("IRIS_TEST_SKILL_KEY", raising=False)
+    _write_skill(
+        tmp_path,
+        "needs_all",
+        packages=("not-an-installed-dist-xyz",),
+        extra="demo",
+        env_vars=("IRIS_TEST_SKILL_KEY",),
+        config_files=("config/absent-xyz.yaml",),
+    )
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER):
+        SkillRegistry(tmp_path).discover()
+    (record,) = _records(caplog)
+    assert record.getMessage() == (
+        "skill needs_all unavailable: missing package not-an-installed-dist-xyz, "
+        "env IRIS_TEST_SKILL_KEY, config config/absent-xyz.yaml"
+        "; install it with: pip install 'iris-harness[demo]'"
+    )
+
+
+def test_env_var_set_in_the_process_environment_satisfies_the_skill(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The default environment is the process's, read per discover (hot reload sees it)."""
+    monkeypatch.delenv("IRIS_TEST_SKILL_KEY", raising=False)
+    _write_skill(tmp_path, "needs_env", env_vars=("IRIS_TEST_SKILL_KEY",))
+    registry = SkillRegistry(tmp_path)
+    with caplog.at_level(logging.DEBUG, logger=_LOGGER):
+        (blocked,) = registry.discover()
+        monkeypatch.setenv("IRIS_TEST_SKILL_KEY", "s3cret-value-must-never-be-logged")
+        (ready,) = registry.discover()
+
+    assert not blocked.is_loadable and ready.is_loadable
+    assert ready.missing_prerequisites == ()
+    assert "s3cret-value-must-never-be-logged" not in caplog.text
+    assert len(_records(caplog)) == 1  # the earlier block only
+
+
+def test_an_explicit_environment_overrides_the_process_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IRIS_TEST_SKILL_KEY", "x")
+    _write_skill(tmp_path, "needs_env", env_vars=("IRIS_TEST_SKILL_KEY",))
+    (package,) = SkillRegistry(tmp_path, environment={}).discover()
+    assert package.missing_prerequisites == ("env:IRIS_TEST_SKILL_KEY",)
+
+
+def test_skills_list_shows_env_and_config_blocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from iris_harness.cli.commands import _list_skill_entries
+
+    monkeypatch.delenv("IRIS_TEST_SKILL_KEY", raising=False)
+    _write_skill(
+        tmp_path,
+        "needs_both",
+        env_vars=("IRIS_TEST_SKILL_KEY",),
+        config_files=("config/absent-xyz.yaml",),
+    )
+    (entry,) = _list_skill_entries(tmp_path)
+    assert entry.status == "blocked: env:IRIS_TEST_SKILL_KEY, config:config/absent-xyz.yaml"

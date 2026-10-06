@@ -7,9 +7,19 @@
 # not the core's own. An entry whose plugin is not mounted (the profile leaves it out, or
 # a package it needs is not installed) is skipped quietly, shown as unavailable, and
 # counted in one INFO line at startup. A missing handler with its plugin mounted, or with
-# no `plugin:` (a typo), warns.
+# no `plugin:`, warns.
+#
+# `plugins_in_tree` and `plugins_external` list every name a `plugin:` may use: the first
+# are plugins whose manifest ships in this tree, the second are owners shipped elsewhere
+# (a private domain plugin), which this tree cannot check. A `plugin:` in neither list is a
+# typo, so its missing handler warns instead of reading as "plugin not installed", and
+# tests/unit/iris_harness/services/test_heartbeat/test_plugin_owners.py fails the build.
+# Add a new owner here, in the right list, in the same change that adds its heartbeat.
 #
 # Schedules support cron expressions (5-field) or `interval:<seconds>`.
+
+plugins_in_tree: [email_workflows, system]
+plugins_external: [calendar, file_organizer, finance_workflows]
 
 heartbeats:
   - name: wiki_lint

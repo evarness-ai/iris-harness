@@ -36,3 +36,11 @@ First public release of the IRIS harness.
   skipped quietly (one INFO summary, "plugin not mounted"), but a mounted plugin that
   registered no handler, a mistyped handler with no `plugin:`, or no plugin lookup bound
   still warns. Refs #110.
+- A typo in a heartbeat's `plugin:` no longer reads as "plugin not installed":
+  `config/heartbeats.yaml` declares every owner it may name (`plugins_in_tree`,
+  `plugins_external`), a test checks each `plugin:` against them (and the in-tree names
+  against the shipped manifests), and an undeclared owner with a missing handler warns.
+  A skill blocked by a missing env var, config file or credential, not only a package,
+  now logs the same one INFO line and shows `blocked: env:NAME` in `iris skills list`;
+  `requires.env_vars` is now read from the process environment (it was checked against
+  an empty mapping, so a declared variable always counted as missing). Refs #110.

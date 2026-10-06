@@ -127,7 +127,7 @@ text). With the floor off it returns the text unchanged and writes nothing. `sca
 first 64 spans in a text the full marker below; each further span is redacted with the short
 marker `[~]` and the text between spans is kept, so a hostile text cannot grow past 3x its
 size and cannot erase the legitimate text after it, and no span is ever left raw. The span
-count and pattern ids still cover every span. `source` and `tool` are cleaned (control
+count and pattern ids still cover every span. What an owner reading a brief or a reply sees: past the 64th span, one `[~]` per span with the surrounding text kept, so `[~]` with no explanation beside it means a hostile text was heavily redacted; the exact span count is in the ledger row. `source` and `tool` are cleaned (control
 characters out, 200 characters at most) before they are logged or written.
 
 **2. The instruction-pattern tripwire.** A short list of phrase-level patterns

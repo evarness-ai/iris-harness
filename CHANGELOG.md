@@ -31,6 +31,14 @@ First public release of the IRIS harness.
   same probe. New `CheckKind.GOVERNANCE`; the web Health screen gains Plugins and Governance
   groups (plugin rows had no group there).
 
+- `ToolResult` (what `api.tools.call` returns) gains `external`, `source` and `tool`, set by the
+  tool service from the tool's declared `content`, and `for_model()`: the text inside the
+  untrusted-content envelope when the tool is external, unchanged when it is not (issue #147).
+  `result.text` stays the owner-facing form. The conformance suite adds a `content` check: for
+  every external tool with an example call, the result must say it is external and
+  `for_model()` must wrap it. `wrap_external_content` and `for_model()` share one
+  implementation (`wrap_scanned`).
+
 - `search_docs`: the core can search its own shipped documentation (architecture, concepts,
   guides, reference, usage-guides) by keyword at section level, as an internal read tool of
   the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot

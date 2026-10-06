@@ -418,6 +418,18 @@ def wrap(text: str, *, source: str, tool: str) -> str:
     )
 
 
+def wrap_scanned(text: str, *, source: str, tool: str) -> str:
+    """``text`` with instruction-like spans redacted, inside the envelope, wrapped once.
+
+    The one implementation behind ``sdk.content.wrap_external_content`` and
+    ``ToolResult.for_model``: text that already carries an envelope is unwrapped first,
+    scanned again and wrapped once more, so the result has ONE envelope whose ``source``
+    and ``tool`` are the ones given (an envelope's own claimed source never survives).
+    """
+    bare = unwrap(text) if text.lstrip().startswith(f"<{ENVELOPE_TAG} ") else text
+    return wrap(scan(bare).text, source=source, tool=tool)
+
+
 def unwrap(text: str) -> str:
     """``text`` without its envelope, for a reader that shows it to the owner or reads its
     first line (the loop's fallbacks, which must not ship the markup). Text with no
@@ -447,4 +459,5 @@ __all__ = [
     "scan",
     "unwrap",
     "wrap",
+    "wrap_scanned",
 ]

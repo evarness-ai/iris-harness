@@ -46,6 +46,7 @@ from iris_harness.kernel.governance.approvals.events import (
 )
 from iris_harness.kernel.governance.approvals.service import ApprovedCallResult
 from iris_harness.kernel.governance.display_mask import mask_text
+from iris_harness.kernel.governance.external_content import wrap_scanned
 from iris_harness.kernel.governance.turn_label import current_turn_label
 
 if TYPE_CHECKING:
@@ -72,6 +73,25 @@ class ToolResult:
     # When held for the owner's approval: the queued approval's id. The call runs once
     # they approve it, and the caller hears on ``approval.call_completed``.
     approval_id: str | None = None
+    # Whether the tool declares ``content: external``: ``text`` is then text a third party
+    # wrote. A code caller gets it redacted but not wrapped (it may show it to the owner);
+    # hand it to a model through :meth:`for_model`. ``source`` and ``tool`` say where it came
+    # from (the owning plugin or ``skill:<name>``, and the tool's name).
+    external: bool = False
+    source: str = ""
+    tool: str = ""
+
+    def for_model(self) -> str:
+        """``text`` as it may go into a model prompt: inside the untrusted-content envelope
+        when the tool is external, unchanged when it is not.
+
+        ``text`` stays the owner-facing form. Instruction-like spans are redacted again, an
+        envelope already on the text is replaced rather than nested, and the envelope names
+        this result's own ``source`` and ``tool``.
+        """
+        if not self.external:
+            return self.text
+        return wrap_scanned(self.text, source=self.source or "plugin", tool=self.tool or "tool")
 
 
 @dataclass(frozen=True)
@@ -179,7 +199,14 @@ class ToolService:
         # The runner already ran POST_TOOL_USE: ``text`` is the result as governance left
         # it (redacted, or the block message when it was withheld).
         withheld = outcome.post is not None and outcome.post.withheld
-        return ToolResult(ok=outcome.ok, text=outcome.text, held=withheld)
+        return ToolResult(
+            ok=outcome.ok,
+            text=outcome.text,
+            held=withheld,
+            external=tool.content == "external",
+            source=tool.plugin or "core",
+            tool=tool.name,
+        )
 
     # -- the executor for a code caller's approved call (decision 1) -------------------
     def execute_approved_call(self, row: ApprovalRow) -> ApprovedCallResult:

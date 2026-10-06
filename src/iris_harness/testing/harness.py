@@ -233,6 +233,23 @@ def _turn_result(
     )
 
 
+@dataclass(frozen=True)
+class PluginState:
+    """One plugin as the harness mounted it (:meth:`Harness.plugin_states`).
+
+    ``status`` is the registry's (``loaded``, ``degraded``, ``failed``, ...) and
+    ``load_error`` why a plugin did not mount. ``degraded_reason`` is set for a *mounted*
+    plugin that is giving degraded answers, whatever the cause: guarded calls that failed,
+    or an optional ``capabilities: uses`` that nothing provides (the same text Health
+    shows, yellow). ``failure_count`` counts the guarded-call failures.
+    """
+
+    status: str
+    load_error: str | None
+    degraded_reason: str | None
+    failure_count: int
+
+
 class Harness:
     """A built runtime in its own home. Get one from :func:`harness`."""
 
@@ -335,6 +352,23 @@ class Harness:
         return {
             record.name: (record.status.value, record.load_error)
             for record in self._runtime.plugin_registry.plugins()
+        }
+
+    def plugin_states(self) -> dict[str, PluginState]:
+        """Every plugin the harness tried to mount: ``name -> PluginState``.
+
+        :meth:`plugins` keeps its ``(status, load error)`` tuple; this adds why a mounted
+        plugin is degraded, so a test needs nothing from ``_runtime``.
+        """
+        registry = self._runtime.plugin_registry
+        return {
+            record.name: PluginState(
+                status=record.status.value,
+                load_error=record.load_error,
+                degraded_reason=registry.degraded_reason(record.name),
+                failure_count=record.failure_count,
+            )
+            for record in registry.plugins()
         }
 
     def plugin_loaded(self, name: str) -> bool:
@@ -503,6 +537,7 @@ __all__ = [
     "ANSWER_HOOK",
     "LLM_CALL_HOOK",
     "Harness",
+    "PluginState",
     "TurnAuditRow",
     "TurnEvent",
     "TurnRecord",

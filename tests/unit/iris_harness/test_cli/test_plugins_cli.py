@@ -32,6 +32,14 @@ _LIST = {
             "seam_count": 0,
             "last_error": "learned_source:finance_paid_by_email: RuntimeError: store gone",
         },
+        {
+            "name": "planner",
+            "status": "loaded",
+            "registration_counts": {},
+            "subscription_count": 0,
+            "seam_count": 0,
+            "degraded_reason": "optional capability mail.read unavailable (degraded)",
+        },
     ],
 }
 _DETAIL = {
@@ -89,6 +97,25 @@ def test_list_shows_status_counts_and_errors(api: list[str]) -> None:
     assert "2 subscription(s)" in out and "3 seam(s)" in out
     assert "store gone" in out
     assert api == ["http://localhost:8003/plugins"]
+
+
+def test_list_shows_the_degraded_reason_only_for_a_degraded_plugin(api: list[str]) -> None:
+    result = runner.invoke(plugins_app, [])
+    assert result.exit_code == 0, result.stdout
+    out = " ".join(result.stdout.split())
+    assert "degraded: optional capability mail.read unavailable (degraded)" in out
+    assert out.count("degraded: ") == 1  # calendar (no reason) prints none
+
+
+def test_show_prints_the_degraded_reason_when_present(
+    api: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = runner.invoke(plugins_app, ["show", "calendar"])
+    assert "degraded:" not in result.stdout  # healthy: None prints nothing
+    detail = {**_DETAIL, "degraded_reason": "optional capability mail.read unavailable (degraded)"}
+    monkeypatch.setattr(plugins_mod, "_fetch", lambda api_url, path: detail)
+    result = runner.invoke(plugins_app, ["show", "calendar"])
+    assert "degraded: optional capability mail.read unavailable" in " ".join(result.stdout.split())
 
 
 def test_show_lists_subscriptions_with_their_bus_and_seams(api: list[str]) -> None:

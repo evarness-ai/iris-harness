@@ -252,6 +252,7 @@ iris_harness.testing.conformance:check_conformance
 iris_harness.testing.harness:ANSWER_HOOK
 iris_harness.testing.harness:Harness
 iris_harness.testing.harness:LLM_CALL_HOOK
+iris_harness.testing.harness:PluginState
 iris_harness.testing.harness:TurnAuditRow
 iris_harness.testing.harness:TurnEvent
 iris_harness.testing.harness:TurnRecord
@@ -283,6 +284,7 @@ iris_harness.testing:FakeCall
 iris_harness.testing:FakeModelError
 iris_harness.testing:Harness
 iris_harness.testing:NetworkBlockedError
+iris_harness.testing:PluginState
 iris_harness.testing:Reply
 iris_harness.testing:Rule
 iris_harness.testing:Script

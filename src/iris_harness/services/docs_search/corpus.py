@@ -516,6 +516,12 @@ def build_corpus(config: Config, base: Path | None = None) -> Corpus:
     total = 0
     real_base = os.path.realpath(base)
     corpus_deadline = time.monotonic() + limits.scan_total_ms / 1000
+    # Progress guarantee: the call's deadline is only honoured once at least one document
+    # has had a chunk scanned in it. Checked before the first chunk, a call whose budget is
+    # spent by other work (reading and hashing the cached documents on a slow machine, a
+    # tiny scan_total_ms) would defer the same document with no chunk scanned, every call,
+    # and it would never finish.
+    scanned_one = False
     for rel in config.roots:
         root = _resolve_root(base, rel, protected)
         if root is None:
@@ -563,7 +569,7 @@ def build_corpus(config: Config, base: Path | None = None) -> Corpus:
                 cached = _CACHE.get(real)
                 if cached is not None and cached[0] == key:
                     doc = cached[1]
-                elif time.monotonic() > corpus_deadline:
+                elif scanned_one and time.monotonic() > corpus_deadline:
                     corpus.pending += 1  # out of scan time: picked up on a later call
                     corpus.truncated = True
                     continue
@@ -578,6 +584,7 @@ def build_corpus(config: Config, base: Path | None = None) -> Corpus:
                         progress = _PROGRESS.get(real)
                         resume = progress[1] if progress and progress[0] == key else [0]
                         verdict = _scan_verdict(text, limits, corpus_deadline, resume)
+                        scanned_one = True
                         if verdict == "defer":
                             if len(_PROGRESS) > 2048:
                                 _PROGRESS.clear()

@@ -48,6 +48,7 @@ from iris_harness.services.rag.ingest_source import (
     RemovedDocument,
     register_ingest_source,
 )
+from iris_harness.services.rag.models import DocumentChunk
 from iris_harness.services.rag.retrieve import search_documents
 from iris_harness.services.rag.store import DocumentStore
 
@@ -551,3 +552,139 @@ def test_a_forced_rebuild_of_an_empty_store_drops_the_mirror_not_the_labels_else
 
     assert _snapshot(index) == {}
     assert _state(store) == before  # the real store's labels are not the rebuild's to touch
+
+
+# -- a running process's handle after another process reset the collection -------------------
+
+_STALE = "iris_harness.services.rag.index"
+
+
+def _stale_handle(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
+) -> tuple[DocumentIndex, DocumentIndex]:
+    """(the 'server' handle opened before a reset, the 'CLI' index that then resets)."""
+    server = _indexed(tmp_path, store, docs)
+    cli = DocumentIndex(persist_dir=tmp_path / "chroma")
+    reset_and_reindex(store=store, index=cli)  # deletes the collection the server holds
+    return server, cli
+
+
+def test_a_handle_opened_before_a_reset_recovers_with_one_warning(
+    tmp_path: Path,
+    store: DocumentStore,
+    docs: dict[str, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    server, cli = _stale_handle(tmp_path, store, docs)
+    caplog.set_level("WARNING", logger=_STALE)
+
+    hits = search_documents("mitochondria", store=store, index=server)
+
+    assert hits and {h.classification for h in hits} <= {"personal", "public", "internal"}
+    assert server.is_ready
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and "reset or removed" in warnings[0].getMessage()
+    caplog.clear()
+    search_documents("mitochondria", store=store, index=server)  # now healthy: silent
+    assert caplog.records == []
+    assert {c for c in _snapshot(server)} == {c for c in _snapshot(cli)}
+
+
+def test_index_chunks_after_a_reset_recovers(
+    tmp_path: Path,
+    store: DocumentStore,
+    docs: dict[str, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    server, _ = _stale_handle(tmp_path, store, docs)
+    caplog.set_level("WARNING", logger=_STALE)
+    extra = DocumentChunk("zz:0", "zz", "/zz.md", "ZZ", 0, "a new chunk", classification="public")
+
+    server.index_chunks([extra])
+
+    assert "zz:0" in _snapshot(server)  # the retry landed in the rebuilt collection
+    assert [r.levelname for r in caplog.records] == ["WARNING"]
+
+
+def test_a_failed_reopen_degrades_to_keyword_search_with_a_warning(
+    tmp_path: Path,
+    store: DocumentStore,
+    docs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    server, _ = _stale_handle(tmp_path, store, docs)
+
+    def boom(*_: Any, **__: Any) -> None:
+        raise ValueError("cannot reopen")
+
+    monkeypatch.setattr(server._client, "get_or_create_collection", boom)
+    caplog.set_level("WARNING", logger=_STALE)
+
+    hits = search_documents("mitochondria", store=store, index=server)
+
+    assert not server.is_ready
+    assert hits  # keyword fallback still answers, labels intact
+    assert any("unavailable" in r.getMessage() for r in caplog.records)
+    caplog.clear()
+    server.index_chunks([DocumentChunk("q:0", "q", "/q.md", "Q", 0, "secret words here")])
+    assert caplog.records == []  # an unavailable index is skipped, not re-warned per call
+
+
+def test_index_chunks_failure_is_a_warning_with_counts_and_no_text(
+    tmp_path: Path,
+    store: DocumentStore,
+    docs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+
+    def boom(*_: Any, **__: Any) -> None:
+        raise ValueError("upsert exploded")
+
+    monkeypatch.setattr(index._col, "upsert", boom)
+    caplog.set_level("WARNING", logger=_STALE)
+
+    index.index_chunks([DocumentChunk("t:0", "t", "/t.md", "T", 0, "tripwire text")])
+
+    (record,) = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert "1 chunk(s)" in record.getMessage() and "tripwire" not in record.getMessage()
+
+
+def test_a_healthy_collection_logs_nothing_extra(
+    tmp_path: Path,
+    store: DocumentStore,
+    docs: dict[str, Path],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+    caplog.set_level("WARNING", logger=_STALE)
+
+    search_documents("mitochondria", store=store, index=index)
+    index.index_chunks([DocumentChunk("h:0", "h", "/h.md", "H", 0, "healthy chunk")])
+    index.delete_source("h")
+    reindex_all(store=store, index=index)
+
+    assert caplog.records == []
+
+
+def test_only_the_collection_not_found_error_triggers_a_reopen(
+    tmp_path: Path,
+    store: DocumentStore,
+    docs: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+    reopened: list[int] = []
+    monkeypatch.setattr(
+        index._client, "get_or_create_collection", lambda *a, **k: reopened.append(1)
+    )
+
+    def boom(*_: Any, **__: Any) -> None:
+        raise ValueError("some other chroma failure")
+
+    monkeypatch.setattr(index._col, "query", boom)
+
+    assert index.query("mitochondria") == []
+    assert reopened == []

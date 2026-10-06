@@ -95,8 +95,9 @@ def cmd_reindex(
         typer.Option(
             "--reset-collection",
             help="Delete and re-create the vector collection first, then rebuild it. "
-            "The repair after the embedding model changed. Stop a running IRIS server "
-            "before it and restart it after.",
+            "The repair after the embedding model changed. The CLI cannot detect a running "
+            "IRIS server: stop it before and restart it after (a running one recovers "
+            "on its next request, with a warning, but is best restarted).",
         ),
     ] = False,
 ) -> None:
@@ -124,8 +125,8 @@ def cmd_reindex(
     console.print(f"  [bold green]✓[/bold green]  rebuilt the vector index: {count} chunk(s)")
     if reset_collection:
         console.print(
-            "  [dim]restart any running IRIS server so it reopens the rebuilt index "
-            "(until then it searches by keyword)[/dim]"
+            "  [dim]restart any running IRIS server (this command cannot detect one); "
+            "until then it reopens the index on its next request, with a warning[/dim]"
         )
 
 

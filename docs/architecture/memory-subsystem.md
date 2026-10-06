@@ -55,9 +55,13 @@ collection, never `rag.db`, never a source file) and refills it from `store.iter
 so every source and chunk keeps its label; it applies the same empty-store refusal (and
 `--force`) before it deletes anything, and logs one INFO line with the chunk count. Unlike a
 plain rebuild, a reset invalidates other handles on the collection: the API server keeps
-one on `app.state` for its lifetime and nothing can detect it from the CLI, so stop the
-server before the reset and restart it after (until then it searches by keyword and does not
-index new chunks). There is no HTTP route for either `reindex` or the reset, by design.
+one on `app.state` for its lifetime. The CLI cannot detect a running server, so stop the
+server before the reset and restart it after. A server left running recovers on its next
+call: `DocumentIndex` catches Chroma's `chromadb.errors.NotFoundError` ("Collection [...]
+does not exist"), logs one WARNING, reopens the collection under the current embedder and
+retries once; if the reopen fails it marks the index unavailable (WARNING) and retrieval
+searches by keyword. A failed `index_chunks` now logs a WARNING with the chunk count (no
+text) instead of a debug line. There is no HTTP route for either `reindex` or the reset, by design.
 
 ## Components
 

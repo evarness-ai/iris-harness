@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,13 @@ logger = logging.getLogger(__name__)
 
 _COLLECTION = "iris_documents"
 _REBUILD_BATCH = 500  # chunks per upsert; well under Chroma's per-call maximum
+
+
+def _not_found_error() -> type[Exception]:
+    """Chroma's "collection does not exist" error, ``chromadb.errors.NotFoundError``."""
+    from chromadb.errors import NotFoundError
+
+    return NotFoundError  # type: ignore[no-any-return]
 
 
 @dataclass
@@ -79,8 +86,48 @@ class DocumentIndex:
     def is_ready(self) -> bool:
         return self._ok
 
+    def _call(self, op: Callable[[Any], Any]) -> Any:
+        """Run ``op(collection)``; if the collection was reset or removed, reopen and retry once.
+
+        ``iris docs reindex --reset-collection`` deletes and re-creates the collection from
+        another process, which leaves this process's handle pointing at a deleted one. Chroma
+        then raises ``chromadb.errors.NotFoundError`` ("Collection [...] does not exist").
+        That exact type (no other error) triggers one WARNING, one reopen under the current
+        embedder and one retry. If the reopen fails the index is marked unavailable, loudly,
+        so callers fall back to keyword search.
+        """
+        try:
+            return op(self._col)
+        except _not_found_error() as exc:
+            logger.warning(
+                "document index: the collection was reset or removed under this running "
+                "process; reopening it"
+            )
+            self._reopen_after_loss(exc)
+            return op(self._col)
+
+    def _reopen_after_loss(self, original: Exception) -> None:
+        from iris_harness.foundation.persistence.embedding import collection_kwargs
+
+        try:
+            self._col = self._client.get_or_create_collection(
+                _COLLECTION, metadata={"hnsw:space": "cosine"}, **collection_kwargs()
+            )
+        except Exception as exc:
+            self._ok = False
+            self.open_error = str(exc)
+            logger.warning(
+                "document index: reopening the collection failed (%s); the vector index is "
+                "unavailable until the process restarts, searching by keyword",
+                type(exc).__name__,
+            )
+            raise original from exc
+
     def _upsert(self, chunks: Sequence[DocumentChunk]) -> None:
-        self._col.upsert(
+        self._call(lambda col: self._upsert_into(col, chunks))
+
+    def _upsert_into(self, col: Any, chunks: Sequence[DocumentChunk]) -> None:
+        col.upsert(
             ids=[c.id for c in chunks],
             documents=[c.text for c in chunks],
             metadatas=[
@@ -103,15 +150,20 @@ class DocumentIndex:
         """Number of entries in the collection (0 when the index is unavailable)."""
         if not self._ok:
             return 0
-        return int(self._col.count())
+        return int(self._call(lambda col: col.count()))
 
     def index_chunks(self, chunks: Sequence[DocumentChunk]) -> None:
         if not self._ok or not chunks:
             return
         try:
             self._upsert(chunks)
-        except Exception:
-            logger.debug("document index: upsert failed", exc_info=True)
+        except Exception as exc:
+            logger.warning(
+                "document index: could not index %d chunk(s) (%s); they stay in the store and "
+                "return on the next `iris docs reindex`",
+                len(chunks),
+                type(exc).__name__,
+            )
 
     def rebuild(self, chunks: Iterable[DocumentChunk]) -> int:
         """Make the collection hold exactly ``chunks``; return how many were indexed.
@@ -141,9 +193,12 @@ class DocumentIndex:
             self._upsert(batch)
             wanted.update(c.id for c in batch)
             total += len(batch)
-        stale = [cid for cid in self._col.get(include=[])["ids"] if cid not in wanted]
+        stale = [
+            cid for cid in self._call(lambda col: col.get(include=[]))["ids"] if cid not in wanted
+        ]
         for i in range(0, len(stale), _REBUILD_BATCH):
-            self._col.delete(ids=stale[i : i + _REBUILD_BATCH])
+            ids = stale[i : i + _REBUILD_BATCH]
+            self._call(lambda col, ids=ids: col.delete(ids=ids))
         return total
 
     def reset_collection(self) -> None:
@@ -154,9 +209,10 @@ class DocumentIndex:
         the client, not ``rag.db``, no source file. The caller refills it with ``rebuild``.
 
         A reset invalidates any other handle on the old collection (a running server's
-        ``app.state.rag_handles`` index): that handle keeps pointing at the deleted
-        collection until its process restarts, so queries fall back to keyword search and
-        new chunks are not indexed. ``rebuild`` keeps handles valid; this does not.
+        ``app.state.rag_handles`` index). That handle recovers on its next call (``_call``:
+        one WARNING, one reopen, one retry; if the reopen fails it degrades to keyword
+        search), but a CLI cannot detect a running server, so stop it before a reset and
+        restart it after. ``rebuild`` keeps handles valid without any of this.
 
         Raises ``RuntimeError`` when Chroma itself is not in use (nothing to reset).
         """
@@ -181,7 +237,7 @@ class DocumentIndex:
         if not self._ok:
             return
         try:
-            self._col.delete(where={"source_id": source_id})
+            self._call(lambda col: col.delete(where={"source_id": source_id}))
         except Exception:
             logger.debug("document index: delete failed for %s", source_id, exc_info=True)
 
@@ -190,13 +246,13 @@ class DocumentIndex:
         if not self._ok or not text.strip():
             return []
         try:
-            count = self._col.count()
+            count = int(self._call(lambda col: col.count()))
             if count == 0:
                 return []
-            res = self._col.query(
-                query_texts=[text],
-                n_results=min(n, count),
-                include=["distances"],
+            res = self._call(
+                lambda col: col.query(
+                    query_texts=[text], n_results=min(n, count), include=["distances"]
+                )
             )
             ids: list[str] = res.get("ids", [[]])[0]
             dists: list[float] = res.get("distances", [[]])[0]

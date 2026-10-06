@@ -221,7 +221,12 @@ class ToolService:
         # rows that queued it. No turn label is stamped: this runs on the owner's answer,
         # outside the turn that queued it (POST_TOOL_USE still labels the call itself).
         call = ToolCall(
-            run_id=row.run_id, caller=row.caller, approved_by=row.approval_id, deferred=True
+            run_id=row.run_id,
+            caller=row.caller,
+            approved_by=row.approval_id,
+            deferred=True,
+            # A new call with its own id; the held attempt's is the row's (#134).
+            held_call_id=row.call_id,
         )
         outcome = runner.execute(tool, item.args, call)
         if outcome.status == "held":

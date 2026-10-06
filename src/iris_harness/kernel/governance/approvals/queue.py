@@ -17,6 +17,13 @@ if TYPE_CHECKING:
     from iris_harness.kernel.governance.audit import AuditLog
 
 
+def _with_call_id(payload: dict[str, object], call_id: str | None) -> dict[str, object]:
+    """An approval row's audit payload, naming the held call attempt it is about (#134)."""
+    if call_id:
+        payload["call_id"] = call_id
+    return payload
+
+
 class ApprovalQueue:
     """Thin facade: delegates to ApprovalStore, writes an audit row on every state change."""
 
@@ -44,6 +51,7 @@ class ApprovalQueue:
         items: tuple[ApprovalItem, ...] | None = None,
         card: ApprovalCard | None = None,
         caller: str | None = None,
+        call_id: str | None = None,
     ) -> ApprovalId:
         approval_id = self._store.enqueue(
             run_id,
@@ -57,6 +65,7 @@ class ApprovalQueue:
             items=items,
             card=card,
             caller=caller,
+            call_id=call_id,
         )
         if self._audit is not None:
             self._audit.record(
@@ -68,7 +77,9 @@ class ApprovalQueue:
                 decision="require_approval",
                 severity="warn",
                 reason=f"approval enqueued: signal={signal} channel={channel}",
-                payload={"approval_id": approval_id, "signal": signal, "channel": channel},
+                payload=_with_call_id(
+                    {"approval_id": approval_id, "signal": signal, "channel": channel}, call_id
+                ),
             )
         return approval_id
 
@@ -103,7 +114,7 @@ class ApprovalQueue:
                 decision=status,
                 severity="info",
                 reason=f"approval {status} by {actor}",
-                payload={"approval_id": approval_id, "actor": actor},
+                payload=_with_call_id({"approval_id": approval_id, "actor": actor}, row.call_id),
             )
         return row
 
@@ -120,7 +131,9 @@ class ApprovalQueue:
                 decision="claimed",
                 severity="info",
                 reason=f"approved call claimed to run for {row.caller}",
-                payload={"approval_id": approval_id, "caller": row.caller},
+                payload=_with_call_id(
+                    {"approval_id": approval_id, "caller": row.caller}, row.call_id
+                ),
             )
         return row
 
@@ -143,13 +156,16 @@ class ApprovalQueue:
             decision=f"call_{status}",
             severity="info" if status == "ran" else "warn",
             reason=f"approved call {status}: {tool} for {row.caller}",
-            payload={
-                "approval_id": row.approval_id,
-                "caller": row.caller,
-                "tool": tool,
-                "status": status,
-                "summary": summary,
-            },
+            payload=_with_call_id(
+                {
+                    "approval_id": row.approval_id,
+                    "caller": row.caller,
+                    "tool": tool,
+                    "status": status,
+                    "summary": summary,
+                },
+                row.call_id,
+            ),
         )
 
     def set_checkpoint(self, approval_id: str, checkpoint_id: str) -> ApprovalRow:
@@ -179,11 +195,14 @@ class ApprovalQueue:
                         f"approval timed out unanswered after {row.timeout_at[:19]} "
                         f"(signal={row.signal}, policy={row.policy_on_timeout})"
                     ),
-                    payload={
-                        "approval_id": row.approval_id,
-                        "signal": row.signal,
-                        "channel": row.channel,
-                        "policy_on_timeout": row.policy_on_timeout,
-                    },
+                    payload=_with_call_id(
+                        {
+                            "approval_id": row.approval_id,
+                            "signal": row.signal,
+                            "channel": row.channel,
+                            "policy_on_timeout": row.policy_on_timeout,
+                        },
+                        row.call_id,
+                    ),
                 )
         return rows

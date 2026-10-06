@@ -185,6 +185,11 @@ class ApprovalRow:
     # When the executor claimed the approved call to run it. Set once, atomically
     # (``claim_execution``), so an approved call runs at most once.
     executed_at: str | None = None
+    # The call id (ULID) of the HELD attempt that raised this approval (#134). The approved
+    # re-execution is a new call with its own id and records this one as ``held_call_id``,
+    # so both attempts join. None for a row written before the column, and for an approval
+    # no tool call raised (evaluator halts).
+    call_id: str | None = None
 
     @property
     def is_deferred_call(self) -> bool:
@@ -258,6 +263,15 @@ class ApprovalStore:
                 conn.execute("ALTER TABLE approval_queue ADD COLUMN caller TEXT")
             if "executed_at" not in columns:
                 conn.execute("ALTER TABLE approval_queue ADD COLUMN executed_at TEXT")
+            # #134: the id of the held call attempt. Nullable (older rows have none).
+            # Several processes open this file; the one that loses the race to ALTER
+            # sees "duplicate column name", which is the state it wanted.
+            if "call_id" not in columns:
+                try:
+                    conn.execute("ALTER TABLE approval_queue ADD COLUMN call_id TEXT")
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column" not in str(exc).lower():
+                        raise
             conn.commit()
 
     @staticmethod
@@ -280,6 +294,7 @@ class ApprovalStore:
             card=_card_from_json(r["card_json"] if "card_json" in r.keys() else None),
             caller=(r["caller"] if "caller" in r.keys() else None),
             executed_at=(r["executed_at"] if "executed_at" in r.keys() else None),
+            call_id=(r["call_id"] if "call_id" in r.keys() else None),
         )
 
     # ------------------------------------------------------------------
@@ -300,6 +315,7 @@ class ApprovalStore:
         items: tuple[ApprovalItem, ...] | None = None,
         card: ApprovalCard | None = None,
         caller: str | None = None,
+        call_id: str | None = None,
     ) -> ApprovalId:
         approval_id = str(uuid.uuid4())
         now = datetime.now(UTC)
@@ -310,8 +326,8 @@ class ApprovalStore:
                 INSERT INTO approval_queue
                     (approval_id, run_id, checkpoint_id, signal, context_summary,
                      requested_at, channel, status, timeout_at, policy_on_timeout,
-                     session_id, items_json, card_json, caller)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+                     session_id, items_json, card_json, caller, call_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     approval_id,
@@ -327,6 +343,7 @@ class ApprovalStore:
                     _items_to_json(items),
                     _card_to_json(card),
                     caller,
+                    call_id,
                 ),
             )
             conn.commit()

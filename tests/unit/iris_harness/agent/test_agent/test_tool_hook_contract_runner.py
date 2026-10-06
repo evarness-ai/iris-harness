@@ -23,6 +23,7 @@ import pytest
 
 from iris_harness.agent.agentic_core import ToolSpec
 from iris_harness.agent.tool_runner import GovernedToolRunner, ToolCall, ToolOutcome
+from iris_harness.foundation.ids import is_ulid
 from iris_harness.kernel.governance import GovernanceKernel
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.plugins.prompt_guard import (
@@ -102,7 +103,8 @@ def test_a_write_call_is_recorded_under_its_run_step_and_call(tmp_path: Path) ->
     (row,) = world.ledger.list_by_run("run-1")
     assert row.tool == "add_note" and row.step_id == 2
     run_id, step, call_id = row.side_effect_id.split(":")
-    assert (run_id, step) == ("run-1", "2") and len(call_id) == 12
+    # The call part is the runner's minted ULID (#134; it was uuid4().hex[:12], 12 characters).
+    assert (run_id, step) == ("run-1", "2") and is_ulid(call_id)
     # No probe declared: resume cannot tell whether it landed, so it asks the owner.
     assert row.verification_probe == ""
     assert run_probe(row.verification_probe, row.probe_subject, row.probe_metadata) == ("ambiguous")

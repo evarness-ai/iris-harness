@@ -40,7 +40,10 @@ First public release of the IRIS harness.
   back and rescanned with each new line, a long line is force-scanned at 64 KB), so a phrase
   split across up to two line breaks is caught; the planner's progress text, the command in
   the activity hint, trace and log, and artifact file names (including the "Artifacts:"
-  block on every path) are scanned too. Known limit: the session log's `llm_call` record of
+  block on every path) are scanned too. These calls honour
+  `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR` (off: verbatim) and a run writes at most three
+  counts-only ledger rows however many lines match (later matches are redacted and logged
+  once). Known limit: the session log's `llm_call` record of
   the planner's raw prompt and reply is a log, not a prompt, and is not scanned.
 - The retrieved-content guard's `guard unavailable` ledger row now records the tool, how
   many segments went unscanned, and the classifier's backend and detail. Docs and manifest
@@ -57,7 +60,10 @@ First public release of the IRIS harness.
   applies the floor's tripwire and envelope (the kernel's own implementation) to external text
   that plugin code puts into a prompt of its own. Idempotent and offline.
   `iris_harness.sdk.content.redact_external_content(text)` is the same tripwire without the
-  envelope, for text a plugin shows the owner or logs rather than hands to a model.
+  envelope, for text a plugin shows the owner or logs rather than hands to a model. It goes
+  through the kernel's `redact_text`, so it honours `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`
+  (off: the text comes back unchanged) and each matching call writes one counts-only ledger
+  row.
 - All nine email skill tools (`email-triage`: `email_inbox_summary`, `email_focus`,
   `email_needs_reply`, `email_judged_yesterday`, `classify_email_by_id`, `run_email_triage`;
   `gmail-inbox`: `fetch_new_emails`; `email-followup`: `detect_followups`,

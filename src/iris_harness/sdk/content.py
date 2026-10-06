@@ -10,7 +10,8 @@ the tripwire (instruction-like spans replaced by a visible marker) and the
 implementation (``kernel/governance/external_content.py``), not a copy, and runs offline.
 
 :func:`redact_external_content` is the tripwire without the envelope, for text a plugin
-shows the owner, returns to a channel or logs rather than hands to a model.
+shows the owner, returns to a channel or logs rather than hands to a model. It honours the
+external-content floor setting and writes one counts-only ledger row per matching call.
 
     from iris_harness.sdk.content import wrap_external_content
 
@@ -19,7 +20,13 @@ shows the owner, returns to a channel or logs rather than hands to a model.
 
 from __future__ import annotations
 
-from iris_harness.kernel.governance.external_content import ENVELOPE_TAG, scan, unwrap, wrap
+from iris_harness.kernel.governance.external_content import (
+    ENVELOPE_TAG,
+    redact_text,
+    scan,
+    unwrap,
+    wrap,
+)
 
 
 def wrap_external_content(text: str, *, source: str, tool: str | None = None) -> str:
@@ -40,12 +47,14 @@ def redact_external_content(text: str) -> str:
     """``text`` with instruction-like spans redacted, and no envelope.
 
     The tripwire alone, for text a plugin keeps for itself or shows the owner (a result it
-    returns to a channel, a note it stores) rather than hands to a model: the same
-    :func:`~iris_harness.kernel.governance.external_content.scan` the floor runs, so a
-    plugin that executes code over third-party data redacts its output the way a declared
-    ``content: external`` tool's result is. Idempotent. No model, no network.
+    returns to a channel, a note it stores) rather than hands to a model: the floor's own
+    scan, through the kernel's one tripwire-only helper. It honours
+    ``IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR``: with the floor off the very same string
+    comes back, untouched. A call that matches writes ONE counts-only ledger row (pattern
+    ids and counts, never the text) and a warning, so a plugin that calls it per chunk or
+    per line should batch (see the ``code_exec`` plugin). Idempotent. No model, no network.
     """
-    return scan(text).text
+    return redact_text(text, source="sdk:plugin", caller="plugin")
 
 
 __all__ = ["redact_external_content", "wrap_external_content"]

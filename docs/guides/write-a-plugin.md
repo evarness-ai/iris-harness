@@ -77,8 +77,11 @@ prompt = f"Summarise:\n{wrap_external_content(result.text, source='my_plugin', t
 
 For text you show the owner, return to a channel or log (not hand to a model), use
 `redact_external_content(text)` from the same module: it is the tripwire without the
-envelope. Streamed text needs care: a phrase can be split across chunks, so scan whole
-lines (with an overlap), not each chunk.
+envelope. It honours `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR` (floor off: the text comes
+back unchanged) and writes one counts-only ledger row (pattern ids and counts, never the
+text) for each call that matches, so batch the calls (do not call it per character or per
+chunk). Streamed text needs care: a phrase can be split across chunks, so scan whole lines
+(with an overlap), not each chunk.
 
 ## The six registration kinds
 

@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from iris_harness.kernel.governance.external_content import scan
+from iris_harness.kernel.governance.external_content import redact_text
 from iris_harness.memory.knowledge.models import WikiIngestEvent
 from iris_harness.memory.knowledge.wiki_engine import WikiEngine
 from iris_harness.memory.store import LearningSignal, MemoryStore
@@ -71,13 +71,14 @@ def _redact(text: str) -> str:
 
 
 def _tripwire(text: str) -> str:
-    """The external-content floor's tripwire (one implementation: ``external_content.scan``).
+    """The external-content floor's tripwire (the kernel's ``redact_text``: honours the floor
+    setting, one counts-only ledger row per match).
 
-    A lesson is a note the planner wrote about a run whose output can be derived from
-    third-party data, and it is stored and re-injected into later planner prompts, so
-    instruction-like spans are redacted on the way in and on the way out (issue #140).
+        A lesson is a note the planner wrote about a run whose output can be derived from
+        third-party data, and it is stored and re-injected into later planner prompts, so
+        instruction-like spans are redacted on the way in and on the way out (issue #140).
     """
-    return scan(text).text if text else text
+    return redact_text(text, source="lesson", caller="core:lesson_capture")
 
 
 def _redact_lesson(lesson: Lesson) -> Lesson:

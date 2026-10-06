@@ -14,6 +14,7 @@ scope (``_friendly_llm_error``, ``_safe_int_env``) came with it.
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import logging
 import os
@@ -66,14 +67,81 @@ from iris_harness.sdk.types import (
 logger = logging.getLogger(__name__)
 
 
+#: Matching calls per run that go through the SDK helper (one counts-only ledger row each).
+_AUDITED_MATCHES_PER_RUN = 3
+_MEMO_MAX_CHARS = 4096
+_ENV_TAG = "external_content"
+
+
+class _RunRedaction:
+    """Per-run bookkeeping so one hostile run writes a bounded number of ledger rows.
+
+    ``redact_external_content`` writes one row per matching call and this plugin calls it
+    per streamed line, hint and trace line. The first ``_AUDITED_MATCHES_PER_RUN`` matches
+    of a run go through it (so the ledger shows the run was hostile, with counts); later
+    matches are redacted by the same scan without a row and only counted. Identical texts
+    are memoised. What is redacted is the same either way.
+    """
+
+    def __init__(self) -> None:
+        self.audited = 0
+        self.quiet_hits = 0
+        self.memo: dict[str, str] = {}
+
+
+_RUN: contextvars.ContextVar[_RunRedaction | None] = contextvars.ContextVar(
+    "code_exec_run_redaction", default=None
+)
+
+
+def _begin_run() -> None:
+    """Start a fresh budget; called at the top of every handler run."""
+    _RUN.set(_RunRedaction())
+
+
+def _quiet_scan(text: str) -> str:
+    """The SDK's tripwire without a ledger row: ``wrap_external_content`` minus its envelope."""
+    wrapped = wrap_external_content(text, source="code_exec", tool="redact")
+    body = wrapped.split("\n", 1)[1].rsplit(f"\n</{_ENV_TAG}>", 1)[0]
+    return body
+
+
 def _redact_owner_text(text: str) -> str:
     """The ONE entry point for scanning text this plugin shows the owner or logs.
 
     Every owner-facing site goes through here (streamed prose, the answer, activity hints,
     trace lines, the logged command, artifact names), so what scans it can change in one
-    place. Today it is the SDK's tripwire without the envelope.
+    place. It is the SDK's tripwire without the envelope, which honours the floor setting;
+    per run the ledger rows are bounded (see :class:`_RunRedaction`).
     """
-    return redact_external_content(text)
+    if not text:
+        return text
+    run = _RUN.get()
+    if run is None:
+        run = _RunRedaction()
+        _RUN.set(run)
+    if text in run.memo:
+        return run.memo[text]
+    # The quiet path only for text it reproduces exactly: a literal envelope tag in the
+    # text would be escaped or unwrapped by the wrapper, so that text always takes the
+    # audited path.
+    if run.audited < _AUDITED_MATCHES_PER_RUN or _ENV_TAG in text:
+        out = redact_external_content(text)
+        if out is not text:
+            run.audited += 1
+    else:
+        out = _quiet_scan(text)
+        if out != text:
+            run.quiet_hits += 1
+            if run.quiet_hits == 1:
+                logger.warning(
+                    "code_exec: further instruction-like spans redacted this run "
+                    "(ledger rows capped at %d per run)",
+                    _AUDITED_MATCHES_PER_RUN,
+                )
+    if len(text) <= _MEMO_MAX_CHARS and len(run.memo) < 1024:
+        run.memo[text] = out
+    return out
 
 
 #: Complete lines kept back from emission, so a phrase split across up to two line breaks
@@ -1155,6 +1223,7 @@ def _make_code_exec_handler(
         yield ("" if prose_was_streamed else final_answer, meta)  # type: ignore[misc]
 
     def handler(task: AgentTask) -> tuple[str, dict[str, object]]:
+        _begin_run()
         narration: list[str] = []
         answer = ""
         meta: dict[str, object] = {}
@@ -1176,6 +1245,7 @@ def _make_code_exec_handler(
         return answer, meta
 
     def stream_handler(task: AgentTask) -> Iterator[StreamChunk]:
+        _begin_run()
         prose = _ProseRedactor()
         try:
             for chunk in _run_loop_gen(task):

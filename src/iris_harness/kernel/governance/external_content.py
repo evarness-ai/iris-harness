@@ -75,13 +75,20 @@ def floor_setting_problem() -> str | None:
 #: What replaces a span the tripwire matched.
 MARKER = "[redacted: instruction-like text in external content]"
 
-#: Most spans redacted one by one in a text. Past this, the rest of the text collapses into
-#: ONE marker that says how many further spans it held (:func:`_collapsed_marker`). Every
-#: match used to become the 52-character :data:`MARKER`, so a hostile 100 KB of ``[INST] ``
-#: (14,285 matches) grew to ~771 KB. The shipped samples redact at most a handful of spans
-#: (see ``test_external_content_floor.py``); 64 is far above any real text and bounds the
-#: marker cost at 64 x 52 = ~3.3 KB per pass.
+#: Most spans that get the full-size :data:`MARKER` in one text. Every match used to become
+#: the 52-character :data:`MARKER`, so a hostile 100 KB of ``[INST] `` (14,285 matches) grew
+#: to ~771 KB. Past this, each further span is still redacted, but with the short
+#: :data:`SHORT_MARKER`, and the benign text between spans is KEPT: a cap that dropped the
+#: rest of the text would let one hostile item erase the legitimate content after it. The
+#: shipped samples redact at most a handful of spans (see ``test_external_content_floor.py``);
+#: 64 is far above any real text.
 MAX_REDACTIONS = 64
+
+#: What replaces each span after the :data:`MAX_REDACTIONS`-th (3 characters, so the output
+#: stays within 3x the input however many spans there are). It is a plain string no tripwire
+#: pattern matches, so scanning an already-scanned text is a no-op; the full marker is what
+#: tells the reader the text was altered, and the span count is in the ledger row.
+SHORT_MARKER = "[~]"
 
 #: The tag that wraps an external result.
 ENVELOPE_TAG = "external_content"
@@ -260,11 +267,6 @@ def _extent(text: str, end: int) -> int:
     return found.start() if found.group(0) == "\n" else found.start() + 1
 
 
-def _collapsed_marker(further: int) -> str:
-    """The one marker standing for everything after the :data:`MAX_REDACTIONS`-th span."""
-    return f"[redacted: {further} further instruction-like spans in external content]"
-
-
 def _redact(text: str, patterns: tuple[FloorPattern, ...]) -> tuple[str, list[str], int]:
     spans: list[tuple[int, int, str]] = []
     for pattern in patterns:
@@ -284,13 +286,7 @@ def _redact(text: str, patterns: tuple[FloorPattern, ...]) -> tuple[str, list[st
     cursor = 0
     for index, (start, end) in enumerate(merged):
         out.append(text[cursor:start])
-        if index == MAX_REDACTIONS:
-            # Over the cap: the rest of the text (never left raw) becomes one marker. The
-            # span count and the pattern ids below still cover every span found.
-            out.append(_collapsed_marker(len(merged) - MAX_REDACTIONS))
-            cursor = len(text)
-            break
-        out.append(MARKER)
+        out.append(MARKER if index < MAX_REDACTIONS else SHORT_MARKER)
         cursor = end
     out.append(text[cursor:])
     ids = [p.id for p in patterns if any(s[2] == p.id for s in spans)]
@@ -303,7 +299,8 @@ def scan(text: str) -> ScanResult:
     The character patterns run on the text as it came; the phrase patterns run on it with
     zero-width characters folded out. The text is returned unchanged (the very same
     string) when nothing matched, so a result with an incidental invisible character is
-    not rewritten.
+    not rewritten. Past :data:`MAX_REDACTIONS` spans in one pass the rest are replaced by
+    :data:`SHORT_MARKER` and the text between them is kept.
     """
     hidden = tuple(p for p in PATTERNS if p.id in _HIDDEN_IDS)
     phrases = tuple(p for p in PATTERNS if p.id not in _HIDDEN_IDS)
@@ -311,11 +308,6 @@ def scan(text: str) -> ScanResult:
     folded = _FOLD_RE.sub("", after_hidden)
     after_phrases, phrase_ids, phrase_spans = _redact(folded, phrases)
     rewritten = phrase_spans > 0
-    if hidden_spans > MAX_REDACTIONS:
-        # The hidden pass collapsed the tail into one marker, so the phrase pass never saw
-        # what was in it. Count it from the text as it came (the result is discarded): the
-        # ids and the span count stay accurate, and the tail is already redacted.
-        _, phrase_ids, phrase_spans = _redact(_FOLD_RE.sub("", text), phrases)
     spans = hidden_spans + phrase_spans
     if spans == 0:
         return ScanResult(text, (), 0)
@@ -323,6 +315,18 @@ def scan(text: str) -> ScanResult:
     out = after_phrases if rewritten else after_hidden
     ids = (*hidden_ids, *phrase_ids)
     return ScanResult(out, ids, spans)
+
+
+#: Longest ``source`` / ``tool`` label that is logged or written to the ledger.
+_MAX_LABEL = 200
+
+_LABEL_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+
+
+def _clean_label(value: str) -> str:
+    """``value`` safe to log and write: control characters (newlines included) become one
+    space and the length is capped, so a label cannot inject a log line or a huge row."""
+    return _LABEL_CONTROL_RE.sub(" ", str(value))[:_MAX_LABEL]
 
 
 def redact_text(text: str, *, source: str, tool: str | None = None, caller: str = "core") -> str:
@@ -341,6 +345,8 @@ def redact_text(text: str, *, source: str, tool: str | None = None, caller: str 
     found = scan(text)
     if not found.matched:
         return text
+    source = _clean_label(source)
+    tool = _clean_label(tool) if tool is not None else None
     logger.warning(
         "external_content_floor: redacted %d span(s) (%s) in text from %s%s",
         found.spans,
@@ -427,6 +433,7 @@ __all__ = [
     "EXTERNAL_CONTENT_FLOOR_FLAG",
     "MARKER",
     "MAX_REDACTIONS",
+    "SHORT_MARKER",
     "PATTERNS",
     "FloorPattern",
     "ScanResult",

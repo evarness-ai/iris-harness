@@ -161,7 +161,14 @@ _FIXED_BASE_URLS: dict[str, str] = {
     "anthropic": "https://api.anthropic.com/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "github": "https://models.inference.ai.azure.com",
+    # The same endpoint llm/client.py's PROVIDER_DEFAULTS["copilot"] dials; the call
+    # authenticates through auth_mode="copilot" (llm/copilot_auth.py), not an API key.
+    "copilot": "https://api.githubcopilot.com",
 }
+
+
+def _known_providers() -> list[str]:
+    return sorted((*_ENV_BASE_URLS, *_FIXED_BASE_URLS))
 
 
 def _provider_base_url(provider: str) -> str:
@@ -175,7 +182,7 @@ def _provider_base_url(provider: str) -> str:
         return resolver()
     fixed = _FIXED_BASE_URLS.get(provider)
     if fixed is None:
-        known = ", ".join(sorted((*_ENV_BASE_URLS, *_FIXED_BASE_URLS)))
+        known = ", ".join(_known_providers())
         raise ConfigurationError(f"unknown model provider {provider!r}; expected one of: {known}")
     return fixed
 
@@ -304,9 +311,16 @@ class TierRouter:
                     think=think,
                     pinned=bool(cfg.get("pinned", False)),
                 )
+                if tier.provider not in _known_providers():
+                    raise ConfigurationError(
+                        f"tier {tier_name!r} names unknown model provider {tier.provider!r}; "
+                        f"expected one of: {', '.join(_known_providers())}"
+                    )
                 router._tiers[tier_name] = tier
                 for tag in use_for:
                     router._intent_to_tier.setdefault(tag, tier_name)
+        except ConfigurationError:
+            raise
         except Exception:
             logger.exception("failed to load llm_tiers.yaml from %s; using defaults", path)
         router._declared_tiers = dict(router._tiers)
@@ -328,6 +342,11 @@ class TierRouter:
         provider = raw.strip().lower()
         if not provider:
             return
+        if provider not in _known_providers():
+            raise ConfigurationError(
+                f"{FORCED_PROVIDER_ENV}={raw!r} is not a known model provider; "
+                f"expected one of: {', '.join(_known_providers())}"
+            )
         if provider not in self.provider_localities():
             logger.warning(
                 "%s=%r names a provider llm_tiers.yaml does not declare; ignoring it",
@@ -431,7 +450,7 @@ class TierRouter:
         return self._build_llm_config(tier, tier_name)
 
     def _build_llm_config(self, tier: TierConfig, resolved_tier_name: str) -> object:
-        from iris_harness.llm.client import CodingLLMConfig
+        from iris_harness.llm.client import PROVIDER_DEFAULTS, CodingLLMConfig
 
         if self.governor is not None and tier.provider == "ollama" and not tier.pinned:
             current_name = resolved_tier_name
@@ -443,6 +462,11 @@ class TierRouter:
                     resolved_tier_name = recommended_name
         base_url = _provider_base_url(tier.provider)
         api_key_env = _PROVIDER_API_KEY_ENVS.get(tier.provider)
+        # A provider with its own sign-in (Copilot's token exchange) carries the auth
+        # mode and headers its client preset declares; the rest are static-key.
+        preset = PROVIDER_DEFAULTS.get(tier.provider)
+        auth_mode = preset.auth_mode if preset is not None else "static"
+        default_headers = preset.default_headers if preset is not None else ()
         if self.governor is not None and tier.provider == "ollama":
             try:
                 self.governor.acquire(tier.model)  # type: ignore[attr-defined]
@@ -459,6 +483,8 @@ class TierRouter:
             ),
             base_url=base_url,
             api_key_env=api_key_env,
+            auth_mode=auth_mode,
+            default_headers=default_headers,
             temperature=tier.temperature,
             max_tokens=tier.max_tokens,
             timeout_seconds=tier.timeout_seconds,

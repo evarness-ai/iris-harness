@@ -559,6 +559,11 @@ def test_a_forced_rebuild_of_an_empty_store_drops_the_mirror_not_the_labels_else
 _STALE = "iris_harness.services.rag.index"
 
 
+def _warned(caplog: pytest.LogCaptureFixture) -> list[Any]:
+    """Records at WARNING or above (other INFO lines may share the logger in a full run)."""
+    return [r for r in caplog.records if r.levelno >= 30]
+
+
 def _stale_handle(
     tmp_path: Path, store: DocumentStore, docs: dict[str, Path]
 ) -> tuple[DocumentIndex, DocumentIndex]:
@@ -586,7 +591,7 @@ def test_a_handle_opened_before_a_reset_recovers_with_one_warning(
     assert len(warnings) == 1 and "reset or removed" in warnings[0].getMessage()
     caplog.clear()
     search_documents("mitochondria", store=store, index=server)  # now healthy: silent
-    assert caplog.records == []
+    assert _warned(caplog) == []
     assert set(_snapshot(server)) == set(_snapshot(cli))
 
 
@@ -603,7 +608,7 @@ def test_index_chunks_after_a_reset_recovers(
     server.index_chunks([extra])
 
     assert "zz:0" in _snapshot(server)  # the retry landed in the rebuilt collection
-    assert [r.levelname for r in caplog.records] == ["WARNING"]
+    assert [r.levelname for r in _warned(caplog)] == ["WARNING"]
 
 
 def test_a_failed_reopen_degrades_to_keyword_search_with_a_warning(
@@ -628,7 +633,7 @@ def test_a_failed_reopen_degrades_to_keyword_search_with_a_warning(
     assert any("unavailable" in r.getMessage() for r in caplog.records)
     caplog.clear()
     server.index_chunks([DocumentChunk("q:0", "q", "/q.md", "Q", 0, "secret words here")])
-    assert caplog.records == []  # an unavailable index is skipped, not re-warned per call
+    assert _warned(caplog) == []  # an unavailable index is skipped, not re-warned per call
 
 
 def test_index_chunks_failure_is_a_warning_with_counts_and_no_text(
@@ -666,7 +671,7 @@ def test_a_healthy_collection_logs_nothing_extra(
     index.delete_source("h")
     reindex_all(store=store, index=index)
 
-    assert caplog.records == []
+    assert _warned(caplog) == []
 
 
 def test_only_the_collection_not_found_error_triggers_a_reopen(

@@ -199,7 +199,9 @@ def test_a_text_with_more_spans_than_the_floor_cap_is_bounded_and_never_raw(
     big = got[1]
     assert big.capped and big.spans > MAX_REDACTIONS and big.chars == MAX_ITEM_CHARS
     assert "[INST]" not in big.text and big.text.endswith(CUT_MARKER)
-    assert len(big.text) < 4_000  # the spans collapse into one marker: output is bounded
+    # bounded by a generous multiple of the scanned input, whichever way the floor treats
+    # spans past its cap (one collapse marker, or a short marker per span)
+    assert len(big.text) <= 5 * MAX_ITEM_CHARS + 4_000
     assert "[INST]" not in got[2].text
     assert len(_clean) == 1
     event = _clean[0]

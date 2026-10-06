@@ -4,7 +4,7 @@ Each tool is declared in ``manifest.yaml``, and the declaration -- not the code 
 decides how it is governed:
 
 * ``list_notes`` -- ``effect: read``, ``content: external``: other people write the
-  notes, so every result is scanned for injected instructions before the model sees it;
+  notes, so every result is marked untrusted and tripwire-scanned before the model sees it;
 * ``pin_note`` -- ``effect: write``, ``confirm: once``: a change, asked about once;
 * ``remove_note`` -- ``effect: destructive``: nothing is removed until the owner approves
   the exact call on an approval card, which ``describe`` fills in from the board.

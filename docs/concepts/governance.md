@@ -100,7 +100,11 @@ the model, or an MCP client, as
 `source` is the plugin, `skill:<name>` or `mcp:<server>` that owns the tool, or the
 tool's own name for a core tool. The text inside is not changed. It is applied to every
 external result, so it has no false positives. A literal `<external_content` or
-`</external_content` in the text is escaped, so a page cannot close the envelope early. A
+`</external_content` in the text is escaped, so a page cannot close the envelope early. The
+envelope is for text a model reads: the loop's calls and an `iris mcp serve` client's. A call
+by plugin or core code (`api.tools`, caller `plugin:<name>` or `core:<workflow>`) gets the
+tripwire and no envelope, because that code may show the text to the owner or parse it;
+code that hands an external result to a model should wrap it itself. A
 tool that raised is not wrapped (the loop reads its `Error:` prefix); an empty result is
 not wrapped; an MCP server's structured result has its text parts wrapped and its shape
 kept. A capability result is typed data read by plugin code, redacted field by field, so

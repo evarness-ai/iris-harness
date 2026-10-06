@@ -22,6 +22,13 @@ receives), so it gets the tripwire and not the envelope: wrapping a number or a 
 would break the type. The consumer's own tool that hands that text on declares
 ``content: external`` itself and is wrapped there. A tool that raised is not wrapped (its
 message is the harness's, and the loop reads its ``Error:`` prefix); it is still scanned.
+
+A call by plugin or core *code* (``plugin:<name>`` / ``core:<workflow>``, through
+``api.tools``) gets the tripwire and not the envelope: its caller is code that may show the
+text to the owner or parse it (the email agent's fallback answers with a tool's output), and
+markup there would leak into the answer. The marker is for text a model reads (the loop's
+``model:<agent>`` calls and an MCP client's ``mcp:<client>`` calls); code that hands an
+external result to a model itself marks it with ``external_content.wrap``.
 """
 
 from __future__ import annotations
@@ -44,6 +51,9 @@ logger = logging.getLogger(__name__)
 
 #: ``tool_plugin`` of a tool the core provides; it names no source worth showing.
 _SYSTEM = "system"
+
+#: Callers that are code, not a model (``tool_service``: ``plugin:<name>``, ``core:<workflow>``).
+_CODE_CALLERS = ("plugin:", "core:")
 
 #: Keys whose string value, inside a structured result, is text a model reads.
 _TEXT_KEYS = frozenset({"text", "content", "output", "result", "body"})
@@ -70,7 +80,11 @@ class ExternalContentFloorHook:
             return self._typed(ctx, fields, audit)
 
         result = result_of(ctx.payload)
-        wrapped = ctx.metadata.get(TOOL_ERROR) is None
+        caller = ctx.metadata.get("caller")
+        # No envelope for a tool that raised, nor for code that is not a model (see above).
+        wrapped = ctx.metadata.get(TOOL_ERROR) is None and not (
+            isinstance(caller, str) and caller.startswith(_CODE_CALLERS)
+        )
         if isinstance(result, str):
             return self._text(ctx, result, audit, wrap_it=wrapped)
         if isinstance(result, (dict, list)):

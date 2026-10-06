@@ -15,6 +15,7 @@ First public release of the IRIS harness.
   `content: external` is now marked and scanned on every install.** The new
   external-content floor needs no model, no weights and no network. An external result
   reaches the model inside an `<external_content source=... trust="untrusted">` envelope,
+  (not for plugin or core code calling through `api.tools`, which gets the redaction only),
   and a short list of deterministic patterns (instruction overrides, chat-template and
   tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger
   row naming the pattern ids, the tool and the source, never the text. It is on by default

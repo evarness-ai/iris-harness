@@ -149,6 +149,32 @@ def test_the_floor_wraps_after_the_model_guard_so_its_redaction_survives(
     assert inner == "Hello.\n\n[redacted: possible prompt injection]"
 
 
+def test_code_calling_a_tool_gets_the_tripwire_but_not_the_envelope(tmp_path: Path) -> None:
+    caller = "core:digest"
+    """``api.tools`` callers (``core:`` here; ``plugin:`` in the hook test) are code (the email agent's fallback answers the owner with a
+    tool's text): markup there would leak into the answer, so they get the redaction only."""
+    tool = ToolSpec("fetch_page", "d", lambda a: PAGE, content="external")
+    outcome = GovernedToolRunner(kernel=_kernel(tmp_path), agent_type=caller).execute(
+        tool, {}, ToolCall(run_id="run-1", caller=caller)
+    )
+    assert MARKER in outcome.text and "evil@example.com" not in outcome.text
+    assert "<external_content" not in outcome.text
+    assert outcome.text.startswith("Weather is mild today.")
+    (row,) = [r for r in _floor_rows(tmp_path) if "patterns" in r]
+    assert row["marked"] is False
+
+
+def test_a_tool_service_call_for_a_plugin_is_not_wrapped_but_a_clients_is(
+    tmp_path: Path,
+) -> None:
+    from iris_harness.runtime.tool_service import ToolService
+
+    tool = ToolSpec("fetch_page", "d", lambda a: "plain page", content="external")
+    kernel = _kernel(tmp_path)
+    service = ToolService(tools=lambda: [tool], kernel=lambda: kernel)
+    assert service.call_for_client("mcp:desk", tool, {}).text.startswith("<external_content ")
+
+
 # ================================================================== a capability call
 @dataclasses.dataclass(frozen=True)
 class Period:

@@ -213,3 +213,29 @@ def test_docs_remove_is_reported_to_the_source(_isolated: None, tmp_path: Path) 
 
     assert result.exit_code == 0, result.stdout
     assert [(d.path, d.reason) for d in rec.removed] == [(note.resolve(), "removed")]
+
+
+def test_docs_sync_prunes_a_file_deleted_since_the_last_sync(
+    _isolated: None, tmp_path: Path
+) -> None:
+    """``iris docs sync`` takes a vanished file out of RAG and tells the source (issue #130)."""
+    gone = tmp_path / "gone.md"
+    kept = tmp_path / "kept.md"
+    gone.write_text("# Gone\n\nA note that will be deleted.")
+    kept.write_text("# Kept\n\nA note that stays.")
+    rec = Recorder()
+    previous = current_ingest_source()
+    try:
+        register_ingest_source(rec)
+        assert runner.invoke(docs_app, ["add", str(gone)]).exit_code == 0
+        assert runner.invoke(docs_app, ["add", str(kept)]).exit_code == 0
+        gone.unlink()
+        result = runner.invoke(docs_app, ["sync"])
+    finally:
+        register_ingest_source(previous)
+
+    assert result.exit_code == 0, result.stdout
+    assert "1 removed" in " ".join(result.stdout.split())
+    assert [(d.path, d.reason) for d in rec.removed] == [(gone.resolve(), "removed")]
+    assert [s.path for s in DocumentStore().list_sources()] == [str(kept.resolve())]
+    assert kept.exists()

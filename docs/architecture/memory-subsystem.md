@@ -33,7 +33,10 @@ different route. The canonical chunk text and each chunk's classification live i
 `iris_documents` only mirrors the stored chunks. If `data/chroma_docs` is lost or damaged,
 `iris docs reindex` (`reindex_all`) rebuilds it from `rag.db` without reading any source
 file. `iris docs sync` is not a rebuild: it skips files whose mtime or hash is unchanged, so
-it never refills an empty index. If `rag.db` is lost instead, re-run `iris docs add <path>`
+it never refills an empty index. It does prune: a registered file that is gone from disk
+is removed from the store and the index and reported to the file domain (`removed`), but
+only when its parent folder is readable; otherwise (an unmounted volume) it is left alone and
+counted as unavailable. If `rag.db` is lost instead, re-run `iris docs add <path>`
 for each source; chunks ingested that way carry no classification stamp unless they go
 back through the ingest gate (`execute_rag_ingest`), which is what sets it.
 

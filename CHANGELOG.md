@@ -175,6 +175,16 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- `iris docs sync` (`sync_all`) removes a registered file that is gone from disk: its chunks
+  and index entries are dropped and the file domain is told (`removed`), the same as
+  `iris docs remove`. Before, a deleted file stayed searchable and the file domain kept
+  listing it as indexed (issue #130). It prunes at once, but only when the file's parent
+  directory exists and can be read: if the parent is missing or unreadable (an unmounted
+  volume, a dropped share, a denied folder) nothing is pruned or reported, the entry is
+  counted in `sources_unavailable` (the summary says "N skipped: location unavailable") and
+  one warning says how many. Only RAG's own entries are removed, never a file. `IngestResult`
+  gains defaulted `sources_removed` and `sources_unavailable` counts.
+
 - A document index made under a different embedding model can be repaired (issue #144).
   Chroma refuses to reopen the persisted collection under a new embedder, so the index was
   unavailable, retrieval fell back to keyword search and `iris docs reindex` could not

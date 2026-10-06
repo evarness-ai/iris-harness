@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import stat
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -356,6 +358,32 @@ def ingest_path(
     )
 
 
+def _vanished(path: str) -> bool | None:
+    """Whether a registered file is gone: True, False (it is there), or None (cannot tell).
+
+    Gone means the file is missing while its parent directory exists and can be read. A
+    missing or unreadable parent (an unmounted volume, a dropped share, a denied folder),
+    or any other error checking the file, is None: the file may well be there, so the
+    caller leaves its entries alone.
+    """
+    try:
+        os.stat(path)
+        return False
+    except (FileNotFoundError, NotADirectoryError):
+        pass
+    except OSError:
+        return None
+    parent = os.path.dirname(path)
+    try:
+        if not stat.S_ISDIR(os.stat(parent).st_mode):
+            return None
+        with os.scandir(parent):
+            pass
+    except OSError:
+        return None
+    return True
+
+
 def sync_all(
     *,
     store: DocumentStore,
@@ -366,10 +394,30 @@ def sync_all(
 
     Each file is classified again when its content changed (or when it has no label
     yet); see ``ingest_path``.
+
+    A registered file that is gone from disk is pruned at once, but only when its parent
+    directory exists and can be read: its chunks and index entries are removed and the
+    file domain is told (``report_removed``, reason ``removed``), the same as ``iris docs
+    remove``. Only RAG's own entries go; the file is never touched. When the location is
+    unavailable (the parent is missing or unreadable, as for an unmounted volume or a
+    dropped share) nothing is pruned or reported: the entry is counted in ``unavailable`` and
+    one warning names how many.
     """
-    added = updated = skipped = denied = chunks_total = 0
+    added = updated = skipped = denied = removed = chunks_total = 0
+    unavailable = 0
     touched: list[str] = []
     for registered in store.list_sources():
+        vanished = _vanished(registered.path)
+        if vanished is None:
+            unavailable += 1
+            continue
+        if vanished:
+            store.delete_source(registered.id)
+            if index is not None:
+                index.delete_source(registered.id)
+            report_removed(source, Path(registered.path), source_id=registered.id, reason="removed")
+            removed += 1
+            continue
         r = ingest_path(
             registered.path, store=store, index=index, kind=registered.kind, source=source
         )
@@ -379,6 +427,10 @@ def sync_all(
         chunks_total += r.chunks_indexed
         denied += r.sources_denied
         touched.extend(r.paths)
+    if unavailable:
+        logger.warning(
+            "rag: sync left %d source(s) alone: their location is unavailable", unavailable
+        )
     return IngestResult(
         sources_added=added,
         sources_updated=updated,
@@ -386,6 +438,8 @@ def sync_all(
         chunks_indexed=chunks_total,
         paths=tuple(touched),
         sources_denied=denied,
+        sources_removed=removed,
+        sources_unavailable=unavailable,
     )
 
 

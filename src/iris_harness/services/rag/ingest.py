@@ -24,7 +24,7 @@ from pathlib import Path
 
 from iris_harness.services.rag.chunker import chunk_markdown
 from iris_harness.services.rag.index import DocumentIndex
-from iris_harness.services.rag.ingest_source import IndexedDocument, IngestSource
+from iris_harness.services.rag.ingest_source import IndexedDocument, IngestSource, report_removed
 from iris_harness.services.rag.loaders import extract_docx_text, extract_pdf_pages, render_pdf_page
 from iris_harness.services.rag.models import DocumentChunk, IngestResult, SourceKind
 from iris_harness.services.rag.obsidian import ParsedNote, context_line, parse_note
@@ -263,6 +263,11 @@ def ingest_path(
                 store.delete_source(sid)
                 if index is not None:
                     index.delete_source(sid)
+            # Tell the file domain even with no earlier RAG record: its own catalog may
+            # still say "indexed" (or carry a lower label) for what RAG now refuses.
+            report_removed(
+                source, file, source_id=sid, reason="denied", classification=file_classification
+            )
             denied += 1
             continue
 

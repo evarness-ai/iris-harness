@@ -21,7 +21,7 @@ import pytest
 
 from iris_harness.services.rag.ingest import _source_id, ingest_path, sync_all
 from iris_harness.services.rag.ingest_gate import execute_rag_ingest, propose_rag_ingest
-from iris_harness.services.rag.ingest_source import IndexedDocument, KnownFile
+from iris_harness.services.rag.ingest_source import IndexedDocument, KnownFile, RemovedDocument
 from iris_harness.services.rag.retrieve import search_documents
 from iris_harness.services.rag.store import DocumentStore
 
@@ -286,3 +286,83 @@ def test_a_touched_but_unchanged_file_keeps_its_stamp(tmp_path: Path, store: Doc
 
     assert result.sources_skipped == 1
     assert _labels(store, f) == {"personal"}
+
+
+# ─── the file domain is told when RAG denies or drops a file (issue 101) ──────────────
+
+
+class RemovalSource(FakeSource):
+    """A source that records removals; the catalog side of the seam."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.removed: list[RemovedDocument] = []
+
+    def record_removed(self, doc: RemovedDocument) -> None:
+        self.removed.append(doc)
+
+
+def test_a_denied_edit_is_reported_to_the_file_domain(tmp_path: Path, store: DocumentStore) -> None:
+    f = tmp_path / "notes.md"
+    _gated(f, _PUBLIC_TEXT, store)
+    _edit(f, f"# Notes\n\nmitochondria aws_key={_AWS_KEY}\n")
+    source = RemovalSource()
+
+    result = sync_all(store=store, index=None, source=source)
+
+    assert result.sources_denied == 1
+    assert [(d.path, d.reason, d.classification) for d in source.removed] == [
+        (f.resolve(), "denied", "secret")
+    ]
+    assert source.removed[0].source_id == _source_id(f.resolve())
+
+
+def test_a_first_ingest_denied_as_secret_is_reported_too(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    """The catalog may hold a record RAG's own store never had (an earlier, removed index)."""
+    f = tmp_path / "keys.md"
+    f.write_text(f"# Keys\n\naws_key={_AWS_KEY}\n")
+    source = RemovalSource()
+
+    result = ingest_path(f, store=store, index=None, source=source)
+
+    assert result.sources_denied == 1
+    assert [d.reason for d in source.removed] == ["denied"]
+
+
+def test_an_indexed_file_is_not_reported_removed(tmp_path: Path, store: DocumentStore) -> None:
+    f = tmp_path / "notes.md"
+    f.write_text(_PUBLIC_TEXT)
+    source = RemovalSource()
+
+    ingest_path(f, store=store, index=None, source=source)
+
+    assert source.removed == []
+
+
+def test_a_source_without_record_removed_still_works(tmp_path: Path, store: DocumentStore) -> None:
+    """The hook is optional: a source written before it existed is not broken."""
+    f = tmp_path / "notes.md"
+    _gated(f, _PUBLIC_TEXT, store)
+    _edit(f, f"# Notes\n\nmitochondria aws_key={_AWS_KEY}\n")
+
+    result = sync_all(store=store, index=None, source=FakeSource())
+
+    assert result.sources_denied == 1
+
+
+def test_a_source_that_raises_on_removal_never_breaks_ingest(
+    tmp_path: Path, store: DocumentStore
+) -> None:
+    class Raising(RemovalSource):
+        def record_removed(self, doc: RemovedDocument) -> None:
+            raise RuntimeError("catalog down")
+
+    f = tmp_path / "notes.md"
+    _gated(f, _PUBLIC_TEXT, store)
+    _edit(f, f"# Notes\n\nmitochondria aws_key={_AWS_KEY}\n")
+
+    result = sync_all(store=store, index=None, source=Raising())
+
+    assert result.sources_denied == 1 and store.list_sources() == []

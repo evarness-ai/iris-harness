@@ -25,7 +25,11 @@ from iris_harness.services.rag.documents import (
 from iris_harness.services.rag.index import DocumentIndex
 from iris_harness.services.rag.ingest import _source_id
 from iris_harness.services.rag.ingest_gate import execute_rag_ingest, propose_rag_ingest
-from iris_harness.services.rag.ingest_source import current_ingest_source, register_ingest_source
+from iris_harness.services.rag.ingest_source import (
+    RemovedDocument,
+    current_ingest_source,
+    register_ingest_source,
+)
 from iris_harness.services.rag.store import DocumentStore
 
 
@@ -302,3 +306,44 @@ def test_ingest_runs_off_the_event_loop(
 
     assert resp.status_code == 200, resp.text
     assert seen == [False]
+
+
+# ---- the file domain is told when RAG drops a document (issue 101) --------------------
+
+
+class _RemovalRecorder:
+    def __init__(self) -> None:
+        self.removed: list[RemovedDocument] = []
+
+    def known_file(self, path: Path) -> None:
+        return None
+
+    def record_indexed(self, doc: object) -> None:
+        pass
+
+    def record_removed(self, doc: RemovedDocument) -> None:
+        self.removed.append(doc)
+
+
+def test_a_secret_reupload_is_reported_to_the_source(client: TestClient, tmp_path: Path) -> None:
+    _gated_upload(client, tmp_path)
+    rec = _RemovalRecorder()
+    register_ingest_source(rec)  # the fixture restores the previous source
+
+    body = b"# Contact\n\naws_key=AKIAIOSFODNN7EXAMPLE\n"
+    resp = client.post("/rag/upload", files={"file": ("contact.md", body, "text/markdown")})
+
+    assert resp.json()["sources_denied"] == 1
+    assert [d.reason for d in rec.removed] == ["denied"]
+
+
+def test_delete_is_reported_to_the_source(client: TestClient) -> None:
+    up = client.post(
+        "/rag/upload", files={"file": ("temp.md", b"Disposable otters.", "text/markdown")}
+    ).json()
+    rec = _RemovalRecorder()
+    register_ingest_source(rec)
+
+    assert client.delete(f"/rag/documents/{up['document']['file_id']}").status_code == 200
+
+    assert [(d.path.name, d.reason) for d in rec.removed] == [("temp.md", "removed")]

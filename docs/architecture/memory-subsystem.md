@@ -53,7 +53,7 @@ names the fix: `iris docs reindex --reset-collection` (`reset_and_reindex`), exp
 off by default. It deletes and re-creates only the `iris_documents` collection (no other
 collection, never `rag.db`, never a source file) and refills it from `store.iter_chunks()`,
 so every source and chunk keeps its label; it applies the same empty-store refusal (and
-`--force`) before it deletes anything, and logs one INFO line with the chunk count. Unlike a
+`--force`) before it deletes anything, and logs one INFO line with the chunk count. If the rebuild fails after the delete (disk full, embedder error) it raises `IndexRebuildIncomplete`: the index is partial, `rag.db` is untouched, and rerunning the command is idempotent. Unlike a
 plain rebuild, a reset invalidates other handles on the collection: the API server keeps
 one on `app.state` for its lifetime. The CLI cannot detect a running server, so stop the
 server before the reset and restart it after. A server left running recovers on its next

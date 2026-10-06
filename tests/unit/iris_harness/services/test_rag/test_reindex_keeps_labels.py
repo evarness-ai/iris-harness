@@ -36,6 +36,7 @@ from iris_harness.services.rag.index import DocumentIndex
 from iris_harness.services.rag.ingest import (
     EmbedderConflict,
     EmptyStoreRefused,
+    IndexRebuildIncomplete,
     _source_id,
     ingest_path,
     reindex_all,
@@ -693,3 +694,18 @@ def test_only_the_collection_not_found_error_triggers_a_reopen(
 
     assert index.query("mitochondria") == []
     assert reopened == []
+
+
+def test_a_rebuild_that_fails_after_the_delete_says_the_index_is_incomplete(
+    tmp_path: Path, store: DocumentStore, docs: dict[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    index = _indexed(tmp_path, store, docs)
+
+    def _boom(_chunks: Any) -> int:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(index, "rebuild", _boom)
+    with pytest.raises(IndexRebuildIncomplete, match="incomplete.*Rerun"):
+        reset_and_reindex(store=store, index=index)
+    monkeypatch.undo()
+    assert reset_and_reindex(store=store, index=index) > 0  # the rerun heals it

@@ -397,6 +397,10 @@ class EmptyStoreRefused(RuntimeError):
     """A rebuild would wipe a populated index because the store has no chunks."""
 
 
+class IndexRebuildIncomplete(RuntimeError):
+    """The collection was reset but the rebuild failed part-way: the index is partial."""
+
+
 def reindex_all(*, store: DocumentStore, index: DocumentIndex, force: bool = False) -> int:
     """Rebuild the vector index from the store's chunks; return how many were indexed.
 
@@ -448,7 +452,8 @@ def reset_and_reindex(*, store: DocumentStore, index: DocumentIndex, force: bool
     unless ``force=True``; the check runs before anything is deleted.
 
     Invalidates other handles on the collection (a running server's); see
-    ``DocumentIndex.reset_collection``.
+    ``DocumentIndex.reset_collection``. A failure after the delete raises
+    ``IndexRebuildIncomplete`` (the index is partial until the command is rerun).
     """
     if not force and store.count_all_chunks() == 0 and (index.count() > 0 or not index.is_ready):
         raise EmptyStoreRefused(
@@ -457,7 +462,13 @@ def reset_and_reindex(*, store: DocumentStore, index: DocumentIndex, force: bool
             "empty the index deliberately"
         )
     index.reset_collection()
-    count = index.rebuild(store.iter_chunks())
+    try:
+        count = index.rebuild(store.iter_chunks())
+    except Exception as exc:
+        raise IndexRebuildIncomplete(
+            f"the rebuild failed ({exc}); the vector index is incomplete and rag.db is "
+            "untouched. Rerun `iris docs reindex --reset-collection`: it is idempotent"
+        ) from exc
     logger.info("document index reset and rebuilt from the store (chunks=%d)", count)
     return count
 
@@ -470,6 +481,7 @@ __all__ = [
     "sync_all",
     "reindex_all",
     "EmptyStoreRefused",
+    "IndexRebuildIncomplete",
     "TEXT_SUFFIXES",
     "PDF_SUFFIXES",
     "IMAGE_SUFFIXES",

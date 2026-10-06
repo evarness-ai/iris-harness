@@ -214,10 +214,10 @@ def _expects_hold(h: Harness, name: str) -> bool:
 def _tool_call(
     h: Harness, caller: str, name: str, args: Mapping[str, Any], *, approve: bool
 ) -> list[Violation]:
-    bound = _tool_service(h).for_caller(caller)
+    tools = _tool_service(h).for_caller(caller)
     expects_hold = _expects_hold(h, name)
     mark, failures = h._audit_high_water(), _failures(h, caller)
-    result = bound.call(name, dict(args))
+    result = tools.call(name, dict(args))
     rows = _tool_rows(h, name, after=mark)
     out = _audited(name, rows, caller, ran=not result.held)
 

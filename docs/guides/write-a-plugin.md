@@ -37,6 +37,7 @@ name: weather-now
 version: 0.1.0
 description: One line.
 entrypoint: plugin:setup
+party: untrusted     # who wrote it: first-party | trusted-third-party | untrusted
 provides: [tool]
 tools:
   weather_now:

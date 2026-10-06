@@ -83,7 +83,8 @@ def cmd_list(
         colour = {"loaded": "green", "degraded": "yellow"}.get(status, "red")
         console.print(
             f"  [{colour}]{status:<9}[/{colour}] {row.get('name', '?'):<22} "
-            f"[dim]{', '.join(parts) or 'nothing registered'}[/dim]"
+            f"[dim]{', '.join(parts) or 'nothing registered'}[/dim]  "
+            f"[dim]party={row.get('party') or '?'}[/dim]"
         )
         if row.get("degraded_reason"):
             console.print(f"            [yellow]degraded: {row['degraded_reason']}[/yellow]")
@@ -123,7 +124,8 @@ def cmd_show(
         return
     console.print(
         f"  [bold]{data.get('name')}[/bold]  {data.get('status')}  "
-        f"[dim]{data.get('source')}  v{data.get('version') or '?'}[/dim]"
+        f"[dim]{data.get('source')}  v{data.get('version') or '?'}  "
+        f"trust={data.get('trust')}  party={data.get('party') or '?'}[/dim]"
     )
     if data.get("degraded_reason"):
         console.print(f"  [yellow]degraded: {data['degraded_reason']}[/yellow]")

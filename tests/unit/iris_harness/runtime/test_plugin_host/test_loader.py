@@ -16,7 +16,12 @@ from iris_harness.runtime.plugin_host import (
     load_plugins,
     load_profile,
 )
-from iris_harness.runtime.plugin_host.loader import describe_sources, load_plugin
+from iris_harness.runtime.plugin_host.loader import (
+    add_in_process,
+    describe_sources,
+    in_process_plugin,
+    load_plugin,
+)
 from iris_harness.sdk import HarnessServices
 from iris_harness.services.heartbeat import HeartbeatScheduler
 
@@ -90,6 +95,101 @@ def test_home_plugin_loads_and_registers(tmp_path: Path, services: HarnessServic
     assert "mine_kind" in registry.confirmation_executors()
     kinds = {r.kind.value for r in rec.registrations}
     assert kinds == {"tool", "intercept", "intent_handler", "heartbeat", "confirmation_executor"}
+
+
+_NOTICE = "does not declare `party`"
+_LOADER_LOG = "iris_harness.runtime.plugin_host.loader"
+
+
+def _notices(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if _NOTICE in r.getMessage()]
+
+
+@pytest.mark.parametrize(
+    ("extra", "notice"),
+    [("", True), ("party: untrusted\n", False), ("party: first-party\n", False)],
+)
+def test_an_undeclared_party_is_noticed_once_at_mount(
+    tmp_path: Path,
+    services: HarnessServices,
+    caplog: pytest.LogCaptureFixture,
+    extra: str,
+    notice: bool,
+) -> None:
+    """Issue #97: a manifest that says nothing about `party` is untrusted, and says so."""
+    home = tmp_path / "home"
+    _home_plugin(home, "mine", "def setup(api):\n    return None\n", manifest_extra=extra)
+    with caplog.at_level("WARNING", logger=_LOADER_LOG):
+        rec = load_plugin(
+            PluginRef(name="mine"),
+            services=services,
+            registry=PluginRegistry(),
+            home_dir=home,
+            skip_entry_points=True,
+        )
+    assert rec.status is PluginStatus.LOADED
+    found = _notices(caplog)
+    assert len(found) == (1 if notice else 0)
+    if notice:
+        assert "'mine'" in found[0] and "party: first-party | trusted-third-party" in found[0]
+    assert rec.manifest is not None
+    assert rec.manifest.party == (extra.split()[1] if extra else "untrusted")
+
+
+def test_a_manifestless_entry_point_is_noticed(
+    tmp_path: Path,
+    services: HarnessServices,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The loader-synthesised manifest never sets `party`: the third-party case is covered."""
+    pkg = tmp_path / "bare_party_plugin"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("def setup(api):\n    return None\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    class _EP:
+        name = "bare_party"
+        value = "bare_party_plugin:setup"
+        dist = None
+
+        def load(self) -> Any:
+            import importlib
+
+            return importlib.import_module("bare_party_plugin").setup
+
+    monkeypatch.setattr("importlib.metadata.entry_points", lambda group=None: [_EP()])
+    with caplog.at_level("WARNING", logger=_LOADER_LOG):
+        rec = load_plugin(
+            PluginRef(name="bare_party"),
+            services=services,
+            registry=PluginRegistry(),
+            home_dir=tmp_path / "nohome",
+        )
+    assert rec.status is PluginStatus.LOADED
+    assert len(_notices(caplog)) == 1
+    assert rec.manifest is not None and rec.manifest.party == "untrusted"
+
+
+def test_a_plugin_supplied_from_code_is_not_noticed(
+    tmp_path: Path, services: HarnessServices, caplog: pytest.LogCaptureFixture
+) -> None:
+    """In-process plugins (the testing harness, `add_in_process`) are the caller's own."""
+    supplied = in_process_plugin(lambda api: None, name="from_code")
+    profile = add_in_process(
+        load_profile(tmp_path / "config", "x", home_dir=tmp_path / "home", env={}), [supplied]
+    )
+    with caplog.at_level("WARNING", logger=_LOADER_LOG):
+        records = load_plugins(
+            profile,
+            services=services,
+            registry=PluginRegistry(),
+            skip_entry_points=True,
+            in_process=[supplied],
+        )
+    mounted = next(r for r in records if r.name == "from_code")
+    assert mounted.status is PluginStatus.LOADED
+    assert not [m for m in _notices(caplog) if "from_code" in m]
 
 
 def test_not_found_and_disabled_and_mcp(tmp_path: Path, services: HarnessServices) -> None:

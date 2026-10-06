@@ -34,6 +34,10 @@ First public release of the IRIS harness.
 - memris (`memris`), the memory graph of claims the harness remembers with.
 - The IRIS API and Governor services, the `iris` CLI, a React web console, and a
   Docker Compose stack with a bundled Ollama.
+- The plugin loader logs a warning when it mounts a plugin whose manifest omits
+  `party` (the plugin is treated as `untrusted`), including an entry-point plugin
+  with no manifest; `iris plugins` and `iris plugins show` print `party`; the
+  examples and `iris plugin new` scaffolds declare `party: untrusted` explicitly.
 
 ### Fixed
 

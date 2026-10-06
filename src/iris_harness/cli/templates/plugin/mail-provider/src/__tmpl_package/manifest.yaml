@@ -2,6 +2,9 @@
 name: __tmpl_name
 version: 0.1.0
 description: __tmpl_title -- __tmpl_summary.
+# Provenance: who wrote this plugin. Left as `untrusted` so a copy of this manifest does
+# not claim to be the harness's own code; change it only to say what is true of yours.
+party: untrusted
 entrypoint: plugin:setup
 # A mail provider registers with the email slice (register_mail_provider), not through
 # one of the six PluginAPI kinds.

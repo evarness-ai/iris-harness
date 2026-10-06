@@ -41,7 +41,17 @@ runs. A manifest that omits `party` is `untrusted` (fail-closed), so a plugin fr
 this repository never reads as first-party by default. The plugins this project ships
 declare `party: first-party`; one an operator has reviewed declares `trusted-third-party`.
 `party` is a declaration only: nothing enforces it yet, and it shows beside `trust` in
-`--dump-config`, the plugin inventory (`GET /plugins`) and the web Plugins screens.
+`--dump-config`, the plugin inventory (`GET /plugins`), `iris plugins` (list and `show`) and
+the web Plugins screens.
+
+An omitted `party` is also said aloud: the loader logs one warning each time it mounts a
+plugin whose manifest does not declare it, naming the plugin and the fix (`declare party:
+first-party | trusted-third-party | untrusted in manifest.yaml`). That includes the manifest
+the loader synthesises for an entry-point plugin that ships none, the usual third-party case.
+A plugin supplied from code (`testing.plugin()`, `add_in_process`) is the caller's own and
+gets no notice. The examples and every `iris plugin new` scaffold declare `party: untrusted`
+with a comment, so copying one does not copy a first-party claim and a fresh scaffold mounts
+without the warning.
 
 A plugin imports only `iris_harness.sdk` (and whatever public library code it needs),
 never another core package: a name outside the SDK carries no stability promise. An

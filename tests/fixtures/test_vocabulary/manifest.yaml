@@ -9,5 +9,6 @@
 # same in every tree, whichever domain plugins it carries.
 name: test_vocabulary
 version: 0.0.0
+party: first-party
 description: Test-only memory vocabulary (tests/conftest.py `test_vocabulary`).
 ontology: ontology

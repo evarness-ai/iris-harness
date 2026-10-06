@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from pathlib import Path
 from typing import Any
@@ -256,6 +257,24 @@ def test_a_shared_ledger_whose_file_was_removed_creates_its_schema_again(
         Path(str(db) + suffix).unlink(missing_ok=True)
     ledger.record(side_effect_id="k2", run_id="r", step_id=1, tool="t", verification_probe="")
     assert ledger.get("k2") is not None
+
+
+def test_recreating_a_removed_ledger_database_warns_exactly_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    db = tmp_path / "s.db"
+    ledger = shared_side_effect_ledger(db)
+    with caplog.at_level(logging.WARNING, logger="iris_harness.kernel.governance.side_effects"):
+        ledger.record(side_effect_id="k1", run_id="r", step_id=1, tool="t", verification_probe="")
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(db) + suffix).unlink(missing_ok=True)
+        ledger.record(side_effect_id="k2", run_id="r", step_id=1, tool="t", verification_probe="")
+        ledger.record(side_effect_id="k3", run_id="r", step_id=1, tool="t", verification_probe="")
+    hits = [r for r in caplog.records if "created again, empty" in r.getMessage()]
+    assert len(hits) == 1 and hits[0].levelno == logging.WARNING
+    assert str(db) in hits[0].getMessage()
+    assert "write-ahead rows" in hits[0].getMessage()
 
 
 def test_a_shared_ledger_that_would_not_open_is_tried_again(tmp_path: Path) -> None:

@@ -322,10 +322,19 @@ class DeferredSideEffectLedger(SideEffectLedger):
             # dir) is a database that needs its schema again: this handle is shared.
             if self._opened and self.db_path.exists():
                 return
+            recreated = self._opened
             self._opened = False
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             self._init_schema()
             self._opened = True
+            if recreated:
+                logger.warning(
+                    "governance: the side-effect ledger database %s was removed while the "
+                    "process was running and has been created again, empty. Any pending "
+                    "write-ahead rows it held are gone, so resuming a halted run (iris run "
+                    "resume) will not see them.",
+                    self.db_path,
+                )
 
     def open(self) -> None:
         """Create the database and its schema now (an eager caller; raises if it cannot)."""

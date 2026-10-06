@@ -191,9 +191,9 @@ def build_default_kernel(
     the high-risk class only, and only opens (the process's shared ``DeferredSideEffectLedger``
     for that database, ``shared_side_effect_ledger``: one handle however many kernels are
     built) when such a call first runs: a plain write or a read leaves no row and touches no
-    file, exactly as before issue #73. A kernel with no ledger (``side_effect_ledger_enabled=False``) denies every
-    high-risk call rather than run it with no durable record first (``PreToolUseLedgerHook``,
-    ``register_side_effect_ledger``).
+    file, exactly as before issue #73. A kernel with no ledger
+    (``side_effect_ledger_enabled=False``) denies every high-risk call rather than run it
+    with no durable record first (``PreToolUseLedgerHook``, ``register_side_effect_ledger``).
 
     ``owner_pii_mode="shadow"`` registers ``OwnerPiiShadowHook`` at ``PreToolUse``,
     ``PreLLMCall`` and ``PreResponse`` (priority 1, first at each): it audits what each

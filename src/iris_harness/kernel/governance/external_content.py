@@ -85,7 +85,7 @@ MARKER = "[redacted: instruction-like text in external content]"
 MAX_REDACTIONS = 64
 
 #: What replaces each span after the :data:`MAX_REDACTIONS`-th (3 characters, so the output
-#: stays within 3x the input however many spans there are). It is a plain string no tripwire
+#: grows by at most 2 characters per span past the cap). It is a plain string no tripwire
 #: pattern matches, so scanning an already-scanned text is a no-op; the full marker is what
 #: tells the reader the text was altered, and the span count is in the ledger row.
 SHORT_MARKER = "[~]"
@@ -320,7 +320,11 @@ def scan(text: str) -> ScanResult:
 #: Longest ``source`` / ``tool`` label that is logged or written to the ledger.
 _MAX_LABEL = 200
 
-_LABEL_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+#: Control characters (C0, DEL, C1 incl. NEL, LS, PS) and the invisible ones the floor treats as
+#: hostile (zero-width, bidi), so a label cannot spoof a log line or its display.
+_LABEL_CONTROL_RE = re.compile(
+    r"[\x00-\x1f\x7f-\x9f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]+"
+)
 
 
 def _clean_label(value: str) -> str:

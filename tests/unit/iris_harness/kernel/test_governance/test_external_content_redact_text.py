@@ -214,7 +214,7 @@ def test_hostile_100k_shapes_are_still_fast_and_bounded(hostile: str) -> None:
     started = time.perf_counter()
     found = scan(hostile)
     assert time.perf_counter() - started < 0.5
-    assert len(found.text) <= 5 * len(hostile)  # a 1-char span becomes the 3-char marker
+    assert len(found.text) <= 3 * len(hostile) + 8_000  # asymptotically ~2x, plus the full markers
 
 
 def test_a_normal_text_with_a_few_attacks_is_redacted_span_by_span() -> None:
@@ -244,3 +244,12 @@ def test_a_very_long_label_is_capped() -> None:
     redact_text(INJECTED, source="s" * 5_000, tool="t" * 5_000)
     (row,) = _rows()
     assert len(row["source"]) <= 200 and len(row["tool"]) <= 200 and row["source"].startswith("s")
+
+
+@pytest.mark.parametrize(
+    "bad", ["\n", "\x85", "\u2028", "\u2029", "\u202e", "\u200b", "\u2066", "\ufeff", "\x7f"]
+)
+def test_a_label_cannot_carry_line_breaks_or_invisible_characters(bad: str) -> None:
+    redact_text(INJECTED, source=f"a{bad}b", tool=f"c{bad}d")
+    (row,) = _rows()
+    assert row["source"] == "a b" and row["tool"] == "c d"

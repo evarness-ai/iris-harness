@@ -98,9 +98,9 @@ First public release of the IRIS harness.
   follows it. The first 64 redacted spans in a text keep the full-size marker; each further
   span is redacted with the 3-character `[~]` and the legitimate text between spans is kept
   (an earlier cap collapsed the whole rest of the text into one marker, so one hostile item
-  could erase the content after it). Output stays within 3x the input, every span is still
-  redacted, and the span and pattern counts in the ledger row stay exact. A `source` or
-  `tool` label with a newline or other control character can no longer inject a log line or
+  could erase the content after it). Output is asymptotically at most 2x the input plus a fixed 7 KB (the first 64 spans of
+  each pass carry the full marker), every span is still redacted, and the span and pattern counts in the ledger row stay exact. A `source` or
+  `tool` label with a newline or other control or invisible character can no longer inject a log line or
   ledger value: `redact_text` cleans and caps both (200 characters).
 - The side-effect ledger is one shared handle per database, not one per kernel, and a ledger
   key that already holds a row is no longer ignored silently (issue #102). A destructive or

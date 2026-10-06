@@ -125,10 +125,13 @@ goes through one kernel helper, `redact_text` in `kernel/governance/external_con
 the floor setting, then `scan`, then one ledger row (pattern ids and counts, never the
 text). With the floor off it returns the text unchanged and writes nothing. `scan` gives the
 first 64 spans in a text the full marker below; each further span is redacted with the short
-marker `[~]` and the text between spans is kept, so a hostile text cannot grow past 3x its
-size and cannot erase the legitimate text after it, and no span is ever left raw. The span
-count and pattern ids still cover every span. What an owner reading a brief or a reply sees: past the 64th span, one `[~]` per span with the surrounding text kept, so `[~]` with no explanation beside it means a hostile text was heavily redacted; the exact span count is in the ledger row. `source` and `tool` are cleaned (control
-characters out, 200 characters at most) before they are logged or written.
+marker `[~]` and the text between spans is kept, so a hostile text grows by at most 2
+characters per span past the cap and cannot erase the legitimate text after it, and no span is
+ever left raw. The span count and pattern ids still cover every span. What an owner reading a
+brief or a reply sees: past the 64th span, one `[~]` per span with the surrounding text kept.
+`[~]` marks a redacted span, but a text can also contain a literal `[~]`, so the exact span
+count in the ledger row is the thing to check. `source` and `tool` are cleaned (control and
+invisible characters out, 200 characters at most) before they are logged or written.
 
 **2. The instruction-pattern tripwire.** A short list of phrase-level patterns
 (`kernel/governance/external_content.py`). A match is replaced with

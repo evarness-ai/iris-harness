@@ -53,6 +53,7 @@ tools:
     effect: destructive
     undo: restore_email
     undo_window_days: 30   # Gmail keeps Trash for 30 days
+    content: external      # its reply lists the trashed emails' subjects and senders (#146)
   # ADR-0118 amendment (2026-09-22): "delete my promo emails this week". Code picks the
   # emails from the category and window the owner named (newest 200), nothing is guessed,
   # and Trash is reversible, so the owner chose no card: it runs at once and its reply
@@ -63,18 +64,21 @@ tools:
     # Its reply is the account: how many moved, a sample, how many are left, how to
     # undo. Retold by qwen2.5 it lost the count and the remainder and said "deleted".
     answers_directly: true
+    content: external      # the sample lists subjects and senders (#146)
   restore_email:
     effect: write
     confirm: never         # "undo that" is its own authorisation
     # Its reply is the account (how many came back, a sample). Restated by qwen2.5 it
     # became a 3,659-token list of all 200 restored emails: 79 s (2026-09-22).
     answers_directly: true
+    content: external      # the sample lists subjects and senders (#146)
   # ADR-0118 amendment: sending is not data loss, so it stays a write, but it cannot be
   # taken back, so every call waits for the owner's approval on the pinned card (the
   # whole message: to, cc, subject, body). Approve sends exactly that; reject sends nothing.
   send_email:
     effect: write
     approval: pinned
+    content: external      # a reply's confirmation echoes the original's subject (#146)
 
 # The kinds of dated item this plugin ages out (core/SDK boundary plan PR 5). The owner
 # tunes them in config/digest.yaml `expiry:` by the same key; read with

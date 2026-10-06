@@ -17,6 +17,8 @@ tools:
       Search indexed user documents; returns passages with citations
       (source file + section). Ground answers in the user's knowledge base.
     governor_route: rag/read
+    # Indexed documents are third-party text; owner decision, issue #146.
+    content: external
     args:
       - name: query
         type: string

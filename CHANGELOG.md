@@ -35,6 +35,25 @@ First public release of the IRIS harness.
   redacted too: see "The external-content floor" in `docs/concepts/governance.md` for the
   pattern list and its limits. The model guard (`IRIS_GOVERNANCE_PROMPT_GUARD`) is
   unchanged: opt-in, shadow-first, fail-open.
+- **`code_exec` output is treated as external content (issue #140).** The tool stays
+  `effect: read`, behind its Docker mount and sandbox limits, and its egress allowlist is
+  unchanged; what changed is that what a script printed is no longer assumed clean (a
+  script can print a page it fetched). The tool is declared `content: external`, so the
+  governed loop marks and scans its result; and the paths that do not run through the
+  loop's runner apply the same tripwire (`iris_harness.sdk.content.redact_external_content`,
+  new): the intent route's answer and trace, the nested planner's view of `run_shell`
+  stdout and stderr (inside the envelope), the session log's `tool_run` record, and a
+  code_exec lesson before it is stored and again before it is re-injected into a planner
+  prompt. The streamed answer is scanned with a sliding overlap (the last two lines are held
+  back and rescanned with each new line, a long line is force-scanned at 64 KB), so a phrase
+  split across up to two line breaks is caught; the planner's progress text, the command in
+  the activity hint, trace and log, and artifact file names (including the "Artifacts:"
+  block on every path) are scanned too. These calls honour
+  `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR` (off: verbatim) and a run writes at most five
+  counts-only ledger rows however many lines match (later matches are redacted and logged
+  once). A redaction cut by the 64 KB forced flush also drops the rest of its sentence when
+  that arrives, instead of emitting it raw. Known limit: the session log's `llm_call` record of
+  the planner's raw prompt and reply is a log, not a prompt, and is not scanned.
 - The retrieved-content guard's `guard unavailable` ledger row now records the tool, how
   many segments went unscanned, and the classifier's backend and detail. Docs and manifest
   comments that said external content is always scanned now say what is on by default.
@@ -49,6 +68,12 @@ First public release of the IRIS harness.
 - New stable name: `iris_harness.sdk.content.wrap_external_content(text, *, source, tool=None)`
   applies the floor's tripwire and envelope (the kernel's own implementation) to external text
   that plugin code puts into a prompt of its own. Idempotent and offline.
+  `iris_harness.sdk.content.redact_external_content(text)` is the same tripwire without the
+  envelope, for text a plugin shows the owner or logs rather than hands to a model. It goes
+  through the kernel's `redact_text`, so it honours `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`
+  (off: the text comes back unchanged) and a matching call writes a counts-only ledger row,
+  for the first five matches per scope (a run for a plugin that opens one, else a session);
+  later matches are still redacted and only counted in one warning.
 - All nine email skill tools (`email-triage`: `email_inbox_summary`, `email_focus`,
   `email_needs_reply`, `email_judged_yesterday`, `classify_email_by_id`, `run_email_triage`;
   `gmail-inbox`: `fetch_new_emails`; `email-followup`: `detect_followups`,
@@ -114,6 +139,26 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- A document index made under a different embedding model can be repaired (issue #144).
+  Chroma refuses to reopen the persisted collection under a new embedder, so the index was
+  unavailable, retrieval fell back to keyword search and `iris docs reindex` could not
+  rebuild it. `iris docs reindex` now says so in plain words and names the repair, the new
+  explicit `iris docs reindex --reset-collection`: it deletes only the vector collection and
+  rebuilds it from `rag.db`, keeping every source and every label. Plain `iris docs reindex`
+  is unchanged. A rebuild that fails part-way (disk full, embedder error) leaves the index
+  partial; the command says so, `rag.db` is untouched, and rerunning it is idempotent. The
+  command cannot detect a running IRIS server, so stop the server before
+  the reset and restart it after. A server that was left running no longer fails silently:
+  on its next request it logs one warning, reopens the collection and retries once (and
+  falls back to keyword search with a warning if the reopen fails).
+- The external-content floor bounds what a hostile text can grow to without erasing what
+  follows it. The first 64 redacted spans in a text keep the full-size marker; each further
+  span is redacted with the 3-character `[~]` and the legitimate text between spans is kept
+  (an earlier cap collapsed the whole rest of the text into one marker, so one hostile item
+  could erase the content after it). Output is asymptotically at most 2x the input plus a fixed 7 KB (the first 64 spans of
+  each pass carry the full marker), every span is still redacted, and the span and pattern counts in the ledger row stay exact. A `source` or
+  `tool` label with a newline or other control or invisible character can no longer inject a log line or
+  ledger value: `redact_text` and the tool-result floor hook clean and cap both (200 characters).
 - The side-effect ledger is one shared handle per database, not one per kernel, and a ledger
   key that already holds a row is no longer ignored silently (issue #102). A destructive or
   pinned call whose key is taken is denied before it runs; a call's post-run record that

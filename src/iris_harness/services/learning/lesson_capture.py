@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from iris_harness.kernel.governance.external_content import redact_text
 from iris_harness.memory.knowledge.models import WikiIngestEvent
 from iris_harness.memory.knowledge.wiki_engine import WikiEngine
 from iris_harness.memory.store import LearningSignal, MemoryStore
@@ -69,13 +70,24 @@ def _redact(text: str) -> str:
     return out
 
 
+def _tripwire(text: str) -> str:
+    """The external-content floor's tripwire (the kernel's ``redact_text``: honours the floor
+    setting, one counts-only ledger row per match).
+
+        A lesson is a note the planner wrote about a run whose output can be derived from
+        third-party data, and it is stored and re-injected into later planner prompts, so
+        instruction-like spans are redacted on the way in and on the way out (issue #140).
+    """
+    return redact_text(text, source="lesson", caller="core:lesson_capture")
+
+
 def _redact_lesson(lesson: Lesson) -> Lesson:
     return Lesson(
-        category=lesson.category,
-        summary=_redact(lesson.summary),
-        tools=tuple(_redact(t) for t in lesson.tools),
-        sources=tuple(_redact(s) for s in lesson.sources),
-        scripts=tuple(_redact(s) for s in lesson.scripts),
+        category=_tripwire(lesson.category),
+        summary=_tripwire(_redact(lesson.summary)),
+        tools=tuple(_tripwire(_redact(t)) for t in lesson.tools),
+        sources=tuple(_tripwire(_redact(s)) for s in lesson.sources),
+        scripts=tuple(_tripwire(_redact(s)) for s in lesson.scripts),
     )
 
 
@@ -317,4 +329,6 @@ class LessonCapture:
             lines.append(
                 f"- [{ls.category}] {ls.summary[:200]}" f"\n  tools: {tools} | sources: {srcs}"
             )
-        return "\n".join(lines)
+        # Scanned again on the way out: rows stored before the store-time tripwire existed
+        # (or written by another path) must not re-enter a prompt raw.
+        return _tripwire("\n".join(lines))

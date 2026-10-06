@@ -1,11 +1,13 @@
 """The ``system`` reference plugin (OSS plan M1 tracer bullet).
 
-Three registrations, three kinds, zero runtime imports:
+Four registrations, three kinds, zero runtime imports:
 
 * intercept ``time_date`` — answers "what time is it" style turns from the local
   clock, deterministically, before any classifier or model runs.
 * tool ``system_health`` — the ReAct tool the model calls to report IRIS's own
   service / credential / hardware / plugin health (ADR-0069).
+* tool ``search_docs`` -- searches IRIS's own shipped docs by keyword (an internal
+  read tool over an allow-listed corpus; it cannot reach identity files or secrets).
 * heartbeat ``health_tick`` — refreshes the cached health snapshot in the
   background so the tool and ``GET /health`` read a recent view, then runs the
   health watch (ADR-0116): repair red checks, notify the owner, record incidents.
@@ -28,6 +30,19 @@ SYSTEM_HEALTH_DESCRIPTION = (
     "Gmail connected', 'is the server/ollama up', or 'check your status'. "
     "Returns a per-target green/yellow/red report and any items needing "
     "attention, each with the exact fix command when known. No arguments."
+)
+
+SEARCH_DOCS_DESCRIPTION = (
+    "Search IRIS's OWN documentation (architecture, concepts, guides, reference, "
+    "usage-guides) by keyword and get the best-matching SECTIONS back: document, "
+    "heading, line and a short snippet. CALL THIS to find which doc covers a "
+    "question about how IRIS works (a flag, a config file, a pipeline stage, a "
+    "governance rule) before answering from memory, then fetch the full doc with "
+    "iris_doc where one is named. Matches are keyword-based, so use the words the docs "
+    "use. It never returns your identity files, memory, mail or data, and says so when "
+    "the docs are not installed. "
+    'Args: {"query": str, "section": str (optional: only headings containing this), '
+    '"limit": int (optional, default 5)}.'
 )
 
 
@@ -59,6 +74,13 @@ def setup(api: PluginAPI) -> None:
         return render_text(current_snapshot())
 
     api.register_tool("system_health", SYSTEM_HEALTH_DESCRIPTION, system_health)
+
+    def search_docs(args: dict[str, Any]) -> str:
+        from iris_harness.sdk.docs import search_core_docs
+
+        return search_core_docs(args)
+
+    api.register_tool("search_docs", SEARCH_DOCS_DESCRIPTION, search_docs)
 
     from iris_harness.sdk.health import build_health_tick_handler
 

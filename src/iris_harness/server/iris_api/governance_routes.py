@@ -118,6 +118,28 @@ def _side_effect_ledger_flags() -> list[dict[str, Any]]:
     ]
 
 
+def _model_guard(runtime: Callable[[], Any]) -> dict[str, Any]:
+    """The model guard's posture, from the probe Health uses (issue #136), so the two cannot
+    disagree. ``external_tools_mounted`` is None when the runtime is not up."""
+    from iris_harness.kernel.governance.threat.availability import model_guard_state
+
+    state = model_guard_state()
+    mounted: int | None
+    try:
+        from iris_harness.runtime.external_tools import mounted_external_tools
+
+        mounted = len(mounted_external_tools(runtime()))
+    except Exception:  # noqa: BLE001 - a runtime that is not up must not 500 the state page
+        mounted = None
+    return {
+        "on": state.on,
+        "classifier": state.classifier if state.on else None,
+        "reason": state.reason,
+        "fix": state.fix,
+        "external_tools_mounted": mounted,
+    }
+
+
 def _env_flag(name: str, *, default: bool = False) -> bool:
     """Thin alias for the shared reader, keeping this module's semantics.
 
@@ -147,6 +169,7 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
                 _external_content_floor_flag(),
                 _owner_pii_flag(),
             ],
+            "model_guard": _model_guard(runtime),
         }
 
     @app.get("/cost")

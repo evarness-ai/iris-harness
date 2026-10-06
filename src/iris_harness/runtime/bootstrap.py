@@ -331,6 +331,14 @@ def _mount_plugins(runtime: IrisRuntime, in_process: Sequence[InProcessPlugin] =
         build_governance_judge(tier_router=runtime.tier_router, channels=runtime.channels).review
     )
     register_check_provider("plugins", runtime.plugin_registry.health_checks)
+    # Issue #136: the model guard off, or on and unable to run, while a mounted tool returns
+    # third-party text. Silent when the posture is fine.
+    from iris_harness.runtime.external_tools import mounted_external_tools
+    from iris_harness.services.health.governance import model_guard_provider
+
+    register_check_provider(
+        "model_guard", model_guard_provider(lambda: mounted_external_tools(runtime))
+    )
 
 
 def _reassert_loop_intents(runtime: IrisRuntime) -> None:

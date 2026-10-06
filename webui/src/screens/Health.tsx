@@ -30,6 +30,8 @@ const GROUPS: { label: string; kind: HealthCheck["kind"] }[] = [
   { label: "VM", kind: "hardware" },
   { label: "Services", kind: "service" },
   { label: "Credentials", kind: "credential" },
+  { label: "Plugins", kind: "plugin" },
+  { label: "Governance", kind: "governance" },
 ];
 
 /* A red credential row its plugin made reconnectable gets a Reconnect button

@@ -91,6 +91,22 @@ def test_governance_state_reports_both_side_effect_ledger_settings(
     assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL"] is want_all
 
 
+def test_governance_state_reports_the_model_guard_posture(
+    audit_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #136: the same probe Health uses, so the two cannot disagree."""
+    off = audit_client.get("/governance/state").json()["model_guard"]
+    assert off["on"] is False and off["classifier"] is None
+    monkeypatch.setenv("IRIS_GOVERNANCE_PROMPT_GUARD", "1")
+    monkeypatch.setattr(
+        "iris_harness.kernel.governance.threat.availability.importlib.util.find_spec",
+        lambda name: None,
+    )
+    on = audit_client.get("/governance/state").json()["model_guard"]
+    assert on["on"] is True and on["classifier"] == "unavailable"
+    assert "not installed" in on["reason"] and "iris-harness[ml]" in on["fix"]
+
+
 def test_governance_state_shows_the_floor_turned_off(
     audit_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -78,6 +78,7 @@ from iris_harness.kernel.governance.plugins.owner_pii_shadow import (
     owner_pii_mode_from_env,
 )
 from iris_harness.kernel.governance.plugins.response_safety import ResponseSafetyHook
+from iris_harness.kernel.governance.reentry import audit_recorder, set_reentry_recorder
 from iris_harness.kernel.governance.side_effects import (
     SideEffectLedger,
     shared_side_effect_ledger,
@@ -207,7 +208,10 @@ def build_default_kernel(
     owner-PII guard would do and changes nothing (ADR-0125 PR 4). ``"off"`` registers
     nothing, so the kernel is exactly what it was before the mode existed.
     """
-    kernel = GovernanceKernel(audit_log=audit_log or AuditLog())
+    sink = audit_log or AuditLog()
+    kernel = GovernanceKernel(audit_log=sink)
+    # Stored text that comes back into a prompt is audited (counts only) into the same ledger.
+    set_reentry_recorder(audit_recorder(sink))
     high_risk_only = False
     if side_effect_ledger is None and side_effect_ledger_enabled:
         side_effect_ledger = shared_side_effect_ledger(side_effect_ledger_db_path)

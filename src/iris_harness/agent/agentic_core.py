@@ -49,6 +49,7 @@ from iris_harness.kernel.governance.external_content import unwrap
 from iris_harness.kernel.governance.hooks.tool_payload import ToolContent, ToolSendsTo
 from iris_harness.kernel.governance.plugins.destructive_approval import card_title
 from iris_harness.kernel.governance.plugins.output_classifier import more_restrictive
+from iris_harness.kernel.governance.reentry import reenter_text
 from iris_harness.kernel.governance.turn_label import apply_turn_floor
 from iris_harness.llm.budget import estimate_tokens
 from iris_harness.memory.retriever import MemoryContext
@@ -833,7 +834,12 @@ def _build_react_prompt(
         # Conversation continuity (summary + recent turns + excerpts from other
         # sessions). L0 of the context layers: what is always worth its tokens.
         if memory_context.summary:
-            parts.append(f"## Earlier in this conversation\n{memory_context.summary}")
+            # Already scanned where the context is built; scanning here too covers a
+            # context built elsewhere (the scan is idempotent and memoised).
+            earlier = reenter_text(
+                memory_context.summary, reader="prompt_summary", origin="summary", role="summary"
+            ).text
+            parts.append(f"## Earlier in this conversation\n{earlier}")
         if memory_context.related_turns:
             parts.append(
                 "## From earlier sessions (may or may not be relevant)\n"

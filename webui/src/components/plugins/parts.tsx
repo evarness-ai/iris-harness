@@ -61,6 +61,11 @@ export function PluginCard({ plugin }: { plugin: PluginSummary }) {
       {plugin.description && (
         <p className="line-clamp-2 text-xs text-fg-muted">{plugin.description}</p>
       )}
+      {plugin.degraded_reason && (
+        <p className="line-clamp-2 font-mono text-[11px] text-warning">
+          degraded: {plugin.degraded_reason}
+        </p>
+      )}
       {plugin.load_error && (
         <p className="line-clamp-2 font-mono text-[11px] text-danger">{plugin.load_error}</p>
       )}

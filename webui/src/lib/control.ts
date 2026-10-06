@@ -1459,6 +1459,7 @@ export interface PluginSummary {
   failure_count: number;
   last_error: string | null;
   load_error: string | null;
+  degraded_reason: string | null;
 }
 
 export interface PluginProfile {

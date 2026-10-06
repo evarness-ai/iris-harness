@@ -37,7 +37,11 @@ tools:
         max: 1000
 requires:
   python: ">=3.12"
-  packages: []
+  # tools.py imports the Gmail fetcher, which needs the Google client (the `email`
+  # extra). Declared so a core-only install lists the skill as blocked instead of
+  # importing it and failing.
+  packages:
+    - google-api-python-client
   env_vars: []
   config_files: []
   agents: []

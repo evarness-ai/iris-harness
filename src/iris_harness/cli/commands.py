@@ -1024,6 +1024,17 @@ def _list_skill_entries(repo_root: Path) -> tuple[SkillListEntry, ...]:
                 location=_repo_relative_display(repo_root, package.skill_dir),
             )
         )
+    for skill_dir, reason in registry.load_failures.items():
+        entries.append(
+            SkillListEntry(
+                name=skill_dir.name,
+                source="config/skills",
+                status=f"failed: {reason}",
+                tools="-",
+                agents="-",
+                location=_repo_relative_display(repo_root, skill_dir),
+            )
+        )
     return tuple(sorted(entries, key=lambda entry: (entry.source, entry.name)))
 
 

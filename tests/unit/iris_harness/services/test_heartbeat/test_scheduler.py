@@ -128,3 +128,24 @@ def test_is_running_while_a_run_is_in_progress_and_idle_after() -> None:
     worker.join(5)
     assert not scheduler.is_running("job")
     assert scheduler.wait_until_idle("never-ran", 0) is True
+
+
+def test_missing_handlers_log_one_summary_not_a_warning_each(caplog) -> None:  # type: ignore[no-untyped-def]
+    """A job whose plugin is not installed is unavailable, not a fault (#110)."""
+    scheduler = HeartbeatScheduler(handlers={"h": _ok})
+    definitions = [
+        HeartbeatDefinition(name="ok", handler="h", schedule="interval:60"),
+        HeartbeatDefinition(name="a", handler="gone_a", schedule="interval:60"),
+        HeartbeatDefinition(name="b", handler="gone_b", schedule="interval:60"),
+        HeartbeatDefinition(name="off", handler="gone_c", schedule="interval:60", enabled=False),
+    ]
+    with caplog.at_level("DEBUG", logger="iris_harness.services.heartbeat.scheduler"):
+        assert scheduler.register_all(definitions) == 1
+
+    assert not [r for r in caplog.records if r.levelname in {"WARNING", "ERROR"}]
+    summary = [r for r in caplog.records if r.levelname == "INFO"]
+    assert len(summary) == 1
+    assert "2 heartbeat(s) unavailable" in summary[0].getMessage()
+    assert "a, b" in summary[0].getMessage()
+    # still listed, with the reason the app shows
+    assert scheduler.unavailable_reason(definitions[1]) is not None

@@ -36,7 +36,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from iris_harness.kernel.governance.external_content import scan, wrap
+from iris_harness.kernel.governance.external_content import clean_label, scan, wrap
 from iris_harness.kernel.governance.hooks.tool_payload import (
     RESULT,
     TOOL_ERROR,
@@ -73,7 +73,8 @@ class ExternalContentFloorHook:
                 outcome="allow", reason="external_content_floor: not external content"
             )
         source = _source(ctx.payload, tool)
-        audit: dict[str, Any] = {"tool": tool, "source": source}
+        # Labels reach the log and the audit row: an MCP-supplied tool name must not carry a newline.
+        audit: dict[str, Any] = {"tool": clean_label(tool), "source": clean_label(source)}
 
         fields = ctx.payload.get("fields")
         if isinstance(fields, dict) and fields:

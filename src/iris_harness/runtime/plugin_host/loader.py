@@ -477,6 +477,15 @@ def _mount(
         return registry.add_plugin(found)
     source = found
     trust = ref.trust or source.manifest.trust
+    # Issue #97: a manifest that says nothing about `party` reads untrusted; say so, once per
+    # mount. A manifest the loader synthesised for a manifest-less entry point is covered
+    # (it never sets the field); a plugin supplied from code is the caller's own.
+    if "party" not in source.manifest.model_fields_set and source.kind != "in_process":
+        logger.warning(
+            "plugin %r does not declare `party` in its manifest; treating it as untrusted "
+            "(declare `party: first-party | trusted-third-party | untrusted` in manifest.yaml)",
+            ref.name,
+        )
     record = PluginRecord(
         name=ref.name,
         source=source.label,

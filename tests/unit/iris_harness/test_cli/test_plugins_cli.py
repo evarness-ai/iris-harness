@@ -20,6 +20,7 @@ _LIST = {
         {
             "name": "calendar",
             "status": "loaded",
+            "party": "first-party",
             "registration_counts": {"intent_handler": 1, "heartbeat": 2},
             "subscription_count": 2,
             "seam_count": 3,
@@ -27,6 +28,7 @@ _LIST = {
         {
             "name": "finance_workflows",
             "status": "degraded",
+            "party": "untrusted",
             "registration_counts": {},
             "subscription_count": 0,
             "seam_count": 0,
@@ -47,6 +49,8 @@ _DETAIL = {
     "status": "loaded",
     "source": "entry_point:calendar",
     "version": "1.0.0",
+    "trust": "in-process",
+    "party": "untrusted",
     "registrations": [{"kind": "intent_handler", "name": "calendar", "detail": ""}],
     "subscriptions": [{"topic": "reminder.snoozed", "scope": "process"}],
     "seams": [{"seam": "api_router", "key": "reminders"}],
@@ -97,6 +101,17 @@ def test_list_shows_status_counts_and_errors(api: list[str]) -> None:
     assert "2 subscription(s)" in out and "3 seam(s)" in out
     assert "store gone" in out
     assert api == ["http://localhost:8003/plugins"]
+
+
+def test_list_prints_party_beside_each_plugin(api: list[str]) -> None:
+    out = " ".join(runner.invoke(plugins_app, []).stdout.split())
+    assert "party=first-party" in out and "party=untrusted" in out
+    assert "degraded: optional capability" in out  # the degraded line is untouched
+
+
+def test_show_prints_trust_and_party(api: list[str]) -> None:
+    out = " ".join(runner.invoke(plugins_app, ["show", "calendar"]).stdout.split())
+    assert "trust=in-process party=untrusted" in out
 
 
 def test_list_shows_the_degraded_reason_only_for_a_degraded_plugin(api: list[str]) -> None:

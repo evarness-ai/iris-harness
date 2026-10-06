@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from iris_harness.runtime.plugin_host.manifest import PluginManifest, load_manifest
 
@@ -72,3 +73,29 @@ def test_examples_and_scaffolds_do_not_claim_first_party(path: Path) -> None:
     """What an outside author copies must not hand them the project's provenance."""
     manifest_text = path.read_text(encoding="utf-8")
     assert "party: first-party" not in manifest_text
+
+
+def _every_plugin_manifest() -> list[Path]:
+    found = [
+        p
+        for p in _ROOT.rglob("manifest.yaml")
+        if not {".venv", "node_modules", "skills", ".git", "htmlcov"}
+        & set(p.relative_to(_ROOT).parts)
+    ]
+    return sorted(found)
+
+
+@pytest.mark.parametrize("path", _every_plugin_manifest(), ids=lambda p: str(p.relative_to(_ROOT)))
+def test_every_plugin_manifest_in_the_repo_declares_party(path: Path) -> None:
+    """Nothing the repo ships may trigger the loader's omitted-`party` notice."""
+    # Raw YAML: a scaffold's name is a `__tmpl_` placeholder that load_manifest refuses.
+    assert "party" in yaml.safe_load(path.read_text(encoding="utf-8")), f"{path} omits `party`"
+
+
+def test_the_manifest_sweep_found_the_shipped_ones() -> None:
+    assert len(_every_plugin_manifest()) >= len(_SHIPPED) + len(_OUTSIDE_AUTHORS)
+
+
+@pytest.mark.parametrize("path", _OUTSIDE_AUTHORS, ids=lambda p: str(p.relative_to(_ROOT)))
+def test_examples_and_scaffolds_say_untrusted_explicitly(path: Path) -> None:
+    assert yaml.safe_load(path.read_text(encoding="utf-8")).get("party") == "untrusted"

@@ -1,6 +1,9 @@
 name: unit_converter
 version: 0.1.0
 description: A convert_units tool for lengths and temperatures.
+# Provenance: who wrote this plugin. Left as `untrusted` so a copy of this manifest does
+# not claim to be the harness's own code; change it only to say what is true of yours.
+party: untrusted
 entrypoint: unit_converter:setup
 flavor: python
 trust: in-process

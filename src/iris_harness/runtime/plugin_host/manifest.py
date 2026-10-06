@@ -25,6 +25,11 @@ from iris_harness.foundation.capabilities import is_capability_name
 from iris_harness.foundation.settings.catalog import SettingDeclaration
 from iris_harness.kernel.governance.hooks.tool_payload import ToolContent, ToolSendsTo
 from iris_harness.kernel.governance.owner_identity import OWNER_PII_KINDS
+from iris_harness.kernel.governance.plugin_egress import (
+    HostRule,
+    PluginEgress,
+    normalize_host_pattern,
+)
 from iris_harness.kernel.governance.side_effects.probes import probe_names
 from iris_harness.services.digest.expiry import (
     ExpiryKindDeclaration,
@@ -62,6 +67,108 @@ class PluginUses(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     tools: tuple[str, ...] = Field(default_factory=tuple)
+
+
+EgressDataClass = Literal["public", "internal", "personal"]
+EgressScheme = Literal["http", "https"]
+
+
+class EgressHostDecl(BaseModel):
+    """One host a plugin's code may contact (issue #103).
+
+    A bare string is the shorthand for ``{host: <it>}``: HTTPS on 443, receiving ``internal``
+    data. ``host`` is an exact host or ``*.<domain>`` (subdomains, never the apex). ``ports``
+    default to the default port of each scheme. ``data`` is the highest data class the host
+    receives: a run holding more than that is refused, so a plugin that sends something
+    personal (a place name that may be the owner's home) must say ``personal``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    host: str
+    schemes: tuple[EgressScheme, ...] = ("https",)
+    ports: tuple[int, ...] = ()
+    data: EgressDataClass = "internal"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _shorthand(cls, raw: Any) -> Any:
+        return {"host": raw} if isinstance(raw, str) else raw
+
+    @field_validator("host")
+    @classmethod
+    def _host(cls, value: str) -> str:
+        return normalize_host_pattern(value)
+
+    @field_validator("schemes")
+    @classmethod
+    def _schemes(cls, value: tuple[EgressScheme, ...]) -> tuple[EgressScheme, ...]:
+        if not value:
+            raise ValueError("schemes: name at least one, or leave it out for https")
+        return tuple(dict.fromkeys(value))
+
+    @field_validator("ports")
+    @classmethod
+    def _ports(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        for port in value:
+            if not 1 <= port <= 65535:
+                raise ValueError(f"ports: {port} is not a port")
+        return tuple(dict.fromkeys(value))
+
+
+class PluginEgressDecl(BaseModel):
+    """The hosts this plugin's code may contact (``egress:``), compiled into kernel policy.
+
+    Absent or empty is a closed door: through the governed client such a plugin may contact
+    no host (docs/architecture/plugin-egress.md). ``open_web: true`` is the explicit form of
+    "any host", for a tool whose job is to fetch pages the owner or the model choose; every
+    call is still recorded.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    hosts: tuple[EgressHostDecl, ...] = Field(default_factory=tuple)
+    open_web: bool = False
+
+    @model_validator(mode="after")
+    def _distinct(self) -> PluginEgressDecl:
+        seen: set[str] = set()
+        for entry in self.hosts:
+            if entry.host in seen:
+                raise ValueError(f"egress.hosts: {entry.host!r} is declared twice")
+            seen.add(entry.host)
+        if self.open_web and self.hosts:
+            raise ValueError("egress: `open_web: true` allows any host; drop `hosts`")
+        return self
+
+    @property
+    def declared(self) -> bool:
+        return bool(self.hosts) or self.open_web
+
+    def summary(self) -> dict[str, Any]:
+        """The declaration as plain data, for ``iris plugins`` and ``--dump-config``."""
+        return {
+            "open_web": self.open_web,
+            "hosts": [
+                {
+                    "host": h.host,
+                    "schemes": list(h.schemes),
+                    "ports": list(h.ports),
+                    "data": h.data,
+                }
+                for h in self.hosts
+            ],
+        }
+
+    def compile(self) -> PluginEgress:
+        """The kernel's form of this declaration."""
+        return PluginEgress(
+            hosts=tuple(
+                HostRule(host=h.host, schemes=h.schemes, ports=h.ports, data=h.data)
+                for h in self.hosts
+            ),
+            open_web=self.open_web,
+        )
 
 
 # The kinds a manifest may unmask: owner_identity.OWNER_PII_KINDS, as a type (a test keeps
@@ -514,6 +621,10 @@ class PluginManifest(BaseModel):
     provides: tuple[RegistrationKind, ...] = Field(default_factory=tuple)
     requires: PluginRequirements = Field(default_factory=PluginRequirements)
     uses: PluginUses = Field(default_factory=PluginUses)
+    # Issue #103: the hosts this plugin's code may contact, compiled into the kernel's
+    # egress policy when the plugin mounts. Absent: no host. Declared, not yet enforced; see
+    # docs/architecture/plugin-egress.md.
+    egress: PluginEgressDecl = Field(default_factory=PluginEgressDecl)
     capabilities: PluginCapabilities = Field(default_factory=PluginCapabilities)
     # ADR-0125: the owner-identity kinds `api.register_owner_identity_source` may return.
     identity: PluginIdentity = Field(default_factory=PluginIdentity)
@@ -609,6 +720,19 @@ class PluginManifest(BaseModel):
         return self
 
     @model_validator(mode="after")
+    def _external_service_needs_egress(self) -> PluginManifest:
+        """A tool that sends its arguments to an external service names where, here."""
+        if self.egress.declared:
+            return self
+        bare = sorted(n for n, d in self.tools.items() if d.sends_to == "external_service")
+        if bare:
+            raise ValueError(
+                f"tools: {', '.join(bare)} declare sends_to: external_service but the plugin "
+                "declares no `egress` hosts (or `open_web: true`) to say which service"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _flavor_shape(self) -> PluginManifest:
         """A declarative plugin is its manifest; a python plugin's tools are its code's."""
         if self.flavor == "python":
@@ -694,8 +818,11 @@ def load_manifest(path: Path) -> PluginManifest:
 
 __all__ = [
     "ARG_TYPES",
+    "EgressDataClass",
+    "EgressHostDecl",
     "GrantableKind",
     "PluginCapabilities",
+    "PluginEgressDecl",
     "PluginFlavor",
     "PluginIdentity",
     "PluginManifest",

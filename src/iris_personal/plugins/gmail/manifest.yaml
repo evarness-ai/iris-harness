@@ -15,6 +15,18 @@ trust: in-process
 party: first-party
 cli: cli:register
 provides: []
+# Issue #103: the hosts the Google API client and the OAuth flow connect to. `personal`:
+# mail and the account profile cross these.
+egress:
+  hosts:
+    - host: gmail.googleapis.com
+      data: personal
+    - host: www.googleapis.com
+      data: personal
+    - host: oauth2.googleapis.com
+      data: personal
+    - host: accounts.google.com
+      data: personal
 # The Google API client the fetcher, the attachment reader and the OAuth flow import:
 # the `email` extra installs them. Without them the plugin does not mount, and an
 # unnamed run stays on the `default` profile (profiles/default.yaml).

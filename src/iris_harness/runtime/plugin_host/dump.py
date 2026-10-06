@@ -66,6 +66,14 @@ def render_text(tree: dict[str, Any]) -> str:
             )
             if row.get("identity"):
                 lines.append(f"        owner identity: {', '.join(row['identity'])}")
+            egress = row.get("egress") or {}
+            if egress.get("open_web"):
+                lines.append("        egress: any host (open_web)")
+            elif egress.get("hosts"):
+                hosts = ", ".join(f"{h['host']} ({h['data']})" for h in egress["hosts"])
+                lines.append(f"        egress: {hosts}")
+            else:
+                lines.append("        egress: none declared (no host)")
             if row.get("search_providers"):
                 lines.append(f"        search providers: {', '.join(row['search_providers'])}")
         else:

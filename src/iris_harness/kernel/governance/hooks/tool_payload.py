@@ -43,9 +43,11 @@ declaration, never chosen by the caller:
 - ``tool_error`` (``POST_TOOL_USE``): the exception class name when the tool raised, else
   None. Never the message: it can carry the call's content.
 - ``tool_sends_to`` (``PRE_TOOL_USE``): where the arguments go, when the tool declares it:
-  ``search_engine`` for a tool that hands its arguments to a web search provider. The
-  owner-PII web-search column applies to exactly these calls (ADR-0125), by declaration
-  rather than by a list of tool names.
+  ``search_engine`` for a tool that hands its arguments to a web search provider (the
+  owner-PII web-search column applies to exactly these calls, ADR-0125), or
+  ``external_service`` for a tool that hands them to any other service outside the machine
+  (the owner-PII egress column applies; the hosts are the plugin's ``egress`` declaration,
+  issue #103). By declaration rather than by a list of tool names.
 """
 
 from __future__ import annotations
@@ -91,8 +93,9 @@ ToolContent = Literal["internal", "external"]
 TOOL_CONTENTS: tuple[ToolContent, ...] = ("internal", "external")
 
 #: Where a tool's arguments go, when that is a governed destination of its own.
-ToolSendsTo = Literal["search_engine"]
+ToolSendsTo = Literal["search_engine", "external_service"]
 SEARCH_ENGINE: ToolSendsTo = "search_engine"
+EXTERNAL_SERVICE: ToolSendsTo = "external_service"
 
 
 def pre_tool_payload(tool_name: str, args: dict[str, Any], /, **extra: Any) -> dict[str, Any]:
@@ -174,6 +177,11 @@ def sends_to_search_engine(metadata: dict[str, Any]) -> bool:
     return metadata.get(TOOL_SENDS_TO) == SEARCH_ENGINE
 
 
+def sends_to_external_service(metadata: dict[str, Any]) -> bool:
+    """Whether the tool declared that its arguments go to a service outside the machine."""
+    return metadata.get(TOOL_SENDS_TO) == EXTERNAL_SERVICE
+
+
 def is_external(metadata: dict[str, Any]) -> bool:
     """Whether the tool declared its output third-party content."""
     return metadata.get(TOOL_CONTENT) == "external"
@@ -193,6 +201,7 @@ __all__ = [
     "HELD_CALL_ID",
     "RESULT_DIGEST",
     "RESULT",
+    "EXTERNAL_SERVICE",
     "SEARCH_ENGINE",
     "SIDE_EFFECT_ID",
     "TOOL_CALL_ID",
@@ -212,6 +221,7 @@ __all__ = [
     "pre_tool_payload",
     "result_of",
     "side_effect_id_of",
+    "sends_to_external_service",
     "sends_to_search_engine",
     "tool_name_of",
     "tool_post_metadata",

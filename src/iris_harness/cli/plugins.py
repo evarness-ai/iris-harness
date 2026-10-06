@@ -111,6 +111,19 @@ def _capability_lines(caps: dict[str, list[dict[str, Any]]]) -> list[str]:
     return lines
 
 
+def egress_lines(egress: dict[str, Any] | None) -> list[str]:
+    """The hosts a plugin may contact, one line each (``open_web`` says so loudly)."""
+    if not egress:
+        return []
+    if egress.get("open_web"):
+        return ["[yellow]any host (open_web)[/yellow]  [dim]every call is recorded[/dim]"]
+    lines = []
+    for h in egress.get("hosts") or []:
+        ports = f":{','.join(str(p) for p in h['ports'])}" if h.get("ports") else ""
+        lines.append(f"{'/'.join(h['schemes'])}://{h['host']}{ports}  [dim]data: {h['data']}[/dim]")
+    return lines
+
+
 @plugins_app.command("show")
 def cmd_show(
     name: Annotated[str, typer.Argument(help="Plugin name, as `iris plugins` lists it.")],
@@ -149,6 +162,7 @@ def cmd_show(
             ],
         ),
         ("capabilities", _capability_lines(data.get("capabilities") or {})),
+        ("egress", egress_lines(data.get("egress"))),
         # OSS plan R17: the console screens it owns, in the nav while it is mounted.
         (
             "screens",

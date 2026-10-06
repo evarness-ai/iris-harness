@@ -594,6 +594,8 @@ def describe_sources(
                     "identity": list(source.manifest.identity.provides),
                     # The search providers it may add to the research chain.
                     "search_providers": list(source.manifest.search_providers),
+                    # Issue #103: where its code may connect (empty: nowhere).
+                    "egress": source.manifest.egress.summary(),
                     "description": source.manifest.description,
                 }
             )

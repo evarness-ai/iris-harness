@@ -174,6 +174,8 @@ def _summary(
         "agents": [r.name for r in rec.registrations if r.kind is RegistrationKind.INTENT_HANDLER],
         "declared_tools": len(manifest.tools) if manifest else 0,
         "search_providers": list(manifest.search_providers) if manifest else [],
+        # Issue #103: where its code may connect (declared).
+        "egress": manifest.egress.summary() if manifest else None,
         "failure_count": rec.failure_count,
         "last_error": rec.last_error,
         "load_error": rec.load_error,

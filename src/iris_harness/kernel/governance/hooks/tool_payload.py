@@ -38,7 +38,8 @@ declaration, never chosen by the caller:
   external-content floor marks and scans, and what the opt-in retrieved-content injection
   guard (model) also scans.
 - ``tool_verify``: the side-effect probe that can tell whether a write landed, or None.
-- ``tool_call_id``: this call's id, unique within its run step.
+- ``call_id`` (alias ``tool_call_id``, same value): this call attempt's ULID, minted once by the
+  runner and stamped by the kernel on every audit row of the call (``kernel._audit``).
 - ``tool_error`` (``POST_TOOL_USE``): the exception class name when the tool raised, else
   None. Never the message: it can carry the call's content.
 - ``tool_sends_to`` (``PRE_TOOL_USE``): where the arguments go, when the tool declares it:
@@ -71,7 +72,14 @@ TOOL_PLUGIN = "tool_plugin"
 TOOL_EFFECT = "tool_effect"
 TOOL_CONTENT = "tool_content"
 TOOL_VERIFY = "tool_verify"
+#: The call's id (a ULID, #134), minted once per call attempt by the runner -- never taken
+#: from a caller. ``TOOL_CALL_ID`` is the old name, stamped beside it with the same value
+#: for readers that predate ``CALL_ID`` (the session log's trace builder, old logs).
+CALL_ID = "call_id"
 TOOL_CALL_ID = "tool_call_id"
+#: On the approved attempt of a held call: the id of the attempt that was held, read by
+#: the harness from the approval row, never from a caller.
+HELD_CALL_ID = "held_call_id"
 TOOL_SENDS_TO = "tool_sends_to"
 TOOL_ERROR = "tool_error"
 
@@ -110,6 +118,7 @@ def tool_post_metadata(
     verify: str | None,
     tool_call_id: str | None,
     error: str | None = None,
+    held_call_id: str | None = None,
 ) -> dict[str, Any]:
     """The declaration a ``POST_TOOL_USE`` hook reads, as metadata.
 
@@ -120,9 +129,18 @@ def tool_post_metadata(
         TOOL_EFFECT: effect,
         TOOL_CONTENT: content,
         TOOL_VERIFY: verify,
+        CALL_ID: tool_call_id,
         TOOL_CALL_ID: tool_call_id,
+        HELD_CALL_ID: held_call_id,
         TOOL_ERROR: error,
     }
+
+
+def call_id_of(metadata: dict[str, Any]) -> str | None:
+    """The call's id from a context's metadata: ``call_id``, else its old name
+    ``tool_call_id`` (a hand-built context that predates #134 stamps only that)."""
+    value = metadata.get(CALL_ID) or metadata.get(TOOL_CALL_ID)
+    return value if isinstance(value, str) and value else None
 
 
 def tool_name_of(payload: dict[str, Any]) -> str:
@@ -170,7 +188,9 @@ def _no_contract_keys(extra: dict[str, Any]) -> None:
 __all__ = [
     "ARGS",
     "ARGS_DIGEST",
+    "CALL_ID",
     "DIGEST_ALG",
+    "HELD_CALL_ID",
     "RESULT_DIGEST",
     "RESULT",
     "SEARCH_ENGINE",
@@ -186,6 +206,7 @@ __all__ = [
     "ToolContent",
     "ToolSendsTo",
     "args_of",
+    "call_id_of",
     "is_external",
     "post_tool_payload",
     "pre_tool_payload",

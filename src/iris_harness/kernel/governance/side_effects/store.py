@@ -267,3 +267,32 @@ class SideEffectLedger:
             )
             conn.commit()
         return True
+
+
+class DeferredSideEffectLedger(SideEffectLedger):
+    """A ``SideEffectLedger`` that creates its database on first use, not at construction.
+
+    The default ledger scope is the high-risk class only: most processes never run such a
+    call, and a kernel is built many times per process. Opening eagerly would create the
+    file and its schema (a SQLite commit) for all of them. Here the first read or write
+    does; a failure to open surfaces then, from that call, so a high-risk call whose ledger
+    will not open is denied (``PreToolUseLedgerHook``) and the next call tries again.
+    """
+
+    def __init__(self, db_path: Path | None = None) -> None:
+        self.db_path = db_path or default_ledger_db_path()
+        self._opened = False
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        if not self._opened:
+            # Set first: ``_init_schema`` connects through here.
+            self._opened = True
+            try:
+                self.db_path.parent.mkdir(parents=True, exist_ok=True)
+                self._init_schema()
+            except BaseException:
+                self._opened = False
+                raise
+        with super()._connect() as conn:
+            yield conn

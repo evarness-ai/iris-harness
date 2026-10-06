@@ -785,11 +785,12 @@ settings:
     default: true
     applies: restart
     label: Side-effect ledger
-    description: On by default. The governance kernel records every non-read tool call's side
-      effect in the side-effect ledger (side_effects.db in the governance data dir, $IRIS_HOME/governance
-      when IRIS_HOME is set, else ~/.local/share/iris), and writes a destructive tool's or
-      a pinned write's row before the call runs. Off, those high-risk calls are denied, since
-      none may run without a durable record.
+    description: Unset (the default) the side-effect ledger (side_effects.db in the governance
+      data dir, $IRIS_HOME/governance when IRIS_HOME is set, else ~/.local/share/iris) covers
+      the high-risk class only. A destructive tool's or a pinned write's row is written before
+      the call runs, and plain writes and reads leave no row and open no file. 1 (on) also records
+      every other non-read call's side effect after it runs. 0 (off) denies every destructive tool
+      and pinned write, since none may run without a durable record.
     tab: guards
     guarded: true
     guard_reason: Turning it off stops governance recording of side effects and denies every

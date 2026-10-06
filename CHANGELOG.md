@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 First public release of the IRIS harness.
 
+### Changed
+
+- Destructive tools and pinned writes now get a durable side-effect ledger row before
+  they run (issue #73). This needs no flag: with `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`
+  unset the ledger covers that high-risk class only, and plain writes and reads are
+  unchanged (no row, no file). Behavior change for deployments that set
+  `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0`: a destructive tool or pinned write is now denied
+  rather than run with no durable record. Remove the setting, or set it to `1` to also
+  record every non-read call, to run them again.
+
 ### Added
 
 - The governed agent harness (`iris_harness`): intent routing, planning, a ReAct

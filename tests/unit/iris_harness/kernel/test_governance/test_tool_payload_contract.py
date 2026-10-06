@@ -185,8 +185,9 @@ def test_the_capability_path_builds_through_the_builders() -> None:
 # ------------------------------------------------- the core tools that return others' text
 def test_the_core_tools_that_return_third_party_text_declare_it(tmp_path: Path) -> None:
     """The injection guard scans by declaration, so a tool that returns text a third
-    party wrote must say so: ``research`` (web pages) and ``wiki_search`` (the wiki is
-    compiled from ingested documents). The owner's own memory is not external."""
+    party wrote must say so: ``research`` (web pages), ``wiki_search`` (the wiki is
+    compiled from ingested documents) and ``stock_quote`` (Yahoo's response). The owner's own memory is not external.
+    """
     from iris_harness.runtime.plugin_host.manifest import load_manifest
     from iris_harness.runtime.react_tools import builtin_react_tools
 
@@ -197,5 +198,6 @@ def test_the_core_tools_that_return_third_party_text_declare_it(tmp_path: Path) 
         t.name: t for t in builtin_react_tools(semantic_index=None, wiki=None, repo_root=tmp_path)
     }
     assert tools["wiki_search"].content == "external"
+    assert tools["stock_quote"].content == "external"
     internal = {"memory_search", "memory_graph", "recall_conversation", "iris_doc"}
     assert {tools[name].content for name in internal & set(tools)} == {"internal"}

@@ -117,6 +117,9 @@ class HeartbeatScheduler:
         # ``sys.platform`` unless a test pins another, so the platform lock is testable.
         self._platform = platform or sys.platform
         self._handlers: dict[str, HeartbeatHandler] = dict(handlers or {})
+        # Why a plugin is not mounted here (None when it is): bound by the runtime once
+        # plugins have mounted. Unbound, a missing handler cannot be explained and warns.
+        self._plugin_gap: Callable[[str], str | None] | None = None
         self._runs: list[HeartbeatRun] = []
         self._definitions: dict[str, HeartbeatDefinition] = {}
         self._declared: dict[str, HeartbeatDefinition] = {}
@@ -140,6 +143,20 @@ class HeartbeatScheduler:
 
     def has_handler(self, name: str) -> bool:
         return name in self._handlers
+
+    def bind_plugin_gap(self, plugin_gap: Callable[[str], str | None]) -> None:
+        """Say how to tell a plugin is not mounted: ``plugin_gap(name)`` returns why (a
+        sentence) or ``None`` when ``name`` is mounted. Lets a definition whose handler
+        belongs to an absent plugin be skipped quietly instead of warning."""
+        self._plugin_gap = plugin_gap
+
+    def _missing_plugin(self, definition: HeartbeatDefinition) -> str | None:
+        """Why the plugin that owns ``definition`` is not mounted, or None when no plugin
+        is named, it is mounted, or there is no way to tell (nothing bound)."""
+        if not definition.plugin or self._plugin_gap is None:
+            return None
+        gap = self._plugin_gap(definition.plugin)
+        return None if gap is None else f"plugin {definition.plugin} is not mounted: {gap}"
 
     # ------------------------------------------------------------------
     # Scheduling
@@ -171,6 +188,9 @@ class HeartbeatScheduler:
                 f"this harness runs on {self._platform}"
             )
         if definition.handler not in self._handlers:
+            gap = self._missing_plugin(definition)
+            if gap is not None:
+                return gap
             return f"no handler {definition.handler!r} is registered on this harness"
         return None
 
@@ -191,17 +211,29 @@ class HeartbeatScheduler:
             return False
         handler = self._handlers.get(definition.handler)
         if handler is None:
-            # Not a fault: config/heartbeats.yaml declares the schedules of every
-            # domain's jobs, and a handler arrives with its plugin, so on a harness
-            # without that plugin the job is simply unavailable. That state is surfaced
-            # (unavailable_reason, the Heartbeats screen); register_all() logs one
-            # summary line. A plugin that IS installed and failed is reported by the
-            # plugin host, not here.
-            logger.debug(
-                "heartbeat %s: no handler %s registered; unavailable",
-                definition.name,
-                definition.handler,
-            )
+            gap = self._missing_plugin(definition)
+            if gap is not None:
+                # Not a fault: config/heartbeats.yaml declares the schedules of every
+                # domain's jobs, and a handler arrives with its plugin, so on a harness
+                # without that plugin the job is simply unavailable. That state is shown
+                # (unavailable_reason, the Heartbeats screen) and register_all() logs one
+                # summary line; a plugin that failed to load is reported by the plugin host.
+                logger.debug("heartbeat %s not scheduled; %s", definition.name, gap)
+            elif definition.plugin and self._plugin_gap is not None:
+                # Its plugin is mounted and still did not register the handler: a bug.
+                logger.warning(
+                    "heartbeat %s: plugin %s is mounted but registered no handler %s; skipping",
+                    definition.name,
+                    definition.plugin,
+                    definition.handler,
+                )
+            else:
+                # No owner named (a typo), or no way to tell: a real fault.
+                logger.warning(
+                    "heartbeat %s references unknown handler %s; skipping",
+                    definition.name,
+                    definition.handler,
+                )
             self._unschedule(definition.name)
             return False
         self._definitions[definition.name] = definition
@@ -227,18 +259,22 @@ class HeartbeatScheduler:
     def register_all(self, definitions: list[HeartbeatDefinition]) -> int:
         registered = sum(1 for d in definitions if self.register(d))
         with self._lock:
-            unavailable = sorted(
-                d.name
-                for d in definitions
-                if d.enabled
-                and d.handler not in self._handlers
-                and not (d.platforms and self._platform not in d.platforms)
-            )
-        if unavailable:
+            effective = [self._effective.get(d.name, d) for d in definitions]
+            by_plugin: dict[str, list[str]] = {}
+            for d in effective:
+                if (
+                    d.enabled
+                    and d.handler not in self._handlers
+                    and not (d.platforms and self._platform not in d.platforms)
+                    and self._missing_plugin(d) is not None
+                ):
+                    by_plugin.setdefault(d.plugin, []).append(d.name)
+        if by_plugin:
             logger.info(
-                "%d heartbeat(s) unavailable, no handler registered (plugin not installed): %s",
-                len(unavailable),
-                ", ".join(unavailable),
+                "%d heartbeat(s) unavailable, plugin not mounted (%s): %s",
+                sum(len(names) for names in by_plugin.values()),
+                ", ".join(sorted(by_plugin)),
+                ", ".join(sorted(n for names in by_plugin.values() for n in names)),
             )
         return registered
 

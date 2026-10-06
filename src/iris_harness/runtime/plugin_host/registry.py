@@ -323,6 +323,20 @@ class PluginRegistry:
     def plugins(self) -> list[PluginRecord]:
         return list(self._plugins.values())
 
+    def unmounted_reason(self, name: str) -> str | None:
+        """Why plugin ``name`` is not serving here, or ``None`` when it is mounted.
+
+        A plugin the profile never listed (or listed as optional and not installed) has no
+        record; one that did not mount carries its own reason, e.g. a required package
+        that is not installed.
+        """
+        record = self._plugins.get(name)
+        if record is None:
+            return "not in this profile, or not installed"
+        if record.status in MOUNTED:
+            return None
+        return record.load_error or record.status.value
+
     def _record(self, plugin: str, kind: RegistrationKind, name: str, detail: str = "") -> None:
         record = self._plugins.get(plugin)
         if record is None:

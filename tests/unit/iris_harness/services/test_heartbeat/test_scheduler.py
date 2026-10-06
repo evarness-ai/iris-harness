@@ -130,22 +130,77 @@ def test_is_running_while_a_run_is_in_progress_and_idle_after() -> None:
     assert scheduler.wait_until_idle("never-ran", 0) is True
 
 
-def test_missing_handlers_log_one_summary_not_a_warning_each(caplog) -> None:  # type: ignore[no-untyped-def]
-    """A job whose plugin is not installed is unavailable, not a fault (#110)."""
+_SCHED_LOGGER = "iris_harness.services.heartbeat.scheduler"
+
+
+def _gap(unmounted: dict[str, str]):  # type: ignore[no-untyped-def]
+    """A plugin lookup: ``unmounted`` maps plugin -> reason; anything else is mounted."""
+    return lambda plugin: unmounted.get(plugin)
+
+
+def test_unmounted_plugin_heartbeats_log_one_summary_not_a_warning_each(caplog) -> None:  # type: ignore[no-untyped-def]
+    """A job whose plugin is not mounted is unavailable, not a fault (#110)."""
     scheduler = HeartbeatScheduler(handlers={"h": _ok})
+    scheduler.bind_plugin_gap(_gap({"gone": "not in this profile, or not installed"}))
     definitions = [
         HeartbeatDefinition(name="ok", handler="h", schedule="interval:60"),
-        HeartbeatDefinition(name="a", handler="gone_a", schedule="interval:60"),
-        HeartbeatDefinition(name="b", handler="gone_b", schedule="interval:60"),
-        HeartbeatDefinition(name="off", handler="gone_c", schedule="interval:60", enabled=False),
+        HeartbeatDefinition(name="a", handler="gone_a", schedule="interval:60", plugin="gone"),
+        HeartbeatDefinition(name="b", handler="gone_b", schedule="interval:60", plugin="gone"),
+        HeartbeatDefinition(
+            name="off", handler="gone_c", schedule="interval:60", enabled=False, plugin="gone"
+        ),
     ]
-    with caplog.at_level("DEBUG", logger="iris_harness.services.heartbeat.scheduler"):
+    with caplog.at_level("DEBUG", logger=_SCHED_LOGGER):
         assert scheduler.register_all(definitions) == 1
 
     assert not [r for r in caplog.records if r.levelname in {"WARNING", "ERROR"}]
     summary = [r for r in caplog.records if r.levelname == "INFO"]
     assert len(summary) == 1
-    assert "2 heartbeat(s) unavailable" in summary[0].getMessage()
-    assert "a, b" in summary[0].getMessage()
+    message = summary[0].getMessage()
+    assert "2 heartbeat(s) unavailable, plugin not mounted (gone)" in message
+    assert "a, b" in message
     # still listed, with the reason the app shows
-    assert scheduler.unavailable_reason(definitions[1]) is not None
+    reason = scheduler.unavailable_reason(definitions[1])
+    assert reason is not None and "plugin gone is not mounted" in reason
+
+
+def test_mounted_plugin_that_registered_no_handler_warns(caplog) -> None:  # type: ignore[no-untyped-def]
+    scheduler = HeartbeatScheduler(handlers={})
+    scheduler.bind_plugin_gap(_gap({}))  # everything is mounted
+    definition = HeartbeatDefinition(
+        name="j", handler="forgotten", schedule="interval:60", plugin="up"
+    )
+    with caplog.at_level("DEBUG", logger=_SCHED_LOGGER):
+        assert scheduler.register_all([definition]) == 0
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "plugin up is mounted but registered no handler forgotten" in warnings[0].getMessage()
+    assert not [r for r in caplog.records if r.levelname == "INFO"]  # not in the summary
+
+
+def test_typo_without_an_owning_plugin_warns(caplog) -> None:  # type: ignore[no-untyped-def]
+    scheduler = HeartbeatScheduler(handlers={"real": _ok})
+    scheduler.bind_plugin_gap(_gap({"gone": "x"}))
+    definition = HeartbeatDefinition(name="j", handler="rael", schedule="interval:60")
+    with caplog.at_level("DEBUG", logger=_SCHED_LOGGER):
+        assert scheduler.register_all([definition]) == 0
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "unknown handler rael" in warnings[0].getMessage()
+    assert not [r for r in caplog.records if r.levelname == "INFO"]
+
+
+def test_no_plugin_lookup_bound_warns_even_for_a_named_plugin(caplog) -> None:  # type: ignore[no-untyped-def]
+    """Nothing says the plugin is absent, so a missing handler is reported as before."""
+    scheduler = HeartbeatScheduler(handlers={})
+    definition = HeartbeatDefinition(name="j", handler="h", schedule="interval:60", plugin="p")
+    with caplog.at_level("DEBUG", logger=_SCHED_LOGGER):
+        assert scheduler.register_all([definition]) == 0
+
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "unknown handler h" in warnings[0].getMessage()
+    assert not [r for r in caplog.records if r.levelname == "INFO"]
+    assert "no handler 'h' is registered" in (scheduler.unavailable_reason(definition) or "")

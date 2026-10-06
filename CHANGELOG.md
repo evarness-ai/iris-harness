@@ -139,6 +139,18 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- A document index made under a different embedding model can be repaired (issue #144).
+  Chroma refuses to reopen the persisted collection under a new embedder, so the index was
+  unavailable, retrieval fell back to keyword search and `iris docs reindex` could not
+  rebuild it. `iris docs reindex` now says so in plain words and names the repair, the new
+  explicit `iris docs reindex --reset-collection`: it deletes only the vector collection and
+  rebuilds it from `rag.db`, keeping every source and every label. Plain `iris docs reindex`
+  is unchanged. A rebuild that fails part-way (disk full, embedder error) leaves the index
+  partial; the command says so, `rag.db` is untouched, and rerunning it is idempotent. The
+  command cannot detect a running IRIS server, so stop the server before
+  the reset and restart it after. A server that was left running no longer fails silently:
+  on its next request it logs one warning, reopens the collection and retries once (and
+  falls back to keyword search with a warning if the reopen fails).
 - The external-content floor bounds what a hostile text can grow to without erasing what
   follows it. The first 64 redacted spans in a text keep the full-size marker; each further
   span is redacted with the 3-character `[~]` and the legitimate text between spans is kept

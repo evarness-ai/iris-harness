@@ -10,7 +10,9 @@ The index is a projection, not a source of truth: the canonical chunk text lives
 ``DocumentStore`` (``data/rag.db``) and the documents themselves stay where the user
 keeps them. Losing or corrupting ``data/chroma_docs`` loses nothing: ``rebuild`` (driven
 by ``iris_harness.services.rag.ingest.reindex_all``, ``iris docs reindex``) recreates
-its contents from the store's chunks. Re-running ``sync_all`` is NOT a rebuild: it skips
+its contents from the store's chunks. If the persisted collection cannot be opened at all
+(the embedding model changed, so Chroma refuses it), ``reset_collection`` deletes and
+re-creates it (``iris docs reindex --reset-collection``). Re-running ``sync_all`` is NOT a rebuild: it skips
 every file whose mtime/hash is unchanged, so it never re-populates an empty index.
 """
 
@@ -18,8 +20,9 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +35,17 @@ _COLLECTION = "iris_documents"
 _REBUILD_BATCH = 500  # chunks per upsert; well under Chroma's per-call maximum
 
 
+def _delete_ids(col: Any, *, ids: list[str]) -> None:
+    col.delete(ids=ids)
+
+
+def _not_found_error() -> type[Exception]:
+    """Chroma's "collection does not exist" error, ``chromadb.errors.NotFoundError``."""
+    from chromadb.errors import NotFoundError
+
+    return NotFoundError
+
+
 @dataclass
 class DocumentIndex:
     persist_dir: Path = field(default_factory=lambda: data_path("chroma_docs"))
@@ -40,6 +54,10 @@ class DocumentIndex:
         self._ok = False
         self._client: Any = None
         self._col: Any = None
+        # Why the collection could not be opened (None when it opened or Chroma is not in
+        # use), and whether the cause is the embedding-model conflict `reset_collection` fixes.
+        self.open_error: str | None = None
+        self.embedder_conflict = False
         if os.environ.get("IRIS_TEST_NULL_EMBEDDINGS"):
             return
         try:
@@ -60,15 +78,61 @@ class DocumentIndex:
             )
             self._ok = True
             logger.info("document index ready (chunks=%d)", self._col.count())
-        except Exception:
+        except Exception as exc:
+            self.open_error = str(exc)
+            self.embedder_conflict = (
+                self._client is not None
+                and isinstance(exc, ValueError)
+                and "embedding function" in str(exc).lower()
+            )
             logger.warning("document index unavailable — keyword fallback", exc_info=True)
 
     @property
     def is_ready(self) -> bool:
         return self._ok
 
+    def _call(self, op: Callable[[Any], Any]) -> Any:
+        """Run ``op(collection)``; if the collection was reset or removed, reopen and retry once.
+
+        ``iris docs reindex --reset-collection`` deletes and re-creates the collection from
+        another process, which leaves this process's handle pointing at a deleted one. Chroma
+        then raises ``chromadb.errors.NotFoundError`` ("Collection [...] does not exist").
+        That exact type (no other error) triggers one WARNING, one reopen under the current
+        embedder and one retry. If the reopen fails the index is marked unavailable, loudly,
+        so callers fall back to keyword search.
+        """
+        try:
+            return op(self._col)
+        except _not_found_error() as exc:
+            logger.warning(
+                "document index: the collection was reset or removed under this running "
+                "process; reopening it"
+            )
+            self._reopen_after_loss(exc)
+            return op(self._col)
+
+    def _reopen_after_loss(self, original: Exception) -> None:
+        from iris_harness.foundation.persistence.embedding import collection_kwargs
+
+        try:
+            self._col = self._client.get_or_create_collection(
+                _COLLECTION, metadata={"hnsw:space": "cosine"}, **collection_kwargs()
+            )
+        except Exception as exc:
+            self._ok = False
+            self.open_error = str(exc)
+            logger.warning(
+                "document index: reopening the collection failed (%s); the vector index is "
+                "unavailable until the process restarts, searching by keyword",
+                type(exc).__name__,
+            )
+            raise original from exc
+
     def _upsert(self, chunks: Sequence[DocumentChunk]) -> None:
-        self._col.upsert(
+        self._call(lambda col: self._upsert_into(col, chunks))
+
+    def _upsert_into(self, col: Any, chunks: Sequence[DocumentChunk]) -> None:
+        col.upsert(
             ids=[c.id for c in chunks],
             documents=[c.text for c in chunks],
             metadatas=[
@@ -91,15 +155,20 @@ class DocumentIndex:
         """Number of entries in the collection (0 when the index is unavailable)."""
         if not self._ok:
             return 0
-        return int(self._col.count())
+        return int(self._call(lambda col: col.count()))
 
     def index_chunks(self, chunks: Sequence[DocumentChunk]) -> None:
         if not self._ok or not chunks:
             return
         try:
             self._upsert(chunks)
-        except Exception:
-            logger.debug("document index: upsert failed", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - best-effort write; the store keeps the chunk
+            logger.warning(
+                "document index: could not index %d chunk(s) (%s); they stay in the store and "
+                "return on the next `iris docs reindex`",
+                len(chunks),
+                type(exc).__name__,
+            )
 
     def rebuild(self, chunks: Iterable[DocumentChunk]) -> int:
         """Make the collection hold exactly ``chunks``; return how many were indexed.
@@ -129,16 +198,51 @@ class DocumentIndex:
             self._upsert(batch)
             wanted.update(c.id for c in batch)
             total += len(batch)
-        stale = [cid for cid in self._col.get(include=[])["ids"] if cid not in wanted]
+        stale = [
+            cid for cid in self._call(lambda col: col.get(include=[]))["ids"] if cid not in wanted
+        ]
         for i in range(0, len(stale), _REBUILD_BATCH):
-            self._col.delete(ids=stale[i : i + _REBUILD_BATCH])
+            ids = stale[i : i + _REBUILD_BATCH]
+            self._call(partial(_delete_ids, ids=ids))
         return total
+
+    def reset_collection(self) -> None:
+        """Delete the docs collection and create it again, empty, under the current embedder.
+
+        The repair for a collection Chroma will not open (a persisted one made under a
+        different embedding model). Touches only ``iris_documents``: no other collection of
+        the client, not ``rag.db``, no source file. The caller refills it with ``rebuild``.
+
+        A reset invalidates any other handle on the old collection (a running server's
+        ``app.state.rag_handles`` index). That handle recovers on its next call (``_call``:
+        one WARNING, one reopen, one retry; if the reopen fails it degrades to keyword
+        search), but a CLI cannot detect a running server, so stop it before a reset and
+        restart it after. ``rebuild`` keeps handles valid without any of this.
+
+        Raises ``RuntimeError`` when Chroma itself is not in use (nothing to reset).
+        """
+        if self._client is None:
+            raise RuntimeError(
+                "the vector index cannot be reset: ChromaDB is not available "
+                "(or embeddings are disabled)"
+            )
+        from iris_harness.foundation.persistence.embedding import collection_kwargs
+
+        existing = {getattr(c, "name", c) for c in self._client.list_collections()}
+        if _COLLECTION in existing:
+            self._client.delete_collection(_COLLECTION)
+        self._col = self._client.get_or_create_collection(
+            _COLLECTION, metadata={"hnsw:space": "cosine"}, **collection_kwargs()
+        )
+        self._ok = True
+        self.open_error = None
+        self.embedder_conflict = False
 
     def delete_source(self, source_id: str) -> None:
         if not self._ok:
             return
         try:
-            self._col.delete(where={"source_id": source_id})
+            self._call(lambda col: col.delete(where={"source_id": source_id}))
         except Exception:
             logger.debug("document index: delete failed for %s", source_id, exc_info=True)
 
@@ -147,13 +251,13 @@ class DocumentIndex:
         if not self._ok or not text.strip():
             return []
         try:
-            count = self._col.count()
+            count = int(self._call(lambda col: col.count()))
             if count == 0:
                 return []
-            res = self._col.query(
-                query_texts=[text],
-                n_results=min(n, count),
-                include=["distances"],
+            res = self._call(
+                lambda col: col.query(
+                    query_texts=[text], n_results=min(n, count), include=["distances"]
+                )
             )
             ids: list[str] = res.get("ids", [[]])[0]
             dists: list[float] = res.get("distances", [[]])[0]

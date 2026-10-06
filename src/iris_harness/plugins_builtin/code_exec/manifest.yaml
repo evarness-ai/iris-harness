@@ -24,6 +24,10 @@ tools:
     # It runs shell commands the model wrote, in the sandbox: `iris mcp serve` serves it
     # only when named with --tool.
     executes_code: true
+    # Issue #140: the script's output can be derived from third-party data (a page it
+    # fetched, a file it downloaded), so the governed call marks and scans it like any
+    # external result. `content` does not gate the tool; the sandbox and Docker mount do.
+    content: external
 
 # ADR-0120: every IRIS_* setting this plugin reads, for the settings catalog.
 settings:

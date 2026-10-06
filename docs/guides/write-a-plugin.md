@@ -75,6 +75,15 @@ from iris_harness.sdk.content import wrap_external_content
 prompt = f"Summarise:\n{wrap_external_content(result.text, source='my_plugin', tool='fetch')}"
 ```
 
+For text you show the owner, return to a channel or log (not hand to a model), use
+`redact_external_content(text)` from the same module: it is the tripwire without the
+envelope. It honours `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR` (floor off: the text comes
+back unchanged) and writes a counts-only ledger row (pattern ids and counts, never the
+text) for each of the first five matching calls per scope (a session, unless you open a run
+scope); later matches are still redacted, only not recorded one by one. Do not call it per
+character; call it per line or per text. Streamed text needs care: a phrase can be split across chunks, so scan whole lines
+(with an overlap), not each chunk.
+
 ## The six registration kinds
 
 | Kind | Call | What it is for |

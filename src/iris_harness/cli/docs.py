@@ -73,6 +73,24 @@ def cmd_sync() -> None:
     console.print(f"  [bold green]✓[/bold green]  {result.summary()}")
 
 
+@docs_app.command("reindex")
+def cmd_reindex() -> None:
+    """Rebuild the vector index from the stored chunks (after a lost or damaged index).
+
+    Reads no source file: the chunk store is canonical, the vector index only mirrors it.
+    `sync` cannot do this, since it skips files that have not changed.
+    """
+    from iris_harness.services.rag.ingest import reindex_all
+
+    store, index = _store_and_index()
+    try:
+        count = reindex_all(store=store, index=index)  # type: ignore[arg-type]
+    except RuntimeError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+    console.print(f"  [bold green]✓[/bold green]  rebuilt the vector index: {count} chunk(s)")
+
+
 @docs_app.command("list")
 def cmd_list() -> None:
     """List indexed document sources."""

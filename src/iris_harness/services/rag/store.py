@@ -160,6 +160,17 @@ class DocumentStore:
             row = conn.execute("SELECT * FROM document_chunks WHERE id = ?", (chunk_id,)).fetchone()
         return _row_to_chunk(row) if row else None
 
+    def iter_chunks(self) -> Iterable[DocumentChunk]:
+        """Every stored chunk, in a stable order (source, then position).
+
+        The canonical chunk set the vector index is rebuilt from.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM document_chunks ORDER BY source_id, chunk_index"
+            ).fetchall()
+        return (_row_to_chunk(r) for r in rows)
+
     def count_chunks(self, source_id: str) -> int:
         with self._connect() as conn:
             row = conn.execute(

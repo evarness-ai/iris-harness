@@ -19,7 +19,7 @@ tools:
   research:
     effect: read
     # Web pages and search snippets: text third parties wrote, scanned for injected
-    # instructions before the model sees it.
+    # instructions before the model sees it when the opt-in prompt guard is on.
     content: external
     # Its arguments go to a web search provider: the owner-PII guards' web-search column
     # applies to its calls (ADR-0125).

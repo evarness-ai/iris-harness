@@ -203,7 +203,24 @@ class PromptGuardRetrievedHook:
                 else "prompt_guard_retrieved: benign"
             )
             severity = "warn" if errored else "info"
-            return HookDecision(outcome="allow", reason=reason, severity=severity)
+            if not errored:
+                return HookDecision(outcome="allow", reason=reason, severity=severity)
+            # An unscanned result must be traceable from the ledger alone: which tool's
+            # text went through unscanned, how much of it, and why the classifier said no.
+            failed = [v for v in verdicts if v.label == "error"]
+            return HookDecision(
+                outcome="allow",
+                reason=reason,
+                severity=severity,
+                audit_metadata={
+                    "tool": tool,
+                    "scanned": False,
+                    "segments_total": len(segments),
+                    "segments_unscanned": len(failed),
+                    "backend": failed[0].backend,
+                    "detail": failed[0].detail,
+                },
+            )
 
         max_score = max(verdicts[i].score for i in flagged_idx)
         audit: dict[str, Any] = {

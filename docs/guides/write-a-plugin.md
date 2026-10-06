@@ -42,7 +42,7 @@ provides: [tool]
 tools:
   weather_now:
     effect: read        # read | write (asks once per run) | destructive (approved per call)
-    content: internal   # external: a third party wrote it; scanned for injected instructions
+    content: internal   # external: a third party wrote it; scanned when the opt-in prompt guard is on
 ```
 
 ```python

@@ -121,6 +121,10 @@ class SkillToolManifest(BaseModel):
     description: str = Field(..., min_length=1)
     governor_route: str = Field(..., min_length=1)
     args: tuple[ToolArg, ...] = Field(default_factory=tuple)
+    # What the tool's output is, as a plugin tool declares it (``content:`` in a plugin
+    # manifest): ``external`` = text a third party wrote (a web page, a feed), which the
+    # retrieved-content injection guard scans at POST_TOOL_USE when that guard is on.
+    content: Literal["internal", "external"] = "internal"
 
 
 class RequiredCredential(BaseModel):

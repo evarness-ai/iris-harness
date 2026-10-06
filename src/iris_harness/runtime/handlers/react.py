@@ -394,6 +394,7 @@ def _skills_to_react_tools(
                     name=name,
                     description=tool_manifest.description,
                     call=_make_call(tool_class),
+                    content=tool_manifest.content,
                     plugin=f"skill:{package.manifest.name}",
                 )
             )

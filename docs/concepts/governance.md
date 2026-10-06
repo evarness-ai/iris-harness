@@ -69,8 +69,11 @@ so the agent it watches cannot influence it.
 
 ## Threat detection
 
-Retrieved content a third party wrote (a web page, an email) is marked `external` and
-scanned for injected instructions before the model reads it. Optional model-based
+Retrieved content a third party wrote (a web page, an email) is marked `external`. The
+retrieved-content injection guard scans it for injected instructions before the model
+reads it, but only when `IRIS_GOVERNANCE_PROMPT_GUARD` is on (off by default), and it
+needs the Prompt Guard model (the `ml` extra plus the weights): without them it lets the
+text through and records a `guard unavailable` row. Optional model-based
 guards (Prompt Guard on input, Llama Guard on output) and response judges
 (faithfulness, grounding) add a second layer; each ships off or in shadow mode first.
 The model-free checks are the floor every answer passes, whatever is turned on.

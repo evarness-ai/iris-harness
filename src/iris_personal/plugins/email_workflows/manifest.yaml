@@ -21,8 +21,8 @@ read_first_intents:
   - email
   - communication
 # Every read tool returns text the senders wrote (subjects, snippets, bodies, attachment
-# names), so each declares `content: external`: the retrieved-content injection guard
-# scans its result before the model sees it.
+# names), so each declares `content: external`: when the opt-in retrieved-content injection
+# guard is on (IRIS_GOVERNANCE_PROMPT_GUARD), it scans the result before the model sees it.
 tools:
   search_inbox:
     effect: read

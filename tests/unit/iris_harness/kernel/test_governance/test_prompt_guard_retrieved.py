@@ -134,6 +134,21 @@ async def test_degraded_guard_allows() -> None:
     assert decision.severity == "warn"
 
 
+async def test_degraded_guard_row_names_the_unscanned_tool_and_why() -> None:
+    """A result that passed unscanned is traceable from the ledger row alone."""
+    hook = _hook(_ErrorClassifier(), shadow=False)
+    decision = await hook(_ctx("weather_forecast", "para one\n\npara two"))
+    assert decision.reason == "prompt_guard_retrieved: guard unavailable"
+    assert decision.audit_metadata == {
+        "tool": "weather_forecast",
+        "scanned": False,
+        "segments_total": 2,
+        "segments_unscanned": 2,
+        "backend": "stub",
+        "detail": "down",
+    }
+
+
 # --- wiring registration -----------------------------------------------------
 
 

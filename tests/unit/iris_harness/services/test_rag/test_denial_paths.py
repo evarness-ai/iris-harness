@@ -117,7 +117,13 @@ def test_gate_raises_when_only_the_extracted_text_is_secret(
 
 
 def test_upsert_without_a_classification_keeps_the_stored_label(store: DocumentStore) -> None:
-    kw: dict[str, Any] = dict(id="s1", path="/x.md", kind="file", title="x", content_sha="a")
+    kw: dict[str, Any] = {
+        "id": "s1",
+        "path": "/x.md",
+        "kind": "file",
+        "title": "x",
+        "content_sha": "a",
+    }
     store.upsert_source(**kw, classification="personal")
 
     returned = store.upsert_source(**{**kw, "content_sha": "b"})

@@ -115,6 +115,15 @@ def governance_block_message(decision: HookDecision) -> str:
     return f"Request {action} by governance: {decision.reason}"
 
 
+class ToolUnavailable(RuntimeError):
+    """A tool's own code failed and a fault boundary caught it (a plugin's tool raised).
+
+    Its message is what the caller is told instead of a result. Raised, not returned: a
+    tool that failed must not read as one that ran, so the call's ``ok`` is false and
+    an approved call settles as ``failed``, not ``ran``.
+    """
+
+
 @dataclass(frozen=True)
 class ToolCall:
     """Who is calling, and where the call belongs, for one governed tool call."""
@@ -337,6 +346,9 @@ class GovernedToolRunner:
         ok = True
         try:
             result = str(tool.call(tool_args))
+        except ToolUnavailable as exc:
+            result = str(exc)
+            ok = False
         except Exception as exc:  # noqa: BLE001
             result = f"Tool error: {exc}"
             ok = False
@@ -852,6 +864,7 @@ __all__ = [
     "PostOutcome",
     "ToolCall",
     "ToolOutcome",
+    "ToolUnavailable",
     "approval_card_for",
     "approved_per_call",
     "approved_per_call_for",

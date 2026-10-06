@@ -622,3 +622,35 @@ def test_api_tools_is_the_bound_entry_and_gets_the_approval_path(world: _World) 
         result = api.tools.call("add_note", {"text": "milk"})
     assert result.held and not result.ok and result.approval_id is not None
     assert world.ran == []
+
+
+# ── a plugin's tool that raises: through the fault boundary, as production mounts it ──
+
+
+def _plugin_tool(world: _World, name: str, effect: str, confirm: str) -> PluginRegistry:
+    """``name`` registered the way a mounted plugin's tool is: behind the registry's fault
+    boundary, which catches the raise and records it against the plugin."""
+    registry = PluginRegistry()
+    registry.add_plugin(PluginRecord(name="flaky", source="test", status=PluginStatus.LOADED))
+    registry.add_tool("flaky", world._tool(name, effect, confirm, fail=True))
+    world.tools.append(registry.tools()[-1])
+    return registry
+
+
+def test_a_plugin_tool_that_raises_is_reported_failed_not_ran(world: _World) -> None:
+    """Regression: the boundary answered with a sentence, so the approved call that raised
+    settled as ``ran``."""
+    registry = _plugin_tool(world, "flaky_write", "write", "once")
+    approval_id = world.queued("flaky_write")
+    outcome = world.approve(approval_id, executor=world.service)
+    assert outcome.executed and [o["status"] for o in world.outcomes()] == ["failed"]
+    record = next(r for r in registry.plugins() if r.name == "flaky")
+    assert record.failure_count == 1 and record.status is PluginStatus.DEGRADED
+
+
+def test_a_plugin_tool_that_raises_is_not_ok_for_a_code_caller(world: _World) -> None:
+    _plugin_tool(world, "flaky_read", "read", "never")
+    result = world.service.for_caller(CALLER).call("flaky_read", {})
+    assert not result.ok and not result.held
+    # The caller is told the boundary's sentence, as before; only ``ok`` changed.
+    assert result.text.startswith("flaky_read is unavailable (plugin 'flaky' raised RuntimeError")

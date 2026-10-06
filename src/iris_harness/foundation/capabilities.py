@@ -25,7 +25,8 @@ and IMAP both provide ``mail.read``) says how their implementations combine into
 consumer never iterates providers. Without it the capability has one provider, and a second
 is refused.
 
-Empty until rollout step 4 adds the first capabilities.
+The catalogue is closed for 0.x: it holds ``weather.forecast`` so far, and the rest arrive
+with rollout step 4.
 """
 
 from __future__ import annotations
@@ -37,7 +38,8 @@ import types
 import typing
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from datetime import datetime
+from typing import Any, Literal, Protocol
 
 from iris_harness.foundation.capability_fields import UndeclarableType, text_paths
 
@@ -250,9 +252,62 @@ class CapabilitySpec:
         return tuple(wrong)
 
 
+@dataclass(frozen=True)
+class ForecastPeriod:
+    """One stretch of a forecast: a span of time and the conditions expected in it."""
+
+    start: datetime
+    end: datetime
+    temperature_c: float
+    # 0.0 to 1.0; None when the source does not say.
+    precipitation_probability: float | None
+    wind_speed_kph: float | None
+    # The source's own words for the conditions ("Light rain"): third-party text.
+    summary: str
+
+
+@dataclass(frozen=True)
+class Forecast:
+    """A weather forecast for one place, as the provider's source issued it."""
+
+    # The place the source resolved the request to ("Lisbon, Portugal"): third-party text.
+    location: str
+    issued_at: datetime
+    periods: tuple[ForecastPeriod, ...]
+
+
+class WeatherForecast(Protocol):
+    """``weather.forecast``: what the weather is expected to be at a place.
+
+    One provider. ``location`` is a place name or address as the owner would say it;
+    ``days`` is how many days ahead from now (the provider may return fewer). A provider
+    that cannot answer raises ``CapabilityUnavailable`` rather than returning an empty
+    forecast. The core ships no implementation: a plugin provides it.
+    """
+
+    async def forecast(self, location: str, days: int = 3) -> Forecast: ...
+
+
+WEATHER_FORECAST = CapabilitySpec(
+    name="weather.forecast",
+    protocol=WeatherForecast,
+    methods={
+        # A read: it leaves the owner's world as it was. The text it returns came from a
+        # weather service, so the injection guard scans it (``external``).
+        "forecast": MethodSpec(
+            effect="read",
+            fields=("location", "periods.[].summary"),
+            content="external",
+        ),
+    },
+    description="The expected weather at a place, for the days ahead.",
+)
+
 # Every capability the SDK publishes, by name -- read-only, so it stays closed at runtime.
 # Step 4 adds one Protocol and spec per capability above this line.
-CAPABILITIES: Mapping[str, CapabilitySpec] = types.MappingProxyType({})
+CAPABILITIES: Mapping[str, CapabilitySpec] = types.MappingProxyType(
+    {WEATHER_FORECAST.name: WEATHER_FORECAST}
+)
 
 
 def published_capability(name: str) -> CapabilitySpec | None:
@@ -270,8 +325,12 @@ __all__ = [
     "CapabilityEffect",
     "CapabilitySpec",
     "CapabilityUnavailable",
+    "Forecast",
+    "ForecastPeriod",
     "MethodShape",
     "MethodSpec",
+    "WEATHER_FORECAST",
+    "WeatherForecast",
     "capability_tool_name",
     "is_capability_name",
     "published_capability",

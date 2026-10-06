@@ -23,6 +23,8 @@ from iris_harness.services.rag.documents import (
     registered_document_catalog,
 )
 from iris_harness.services.rag.index import DocumentIndex
+from iris_harness.services.rag.ingest import _source_id
+from iris_harness.services.rag.ingest_gate import execute_rag_ingest, propose_rag_ingest
 from iris_harness.services.rag.ingest_source import current_ingest_source, register_ingest_source
 from iris_harness.services.rag.store import DocumentStore
 
@@ -138,6 +140,79 @@ def test_delete_removes_uploaded_doc_and_file(client: TestClient) -> None:
 
 def test_delete_unknown_doc_is_404(client: TestClient) -> None:
     assert client.delete("/rag/documents/rag_nonexistent").status_code == 404
+
+
+# ---- re-upload of a gated document keeps it classified (FMX8) -------------------------
+
+
+def _gated_upload(client: TestClient, tmp_path: Path) -> tuple[DocumentStore, str]:
+    """An upload-dir document the ingest gate stamped personal; returns (store, source id)."""
+    dest = tmp_path / "uploads" / "contact.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text("# Contact\n\nReach me at jane@example.com about the herons.")
+    store, _index = client.app.state.rag_handles
+    execute_rag_ingest(propose_rag_ingest(dest), store=store, index=None)
+    return store, _source_id(dest.resolve())
+
+
+def _labels(store: DocumentStore, sid: str) -> set[str | None]:
+    chunks = [store.get_chunk(f"{sid}:{i}") for i in range(store.count_chunks(sid))]
+    return {c.classification for c in chunks if c is not None}
+
+
+def test_reupload_of_a_gated_document_keeps_its_classification(
+    client: TestClient, tmp_path: Path
+) -> None:
+    store, sid = _gated_upload(client, tmp_path)
+    assert _labels(store, sid) == {"personal"}
+
+    body = b"# Contact\n\nNow reach me at jane.doe@example.com about the herons."
+    resp = client.post("/rag/upload", files={"file": ("contact.md", body, "text/markdown")})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sources_updated"] == 1
+    assert _labels(store, sid) == {"personal"}
+
+
+def test_reupload_of_a_gated_document_as_secret_is_removed(
+    client: TestClient, tmp_path: Path
+) -> None:
+    store, sid = _gated_upload(client, tmp_path)
+
+    body = b"# Contact\n\naws_key=AKIAIOSFODNN7EXAMPLE\n"
+    resp = client.post("/rag/upload", files={"file": ("contact.md", body, "text/markdown")})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sources_denied"] == 1
+    assert resp.json()["document"] is None
+    assert store.get_source(sid) is None and store.count_chunks(sid) == 0
+    assert not (tmp_path / "uploads" / "contact.md").exists()  # the secret copy is gone
+
+
+def test_a_first_upload_is_classified(client: TestClient, tmp_path: Path) -> None:
+    body = b"# Contact\n\nReach me at jane@example.com about the herons."
+    resp = client.post("/rag/upload", files={"file": ("contact.md", body, "text/markdown")})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["sources_added"] == 1
+    assert resp.json()["document"]["classification"] == "personal"
+    store, _index = client.app.state.rag_handles
+    assert _labels(store, _source_id((tmp_path / "uploads" / "contact.md").resolve())) == {
+        "personal"
+    }
+
+
+def test_a_secret_first_upload_is_refused_and_not_kept(client: TestClient, tmp_path: Path) -> None:
+    body = b"# Keys\n\naws_key=AKIAIOSFODNN7EXAMPLE\n"
+    resp = client.post("/rag/upload", files={"file": ("creds.md", body, "text/markdown")})
+
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert payload["sources_denied"] == 1 and payload["sources_added"] == 0
+    assert payload["document"] is None
+    assert "refused: classified secret" in payload["summary"]
+    assert not (tmp_path / "uploads" / "creds.md").exists()
+    assert client.get("/rag/documents").json()["count"] == 0
 
 
 # ---- the size cap and the event loop (security review, 2026-09-26) -------------------

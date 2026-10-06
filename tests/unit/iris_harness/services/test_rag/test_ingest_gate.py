@@ -158,7 +158,7 @@ def test_execute_ingests_with_classification_metadata(tmp_path: Path, store: Doc
     assert hits and hits[0].classification == "personal"
 
 
-# ─── ingest_path defense in depth + byte-compat ──────────────────────────
+# ─── ingest_path defense in depth + classification without the gate ─────
 
 
 def test_ingest_path_refuses_secret_classification(tmp_path: Path, store: DocumentStore) -> None:
@@ -169,14 +169,27 @@ def test_ingest_path_refuses_secret_classification(tmp_path: Path, store: Docume
     assert store.list_sources() == []
 
 
-def test_ingest_path_default_keeps_chunks_unclassified(
-    tmp_path: Path, store: DocumentStore
+@pytest.mark.parametrize(
+    ("text", "label"), [(_PUBLIC_TEXT, "public"), (_PERSONAL_TEXT, "personal")]
+)
+def test_ingest_path_without_the_gate_still_classifies(
+    tmp_path: Path, store: DocumentStore, text: str, label: str
 ) -> None:
+    """Every ingest classifies, not only the gated one (the old contract left it None)."""
     f = tmp_path / "notes.md"
-    f.write_text(_PUBLIC_TEXT)
+    f.write_text(text)
     ingest_path(f, store=store, index=None)
     source = store.list_sources()[0]
+    assert source.classification == label
     chunk = store.get_chunk(f"{source.id}:0")
-    assert chunk is not None and chunk.classification is None
+    assert chunk is not None and chunk.classification == label
     hits = search_documents("mitochondria", store=store, index=None)
-    assert hits and hits[0].classification is None
+    assert hits and hits[0].classification == label
+
+
+def test_ingest_path_without_the_gate_refuses_secret(tmp_path: Path, store: DocumentStore) -> None:
+    f = tmp_path / "creds.md"
+    f.write_text(f"# Keys\n\naws_key={_AWS_KEY}\n")
+    result = ingest_path(f, store=store, index=None)
+    assert result.sources_denied == 1 and result.sources_added == 0
+    assert store.list_sources() == []

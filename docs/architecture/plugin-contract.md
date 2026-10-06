@@ -21,6 +21,7 @@ description: One line.
 summary: What it lets IRIS do, for the owner (optional; the first-chat welcome lists it)
 entrypoint: plugin:setup   # module:function (default)
 trust: in-process          # in-process (default) | mcp (out-of-process, M2+)
+party: first-party         # first-party (default) | trusted-third-party | untrusted
 provides: [intercept, tool]   # advisory; feeds --dump-config and the drift panel
 requires:                  # checked before setup(); unmet → plugin not loaded
   packages: []

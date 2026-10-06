@@ -12,6 +12,7 @@ from typing import Annotated
 import typer
 
 from iris_harness.cli.render import console, print_error
+from iris_harness.services.rag.models import IngestResult
 
 docs_app = typer.Typer(
     name="docs",
@@ -28,6 +29,14 @@ def _store_and_index() -> tuple[object, object]:
     store = DocumentStore()
     store.ensure_schema()
     return store, DocumentIndex()
+
+
+def _report(result: IngestResult) -> None:
+    """Print the ingest summary; a refused (secret) file is a warning and a non-zero exit."""
+    if result.sources_denied:
+        console.print(f"  [bold yellow]![/bold yellow]  {result.summary()}")
+        raise typer.Exit(1)
+    console.print(f"  [bold green]✓[/bold green]  {result.summary()}")
 
 
 @docs_app.command("add")
@@ -55,7 +64,7 @@ def cmd_add(
         kind=kind,  # type: ignore[arg-type]
         source=current_ingest_source(),
     )
-    console.print(f"  [bold green]✓[/bold green]  {result.summary()}")
+    _report(result)
 
 
 @docs_app.command("sync")
@@ -70,7 +79,25 @@ def cmd_sync() -> None:
         index=index,  # type: ignore[arg-type]
         source=current_ingest_source(),
     )
-    console.print(f"  [bold green]✓[/bold green]  {result.summary()}")
+    _report(result)
+
+
+@docs_app.command("reindex")
+def cmd_reindex() -> None:
+    """Rebuild the vector index from the stored chunks (after a lost or damaged index).
+
+    Reads no source file: the chunk store is canonical, the vector index only mirrors it.
+    `sync` cannot do this, since it skips files that have not changed.
+    """
+    from iris_harness.services.rag.ingest import reindex_all
+
+    store, index = _store_and_index()
+    try:
+        count = reindex_all(store=store, index=index)  # type: ignore[arg-type]
+    except RuntimeError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+    console.print(f"  [bold green]✓[/bold green]  rebuilt the vector index: {count} chunk(s)")
 
 
 @docs_app.command("list")

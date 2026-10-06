@@ -58,6 +58,19 @@ behaviour: nothing in the kernel reads the compiled policy.
 The shipped `research` manifest declares `open_web: true` and the `gmail` manifest its four
 Google hosts (`data: personal`).
 
+## The host grammar
+
+A declared host is strict, and refused at manifest load rather than guessed at: ASCII letters,
+digits and hyphens only (an internationalised name is declared in its `xn--` form, which must
+decode); at most one trailing dot, which is dropped; labels of at most 63 characters, a name of
+at most 253, at most 256 hosts per plugin; no whitespace or control character (a newline
+included). Refused outright, fail closed, and an owner may relax it later: IP literals in any
+spelling (dotted, short `127.1`, hex, octal, IPv6), `localhost`, any name whose last label is
+numeric, and a wildcard whose base is a single label (`*.com`).
+
+Known gap: the repo ships no public-suffix list, so a wildcard over a multi-label public
+suffix (`*.co.uk`) is accepted. Review such a declaration by eye until a list is added.
+
 ## Why the manifest key `egress` is stable surface
 
 `egress` is a top-level manifest key, and the stable tier lists every manifest key

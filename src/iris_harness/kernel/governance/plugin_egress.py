@@ -5,16 +5,18 @@ sits above the kernel and is what knows the manifests, compiles every mounted ma
 one :class:`PluginEgressPolicy` and registers it once plugins have mounted. The same seam as
 ``caller_policy.py``.
 
-Declared, not yet enforced: nothing in the kernel reads the registered policy yet, so it
-changes no plugin's behaviour; the enforcement point lands separately (issue #103).
+Declared only, NOT ENFORCED until #103b: nothing in the kernel reads the registered policy
+yet, so it changes no plugin's behaviour.
 
-Fail closed, and say so: with no policy registered, or for a plugin the policy does not
-know, every host is denied with a reason naming what is missing -- never allowed because
-nobody was asked. An empty declaration is a closed door.
+The policy itself fails closed, and says so: asked about a host with no policy registered,
+or for a plugin it does not know, it denies with a reason naming what is missing. Once the
+governed client (#103b) consults it, an empty declaration will be a closed door; today it is
+not one.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import re
 import threading
 from collections.abc import Mapping
@@ -51,23 +53,70 @@ def normalize_host(value: str) -> str:
     return host
 
 
-def normalize_host_pattern(value: str) -> str:
-    """A declared host: an exact host, or ``*.suffix`` for any subdomain of ``suffix``.
+MAX_LABEL_LENGTH: Final = 63
+MAX_HOST_LENGTH: Final = 253
+MAX_HOSTS_PER_PLUGIN: Final = 256
 
-    A bare ``*`` is refused: "any host" is ``open_web: true``, which says so out loud.
+# ASCII only, matched with ``fullmatch`` (``$`` would accept a trailing newline).
+_DECLARED_LABEL = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?", re.ASCII)
+_HEX_OR_OCTAL_NUMBER = re.compile(r"0x[0-9a-f]*|[0-9]+", re.ASCII)
+
+
+def _refuse(value: str, why: str) -> ValueError:
+    return ValueError(f"{value!r}: {why}")
+
+
+def normalize_host_pattern(value: str) -> str:
+    """A declared host: an exact DNS name, or ``*.suffix`` for any subdomain of ``suffix``.
+
+    Strict, because this is what an owner reads as the plugin's allowlist: ASCII letters,
+    digits and hyphens only (an internationalised name is declared in its ``xn--`` form, which
+    must decode), at most one trailing dot (dropped), labels of at most 63 and a name of at
+    most 253 characters. A bare ``*`` is refused: "any host" is ``open_web: true``, which says
+    so out loud. Refused outright, fail closed: IP literals in any spelling (dotted, short,
+    hex, octal, IPv6), ``localhost``, and numeric last labels, which a resolver may read as an
+    address; and a wildcard whose base is a single label (``*.com``). A wildcard over a
+    multi-label public suffix (``*.co.uk``) is not caught: the repo ships no public-suffix
+    list (docs/architecture/plugin-egress.md).
     """
-    host = normalize_host(value)
-    if host == "*" or host.startswith("*") and not host.startswith("*."):
-        raise ValueError(
-            f"{value!r}: a wildcard is only `*.<domain>`; to allow any host declare `open_web: true`"
+    if not value or not value.isascii() or any(c.isspace() or not c.isprintable() for c in value):
+        raise _refuse(value, "is not a host (ASCII only, no whitespace or control characters)")
+    host = value.lower()
+    if host.endswith("."):
+        host = host[:-1]
+    wildcard = host.startswith("*.")
+    if host == "*" or (host.startswith("*") and not wildcard):
+        raise _refuse(
+            value, "a wildcard is only `*.<domain>`; to allow any host declare `open_web: true`"
         )
-    body = host[2:] if host.startswith("*.") else host
+    body = host[2:] if wildcard else host
+    if not body or len(body) > MAX_HOST_LENGTH:
+        raise _refuse(value, f"is empty or longer than {MAX_HOST_LENGTH} characters")
     labels = body.split(".")
-    ip_like = all(label.isdigit() for label in labels) and len(labels) == 4
-    if not ip_like and not all(_LABEL.match(label) for label in labels):
-        raise ValueError(f"{value!r} is not a valid host name")
-    if host.startswith("*.") and len(labels) < 2:
-        raise ValueError(f"{value!r}: a wildcard needs a registrable domain (`*.example.org`)")
+    for label in labels:
+        if len(label) > MAX_LABEL_LENGTH or not _DECLARED_LABEL.fullmatch(label):
+            raise _refuse(
+                value,
+                "is not a host (labels of letters, digits and hyphens, at most "
+                f"{MAX_LABEL_LENGTH} characters; no scheme, port, path or userinfo)",
+            )
+        if label.startswith("xn--"):
+            try:
+                label.encode("ascii").decode("idna")
+            except UnicodeError:
+                raise _refuse(value, f"label {label!r} is not valid punycode") from None
+    if body == "localhost" or body.endswith(".localhost"):
+        raise _refuse(value, "localhost is not a host a plugin may declare")
+    if _HEX_OR_OCTAL_NUMBER.fullmatch(labels[-1]):
+        raise _refuse(value, "an IP address (in any spelling) is not a declarable host")
+    try:
+        ipaddress.ip_address(body)
+    except ValueError:
+        pass
+    else:
+        raise _refuse(value, "an IP address is not a declarable host")
+    if wildcard and len(labels) < 2:
+        raise _refuse(value, "a wildcard needs a registrable domain (`*.example.org`)")
     return host
 
 

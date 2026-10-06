@@ -93,3 +93,81 @@ def test_a_host_pattern_must_be_a_host(bad: str) -> None:
 
 def test_hosts_are_compared_lower_case_without_a_trailing_dot() -> None:
     assert normalize_host_pattern("API.Open-Meteo.COM.") == "api.open-meteo.com"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "good\n.com",
+        "good.com\n",
+        "good .com",
+        "good\x00.com",
+        "good.com..",
+        "..good.com",
+        "good..com",
+    ],
+)
+def test_newlines_whitespace_and_repeated_dots_are_refused(bad: str) -> None:
+    with pytest.raises(ValueError):
+        normalize_host_pattern(bad)
+
+
+def test_one_trailing_dot_is_dropped() -> None:
+    assert normalize_host_pattern("good.com.") == "good.com"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "999.999.999.999",
+        "1.2.3.4",
+        "\u0661.\u0661.\u0661.\u0661",
+        "127.1",
+        "0x7f.1",
+        "0x7f000001",
+        "0177.0.0.1",
+        "2130706433",
+        "localhost",
+        "a.localhost",
+        "*.1.2.3.4",
+        "[::1]",
+        "::1",
+    ],
+)
+def test_ip_literals_and_localhost_are_refused(bad: str) -> None:
+    with pytest.raises(ValueError):
+        normalize_host_pattern(bad)
+
+
+@pytest.mark.parametrize("ok", ["api.example.com", "1password.com", "123.example.com", "a-b.io"])
+def test_real_names_with_digits_still_pass(ok: str) -> None:
+    assert normalize_host_pattern(ok) == ok
+
+
+def test_a_wildcard_needs_a_multi_label_base() -> None:
+    assert normalize_host_pattern("*.example.org") == "*.example.org"
+    for bad in ("*.com", "*."):
+        with pytest.raises(ValueError):
+            normalize_host_pattern(bad)
+
+
+def test_length_limits_at_the_boundary() -> None:
+    label63 = "a" * 63
+    assert normalize_host_pattern(f"{label63}.com") == f"{label63}.com"
+    with pytest.raises(ValueError):
+        normalize_host_pattern(f"{'a' * 64}.com")
+    # 253 total: three 63-char labels + "." joins + a 61-char tail = 63*3 + 3 + 61 = 253.
+    ok = ".".join([label63] * 3 + ["b" * 61])
+    assert len(ok) == 253 and normalize_host_pattern(ok) == ok
+    with pytest.raises(ValueError):
+        normalize_host_pattern(ok + "c")
+
+
+def test_punycode_labels_must_decode() -> None:
+    assert normalize_host_pattern("xn--bcher-kva.example") == "xn--bcher-kva.example"
+    with pytest.raises(ValueError):
+        normalize_host_pattern("xn--zzzzzzzz.example")
+    with pytest.raises(ValueError):
+        normalize_host_pattern("xn--9.example")
+    with pytest.raises(ValueError):
+        normalize_host_pattern("b\u00fccher.example")

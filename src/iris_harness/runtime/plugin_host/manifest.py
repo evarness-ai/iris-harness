@@ -26,6 +26,7 @@ from iris_harness.foundation.settings.catalog import SettingDeclaration
 from iris_harness.kernel.governance.hooks.tool_payload import ToolContent, ToolSendsTo
 from iris_harness.kernel.governance.owner_identity import OWNER_PII_KINDS
 from iris_harness.kernel.governance.plugin_egress import (
+    MAX_HOSTS_PER_PLUGIN,
     HostRule,
     PluginEgress,
     normalize_host_pattern,
@@ -119,8 +120,9 @@ class EgressHostDecl(BaseModel):
 class PluginEgressDecl(BaseModel):
     """The hosts this plugin's code may contact (``egress:``), compiled into kernel policy.
 
-    Absent or empty is a closed door: through the governed client such a plugin may contact
-    no host (docs/architecture/plugin-egress.md). ``open_web: true`` is the explicit form of
+    Declared only, NOT ENFORCED until #103b: nothing reads this yet. Once the governed client
+    lands, absent or empty will mean a plugin may contact no host
+    (docs/architecture/plugin-egress.md). ``open_web: true`` is the explicit form of
     "any host", for a tool whose job is to fetch pages the owner or the model choose; every
     call is still recorded.
     """
@@ -139,6 +141,8 @@ class PluginEgressDecl(BaseModel):
             seen.add(entry.host)
         if self.open_web and self.hosts:
             raise ValueError("egress: `open_web: true` allows any host; drop `hosts`")
+        if len(self.hosts) > MAX_HOSTS_PER_PLUGIN:
+            raise ValueError(f"egress.hosts: at most {MAX_HOSTS_PER_PLUGIN} hosts per plugin")
         return self
 
     @property
@@ -622,8 +626,8 @@ class PluginManifest(BaseModel):
     requires: PluginRequirements = Field(default_factory=PluginRequirements)
     uses: PluginUses = Field(default_factory=PluginUses)
     # Issue #103: the hosts this plugin's code may contact, compiled into the kernel's
-    # egress policy when the plugin mounts. Absent: no host. Declared, not yet enforced; see
-    # docs/architecture/plugin-egress.md.
+    # egress policy when the plugin mounts. Declared only, NOT ENFORCED until #103b (absent will
+    # then mean no host); see docs/architecture/plugin-egress.md.
     egress: PluginEgressDecl = Field(default_factory=PluginEgressDecl)
     capabilities: PluginCapabilities = Field(default_factory=PluginCapabilities)
     # ADR-0125: the owner-identity kinds `api.register_owner_identity_source` may return.

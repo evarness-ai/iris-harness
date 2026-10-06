@@ -126,7 +126,7 @@ def test_the_dump_config_tree_shows_declared_egress(monkeypatch: pytest.MonkeyPa
     assert rows["system"]["egress"] == {"open_web": False, "hosts": []}
     text = render_text(tree)
     assert "egress: any host (open_web)" in text
-    assert "egress: none declared" in text
+    assert "egress: none declared (egress not enforced yet)" in text
 
 
 def test_the_shipped_gmail_manifest_names_its_google_hosts() -> None:
@@ -137,3 +137,15 @@ def test_the_shipped_gmail_manifest_names_its_google_hosts() -> None:
         "oauth2.googleapis.com",
     }
     assert all(h.data == "personal" for h in manifest.egress.hosts)
+
+
+def test_hosts_per_plugin_are_capped() -> None:
+    from iris_harness.kernel.governance.plugin_egress import MAX_HOSTS_PER_PLUGIN
+    from iris_harness.runtime.plugin_host.manifest import PluginEgressDecl
+
+    def decl(n: int) -> PluginEgressDecl:
+        return PluginEgressDecl(hosts=tuple(f"h{i}.example.com" for i in range(n)))  # type: ignore[arg-type]
+
+    assert len(decl(MAX_HOSTS_PER_PLUGIN).hosts) == MAX_HOSTS_PER_PLUGIN
+    with pytest.raises(ValueError):
+        decl(MAX_HOSTS_PER_PLUGIN + 1)

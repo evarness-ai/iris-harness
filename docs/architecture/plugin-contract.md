@@ -23,7 +23,7 @@ entrypoint: plugin:setup   # module:function (default)
 trust: in-process          # in-process (default) | mcp (out-of-process, M2+)
 party: untrusted           # untrusted (default) | trusted-third-party | first-party
 provides: [intercept, tool]   # advisory; feeds --dump-config and the drift panel
-egress:                    # the hosts the plugin's code may contact (default: none); declared, see plugin-egress.md
+egress:                    # the hosts the plugin's code may contact (declared only, NOT ENFORCED until #103b; see plugin-egress.md)
   hosts: [api.example.org]    # or {host: ..., schemes: [...], ports: [...], data: public|internal|personal}
 requires:                  # checked before setup(); unmet → plugin not loaded
   packages: []

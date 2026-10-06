@@ -178,7 +178,8 @@ def cmd_show(
         for line in lines:
             console.print(f"    {line}")
         if not lines:
-            console.print("    [dim]none[/dim]")
+            empty = "none declared (egress not enforced yet)" if title == "egress" else "none"
+            console.print(f"    [dim]{empty}[/dim]")
     drift = {k: v for k, v in (data.get("drift") or {}).items() if v}
     if drift:
         console.print("  [bold yellow]drift[/bold yellow]")

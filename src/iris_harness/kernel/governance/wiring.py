@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -431,7 +432,7 @@ def kernel_from_env() -> GovernanceKernel | None:
         "on" if network_egress_enabled else "off",
         f"on ({len(mcp_governance_map)} servers)" if mcp_governance_map else "on (degraded)",
         (
-            "on (all non-read)"
+            "on (all non-read calls)"
             if side_effect_ledger is not None
             else "on (high-risk only)" if side_effect_ledger_enabled else "off"
         ),
@@ -457,8 +458,8 @@ def kernel_from_env() -> GovernanceKernel | None:
         mcp_allowlist_enabled=mcp_allowlist_enabled,
         mcp_governance_map=mcp_governance_map,
         side_effect_ledger=side_effect_ledger,
-        # Resolved from the environment above: unset is the default (high-risk class only),
-        # truthy a ledger for every non-read call, falsy the operator's opt-out.
+        # Resolved from the environment above: on (the default) is the high-risk class only,
+        # on with ``..._LEDGER_ALL`` a ledger for every non-read call, off the opt-out.
         side_effect_ledger_enabled=side_effect_ledger_enabled,
         side_effect_ledger_db_path=_side_effect_ledger_db_path_from_env(),
         prompt_guard_inbound=prompt_guard_inbound,
@@ -1043,36 +1044,93 @@ def _open_side_effect_ledger(db_path: Path | None = None) -> SideEffectLedger | 
         return None
 
 
-def _side_effect_ledger_from_env() -> tuple[SideEffectLedger | None, bool]:
-    """``(ledger, enabled)`` from ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER``.
+SIDE_EFFECT_LEDGER_ENV: Final[str] = "IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER"
+SIDE_EFFECT_LEDGER_ALL_ENV: Final[str] = "IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL"
+_ACCEPTED_BOOLEANS: Final[str] = "on: 1/true/yes/on, off: 0/false/no/off"
 
-    * unset: ``(None, True)`` -- the default: ``build_default_kernel`` builds a deferred
-      ledger for the high-risk class only; plain writes and reads are not recorded.
-    * truthy: the ledger, opened now, recording every non-read call (the original meaning
-      of the flag). DB path from ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH`` (also the
-      deferred ledger's), else ``<governance data dir>/side_effects.db``. If it will not
-      open: ``(None, False)``.
-    * falsy (``0``/``false``/``no``/``off``): ``(None, False)``. The kernel then denies every
-      high-risk call (a destructive tool, or a pinned write) instead of running it with no
-      durable record: the ledger is what makes those calls safe to attempt, so opting out
-      also turns them off.
+
+@dataclass(frozen=True)
+class SideEffectLedgerSetting:
+    """The two ledger settings as read.
+
+    ``enabled`` is ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`` (default on): off denies every
+    high-risk call. ``record_all`` is ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL`` (default
+    off) and only counts while ``enabled``: it adds every non-read call to the high-risk
+    class the ledger always covers. ``problems`` are the warnings the build logs.
     """
-    raw = os.getenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "").strip().lower()
-    if raw in _FALSY:
+
+    enabled: bool
+    record_all: bool
+    problems: tuple[str, ...] = ()
+
+
+def parse_side_effect_ledger_settings(
+    ledger_raw: str | None, all_raw: str | None
+) -> SideEffectLedgerSetting:
+    """Both settings as booleans. Pure: nothing is logged here.
+
+    An unrecognised value of either applies that setting's default (ledger on, scope
+    ``ALL`` off) and is a problem naming the accepted spellings. ``ALL`` set while the
+    ledger is off is a problem too: it has no effect.
+    """
+    problems: list[str] = []
+    ledger = (ledger_raw or "").strip().lower()
+    scope = (all_raw or "").strip().lower()
+    enabled = ledger not in _FALSY
+    if ledger and ledger not in _FALSY and ledger not in _TRUTHY:
+        problems.append(
+            f"governance: {SIDE_EFFECT_LEDGER_ENV}={ledger!r} is not recognised "
+            f"({_ACCEPTED_BOOLEANS}); applying the default, on: the side-effect ledger for "
+            "high-risk calls."
+        )
+    record_all = scope in _TRUTHY
+    if scope and scope not in _FALSY and scope not in _TRUTHY:
+        problems.append(
+            f"governance: {SIDE_EFFECT_LEDGER_ALL_ENV}={scope!r} is not recognised "
+            f"({_ACCEPTED_BOOLEANS}); applying the default, off: high-risk calls only."
+        )
+    if record_all and not enabled:
+        problems.append(
+            f"governance: {SIDE_EFFECT_LEDGER_ALL_ENV}={scope!r} has no effect while "
+            f"{SIDE_EFFECT_LEDGER_ENV} is off: there is no ledger to record into."
+        )
+        record_all = False
+    return SideEffectLedgerSetting(enabled, record_all, tuple(problems))
+
+
+def side_effect_ledger_settings_from_env() -> SideEffectLedgerSetting:
+    """Both settings from the environment (not logged: the kernel build logs them once)."""
+    return parse_side_effect_ledger_settings(
+        os.getenv(SIDE_EFFECT_LEDGER_ENV), os.getenv(SIDE_EFFECT_LEDGER_ALL_ENV)
+    )
+
+
+def _side_effect_ledger_from_env() -> tuple[SideEffectLedger | None, bool]:
+    """``(ledger, enabled)`` from ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`` and ``..._ALL``.
+
+    * ledger on (the default, unset too; ``1``/``true``/``yes``/``on`` are the same), ``ALL``
+      off (the default): ``(None, True)``: ``build_default_kernel`` builds a deferred ledger
+      for the high-risk class only; plain writes and reads are not recorded.
+    * ledger on and ``ALL`` on: the ledger, opened now, recording every non-read call (what
+      the ledger flag alone used to mean). DB path from
+      ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH`` (also the deferred ledger's), else
+      ``<governance data dir>/side_effects.db``. If it will not open: ``(None, False)``.
+    * ledger off (``0``/``false``/``no``/``off``): ``(None, False)``. The kernel then denies
+      every high-risk call (a destructive tool, or a pinned write) instead of running it
+      with no durable record: the ledger is what makes those calls safe to attempt, so
+      opting out also turns them off.
+    """
+    setting = side_effect_ledger_settings_from_env()
+    for problem in setting.problems:
+        logger.warning("%s", problem)
+    if not setting.enabled:
         logger.warning(
             "governance: IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=%r -- the side-effect ledger is "
             "OFF; destructive tools and pinned writes will be denied.",
-            raw,
+            os.getenv(SIDE_EFFECT_LEDGER_ENV, "").strip().lower(),
         )
         return None, False
-    if raw not in _TRUTHY:
-        if raw:
-            logger.warning(
-                "governance: IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=%r is not recognised (on: 1/true/"
-                "yes/on, off: 0/false/no/off); applying the default, the side-effect ledger for "
-                "high-risk calls only.",
-                raw,
-            )
+    if not setting.record_all:
         return None, True
     ledger = _open_side_effect_ledger(_side_effect_ledger_db_path_from_env())
     return ledger, ledger is not None

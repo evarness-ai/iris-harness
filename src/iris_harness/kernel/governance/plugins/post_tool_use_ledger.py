@@ -39,9 +39,9 @@ stopped it). This hook runs before every ``POST_TOOL_USE`` hook that can withhol
 so a call whose result is then denied is still settled: it ran. The row stays ``pending``
 only if the process never got here.
 
-By default every non-read call is recorded (``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1``). With
-``high_risk_only`` (the default when the flag is unset) only the high-risk class is: a plain
-write is not recorded and the ledger is not touched.
+By default every non-read call is recorded (``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL=1``).
+With ``high_risk_only`` (the default when that flag is unset) only the high-risk class is: a
+plain write is not recorded and the ledger is not touched.
 
 The hook always returns ``allow`` — it is an observer, not a gatekeeper. The call has run by
 now, so a failed write is a warning, never a refusal.

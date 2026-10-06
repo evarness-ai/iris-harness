@@ -19,6 +19,16 @@ First public release of the IRIS harness.
   rather than run with no durable record. Remove the setting, or set it to `1` to also
   record every non-read call, to run them again.
 
+- Behavior change: `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1` (or `true`/`yes`/`on`) is now
+  the same as leaving it unset: the high-risk class only. It used to also record every
+  non-read call, so an explicit `true` silently widened audit scope compared with the
+  default. That scope is now its own boolean, `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL`
+  (default off). If you set `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1` expecting every
+  non-read call to be recorded, also set `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL=1`.
+  `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0` is unchanged (no ledger; destructive tools and
+  pinned writes are denied), and `..._ALL` set while the ledger is off logs a warning that
+  it has no effect.
+
 ### Added
 
 - The governed agent harness (`iris_harness`): intent routing, planning, a ReAct

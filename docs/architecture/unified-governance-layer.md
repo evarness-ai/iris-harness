@@ -658,12 +658,18 @@ settles its row as an `error` (`NotRun`), and a capability whose result cannot b
 (`ResultMismatch`) settles as an error too, never `pending` for ever. A capability stream is
 settled once, at its end. If the row cannot be written, or the kernel has no
 ledger, the call is denied and nothing runs; the runner also refuses a high-risk call the
-kernel allowed without confirming the row. Reads and other writes are unchanged. The flag
-has three states. Unset (the default): the high-risk class only is recorded, in a ledger
-that is created when such a call first runs (`DeferredSideEffectLedger`); a plain write or
-a read leaves no row, no commit and no file, exactly as before. `=1`: as before, every
-non-read call is recorded after it runs (a failed write warns). `=0`: the ledger is off,
-which also turns high-risk calls off. Limits: a call through the MCP bridge declares no
+kernel allowed without confirming the row. Reads and other writes are unchanged. Two
+booleans set it. `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER` (default on; `=1` is the same as
+unset) says whether there is a ledger: on, the high-risk class is always recorded, in a
+ledger that is created when such a call first runs (`DeferredSideEffectLedger`) and a plain
+write or a read leaves no row, no commit and no file; off, the ledger is off, which also
+turns high-risk calls off. `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL` (default off) adds the
+scope: every non-read call is also recorded after it runs (a failed write warns), and the
+ledger opens at build. Set while the ledger is off it has no effect and warns. Before the
+second setting existed `LEDGER=1` meant record-everything; it now means the default, so
+toggling the ledger can never silently widen audit scope. Both parse in
+`parse_side_effect_ledger_settings` (`kernel/governance/wiring.py`); `/governance/state`
+lists both. Limits: a call through the MCP bridge declares no
 effect, so it gets no pre-execution row (only reads and undeclared tools are unaffected by
 the opt-out above; declared destructive tools and pinned writes are denied when the ledger
 is off).

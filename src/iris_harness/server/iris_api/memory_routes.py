@@ -1048,6 +1048,9 @@ def install_memory_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
     async def rag_upload(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
         """Save an uploaded document and index it.
 
+        Ingest classifies it like every other ingest; one that classifies secret is
+        refused (``sources_denied``) and its saved copy deleted.
+
         Async only for the capped read. Writing the file and indexing it are blocking
         (disk, SQLite, embeddings) and run in the thread pool: on the event loop they
         stalled every other request, streaming chat included, for as long as a large
@@ -1092,6 +1095,10 @@ def install_memory_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
             except Exception as exc:  # surface ingest failure to the client
                 logger.exception("rag ingest failed for %s", dest)
                 raise HTTPException(status_code=500, detail=f"ingest failed: {exc}") from exc
+            if result.sources_denied:
+                # Classified secret, so not indexed: the upload's bytes are IRIS's own copy
+                # (ADR-0067), and a secret one is not kept in the upload dir either.
+                dest.unlink(missing_ok=True)
             doc = next(
                 (d for d in _rag_catalog(store).list_documents() if d.storage_path == str(dest)),
                 None,
@@ -1105,6 +1112,7 @@ def install_memory_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
             "sources_added": result.sources_added,
             "sources_updated": result.sources_updated,
             "sources_skipped": result.sources_skipped,
+            "sources_denied": result.sources_denied,
             "chunks_indexed": result.chunks_indexed,
             "summary": result.summary(),
             "document": doc.to_payload() if doc is not None else None,

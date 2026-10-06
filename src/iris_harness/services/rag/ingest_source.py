@@ -47,7 +47,7 @@ class IndexedDocument:
     source_id: str  # RAG's id for this source, stable across re-ingests
     content_sha: str  # RAG's hash of the content it indexed
     kind: str  # the source kind: file | folder | obsidian | ...
-    classification: str  # from the content scan at ingest time
+    classification: str  # the label RAG stamped at ingest (sensitivity.classify)
     byte_size: int
     mtime: float
     head: bytes  # first bytes of the file, for media-type sniffing

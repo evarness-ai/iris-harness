@@ -1,10 +1,12 @@
 name: system
 version: 0.1.0
-summary: Tell you the time and date, and check whether anything in IRIS is broken.
+summary: Tell you the time and date, check whether anything in IRIS is broken, and search IRIS's own docs.
 description: >-
   Harness self-inspection: the deterministic time/date intercept, the
   system_health tool the model calls to answer "is anything broken?", and the
-  health_tick heartbeat that refreshes the cached health snapshot.
+  health_tick heartbeat that refreshes the cached health snapshot, and the
+  search_docs tool that finds the section of IRIS's own shipped docs that answers a
+  question (internal content, allow-listed corpus, no identity or secrets).
 entrypoint: plugin:setup
 flavor: python
 trust: in-process
@@ -16,6 +18,9 @@ provides:
 tools:
   system_health:
     effect: read
+  search_docs:
+    effect: read
+    content: internal
 
 # ADR-0120: the app may not turn this plugin off (IRIS_PLUGINS_DISABLE).
 locked: "the harness's own health, time and status; the harness needs it"

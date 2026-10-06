@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.paths import data_dir
+from iris_harness.kernel.governance.reentry import reenter_many
 from iris_harness.memory.graph_context import memory_graph_description, memory_graph_tool
 from iris_harness.memory.identity import (
     load_agents_md,
@@ -138,11 +139,11 @@ def builtin_react_tools(
         if memory_store is None:
             return []
         n = max(1, n)
-        out: list[str] = []
+        picked: list[tuple[str, str, str]] = []  # (session_id, role, text)
         seen: set[str] = set()
         # Conversations whose turns are near the query by meaning, then summaries that
         # contain it literally (an exact name or number).
-        for sid, _role, content in _semantic_turns(query, _overfetch(n), ""):
+        for sid, role, content in _semantic_turns(query, _overfetch(n), ""):
             if sid in seen:
                 continue
             seen.add(sid)
@@ -151,18 +152,29 @@ def builtin_react_tools(
             except Exception as exc:  # noqa: BLE001 — the matched turn still says what it was
                 _log_tool_failure("memory_search session summary", exc)
                 summary = ""
-            label = " ".join((summary or content).split())[:240]
-            out.append(f"past session {sid} — {label}")
-            if len(out) >= n:
-                return out
-        hits = memory_store.search_summaries(query, limit=_overfetch(n))
-        for sid, text in hits:
-            if len(out) >= n:
+            picked.append((sid, "summary", summary) if summary else (sid, role, content))
+            if len(picked) >= n:
                 break
-            if _recallable(sid) and sid not in seen:
-                seen.add(sid)
-                out.append(f"past session {sid} — {' '.join(text.split())[:240]}")
-        return out
+        if len(picked) < n:
+            hits = memory_store.search_summaries(query, limit=_overfetch(n))
+            for sid, text in hits:
+                if len(picked) >= n:
+                    break
+                if _recallable(sid) and sid not in seen:
+                    seen.add(sid)
+                    picked.append((sid, "summary", text))
+        # Stored text coming back into a prompt: assistant turns and summaries are scanned
+        # before they are shortened, so a phrase cannot be cut in half to slip past (#145).
+        scanned = reenter_many(
+            [(role, text) for _sid, role, text in picked],
+            reader="memory_search",
+            origin="sessions",
+            chronological=False,
+        )
+        return [
+            f"past session {sid} — {' '.join(r.text.split())[:240]}"
+            for (sid, _role, _text), r in zip(picked, scanned, strict=True)
+        ]
 
     def _memory_search(args: dict[str, Any]) -> str:
         query = str(args.get("query") or args.get("input") or "").strip()
@@ -201,6 +213,7 @@ def builtin_react_tools(
         except (TypeError, ValueError):
             n = 10
         n = max(1, min(n, 40))
+        in_order = False  # rows are a ranked result; True when they are a transcript, oldest first
         try:
             if query:
                 # By meaning first (a question never matches the stored words
@@ -224,6 +237,7 @@ def builtin_react_tools(
                         (session_id, role, content)
                         for role, content in memory_store.load_recent_turns(session_id, limit=n)
                     ]
+                    in_order = True
             else:
                 sid = session_id or current_session_id()
                 if not sid:
@@ -235,6 +249,7 @@ def builtin_react_tools(
                     (sid, role, content)
                     for role, content in memory_store.load_recent_turns(sid, limit=n)
                 ]
+                in_order = True
         except Exception as exc:  # noqa: BLE001 — the agent reads the failure
             _log_tool_failure("recall_conversation", exc)
             return f"recall_conversation failed: {exc}"
@@ -254,8 +269,15 @@ def builtin_react_tools(
                 if session_id:
                     summaries = [s for s in summaries if s[0] == session_id]
             if summaries:
+                shown = reenter_many(
+                    [("summary", text) for _sid, text in summaries],
+                    reader="recall_conversation",
+                    origin="summary",
+                    chronological=False,
+                )
                 lines = "\n".join(
-                    f"- [{sid}] summary: {' '.join(text.split())[:400]}" for sid, text in summaries
+                    f"- [{sid}] summary: {' '.join(r.text.split())[:400]}"
+                    for (sid, _text), r in zip(summaries, shown, strict=True)
                 )
                 return (
                     "The original turns were cooled to their summary, so this is the "
@@ -263,8 +285,17 @@ def builtin_react_tools(
                 )
         if not rows:
             return "Nothing stored matches that."
+        # Stored turns coming back into a prompt: the assistant's are scanned, the owner's
+        # are not (#145). Scanned before the 400-character cut, newest first.
+        shown = reenter_many(
+            [(role, content) for _sid, role, content in rows],
+            reader="recall_conversation",
+            origin="transcript",
+            chronological=in_order,
+        )
         return "\n".join(
-            f"- [{sid}] {role}: {' '.join(content.split())[:400]}" for sid, role, content in rows
+            f"- [{sid}] {role}: {' '.join(r.text.split())[:400]}"
+            for (sid, role, _content), r in zip(rows, shown, strict=True)
         )
 
     # --- Conversational memory curation (all reversible + audited via history) ---
@@ -807,6 +838,9 @@ def builtin_react_tools(
                 "\n"
                 "OPERATING — call for your own operating detail held out of the "
                 "prompt: the harness primer, reasoning style, the full tool policy.\n"
+                "\n"
+                "To FIND which IRIS doc covers a topic (rather than read a named one), "
+                "use the search_docs tool.\n"
                 "\n"
                 "If unsure between HARNESS and AGENTS for an internals "
                 "question, call HARNESS first. Never invent IRIS specifics "

@@ -40,10 +40,28 @@ def test_system_plugin_mounted_from_default_profile(runtime) -> None:  # type: i
     assert kinds == {"intercept", "tool", "heartbeat"}
     # The moved pieces are gone from the core and present via the plugin.
     assert not hasattr(runtime, "_handle_time_date_turn")
-    # The registry holds every mounted plugin's tools; `system` contributes exactly one.
+    # The registry holds every mounted plugin's tools; `system` contributes two: system_health and search_docs.
     assert "system_health" in [t.name for t in runtime.plugin_registry.tools()]
-    assert [r.name for r in rec.registrations if r.kind.value == "tool"] == ["system_health"]
+    assert [r.name for r in rec.registrations if r.kind.value == "tool"] == [
+        "system_health",
+        "search_docs",
+    ]
     assert runtime.heartbeats.has_handler("health_tick")
+
+
+def test_search_docs_is_an_internal_read_tool_on_every_tool_surface(runtime) -> None:  # type: ignore[no-untyped-def]
+    """The registry is what the ReAct loop, ``ToolService`` and ``iris mcp serve`` all read,
+    so one registration reaches the three. It is a read over IRIS's own docs: internal
+    content (not scanned as third-party text), and `iris mcp serve` serves it unnamed."""
+    from iris_harness.runtime.mcp_serve import contained
+
+    spec = next(t for t in runtime.plugin_registry.tools() if t.name == "search_docs")
+    assert (spec.effect, spec.content) == ("read", "internal")
+    assert spec.sends_to is None and not spec.executes_code
+    assert contained(spec)
+    assert [i.name for i in runtime.tool_service.describe("search_docs")] == ["search_docs"]
+    result = runtime.tool_service.for_caller("core:test").call("search_docs", {"query": "tier"})
+    assert result.ok and "search_docs:" in result.text
 
 
 # The declared ORDER of the chain (time_date between the calendar's meeting_creation and

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, TypeVar
 
 from iris_harness.foundation.process_state import track_globals
+from iris_harness.kernel.governance.reentry import reenter_many, reenter_text
 from iris_harness.llm.budget import trim_text
 
 from .store import LearningSignal, MemoryStore, UserFact
@@ -252,7 +253,15 @@ class MemoryRetriever:
                         dict.fromkeys(t.session_id for t in cross_turns if t.session_id)
                     )[: self.max_recall_pointers]
                 cross_turns = []
-        related = tuple(f"{t.role}: {t.content}" for t in cross_turns)
+        # Stored turns coming back into a prompt: an assistant turn is scanned for
+        # instruction-like text, the owner's own are not (#145).
+        scanned = reenter_many(
+            [(t.role, t.content) for t in cross_turns],
+            reader="retriever.related_turns",
+            origin="transcript",
+            chronological=False,
+        )
+        related = tuple(f"{t.role}: {r.text}" for t, r in zip(cross_turns, scanned, strict=True))
 
         # --- Episodic patterns (semantic-only — no keyword fallback) ---
         episodic = tuple(self.index.query_episodic(query, n=self.max_episodic))
@@ -307,7 +316,15 @@ class MemoryRetriever:
         except Exception as exc:  # noqa: BLE001 — fall back to the matched turn
             _log_degraded("read a recalled conversation's summary", exc, "titling it by turn")
             summary = ""
-        text = " ".join((summary or turn.content or "").split())
+        # The title is stored text re-entering a prompt too: scanned before it is shortened.
+        raw, role = (summary, "summary") if summary else (turn.content or "", turn.role)
+        shown = reenter_text(
+            raw,
+            reader="retriever.pointer_title",
+            origin="summary" if summary else "transcript",
+            role=role,
+        )
+        text = " ".join(shown.text.split())
         # 120, not 60: the A/B (PR #688) cut "…ticket R-58213, pickup is on Friday"
         # before the fact the question needed.
         return text if len(text) <= 120 else text[:117].rstrip() + "..."

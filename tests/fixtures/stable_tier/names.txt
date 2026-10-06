@@ -50,6 +50,7 @@ iris_harness.sdk.digest:learned_yesterday_line
 iris_harness.sdk.digest:load_digest_settings
 iris_harness.sdk.digest:news_group_topics
 iris_harness.sdk.digest:register_section_knob_validator
+iris_harness.sdk.docs:search_core_docs
 iris_harness.sdk.events:EventBus
 iris_harness.sdk.events:EventHandler
 iris_harness.sdk.events:get_default_bus

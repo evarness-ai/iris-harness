@@ -14,6 +14,7 @@ scope (``_friendly_llm_error``, ``_safe_int_env``) came with it.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import re
@@ -22,6 +23,7 @@ import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
+from iris_harness.sdk.content import redact_external_content, wrap_external_content
 from iris_harness.sdk.llm import friendly_llm_error as _friendly_llm_error
 from iris_harness.sdk.logging import agent_scope, log_tool_run
 from iris_harness.sdk.parsing import (
@@ -62,6 +64,31 @@ from iris_harness.sdk.types import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _ProseRedactor:
+    """The tripwire over prose that is streamed live, in whole lines.
+
+    The planner's final prose reaches the owner as it is generated, and the final tuple
+    then carries nothing (the answer was already streamed), so the answer-level redaction
+    cannot see it. A phrase can straddle two chunks, so text is held back to the last
+    newline and redacted a line at a time; :meth:`flush` redacts the remainder.
+    """
+
+    def __init__(self) -> None:
+        self._pending = ""
+
+    def feed(self, chunk: str) -> str:
+        self._pending += chunk
+        cut = self._pending.rfind("\n")
+        if cut < 0:
+            return ""
+        head, self._pending = self._pending[: cut + 1], self._pending[cut + 1 :]
+        return redact_external_content(head)
+
+    def flush(self) -> str:
+        rest, self._pending = self._pending, ""
+        return redact_external_content(rest)
 
 
 def _safe_int_env(name: str, default: int, *, min_value: int = 1, max_value: int = 128) -> int:
@@ -734,7 +761,16 @@ def _make_code_exec_handler(
                     cmd_hint = cmd_hint[:57] + "..."
                 yield ActivityChunk(f"running shell ({timeout}s) - {cmd_hint}")
 
-            result = host.run_shell(cmd, timeout=timeout)
+            # What the script printed can be derived from third-party data (a page it
+            # curled, a file it downloaded). Redact it ONCE, here, before any consumer:
+            # the planner transcript, the trace and session log, the activity hints and
+            # the handoff answer all read this result (issue #140).
+            raw_result = host.run_shell(cmd, timeout=timeout)
+            result = dataclasses.replace(
+                raw_result,
+                stdout=redact_external_content(raw_result.stdout),
+                stderr=redact_external_content(raw_result.stderr),
+            )
             last_result_summary = result.summary()
             last_stdout = result.stdout.strip()
             last_exit_code = result.exit_code
@@ -794,7 +830,14 @@ def _make_code_exec_handler(
             ):
                 budget += 1
             transcript.append(f"ASSISTANT TOOL CALL: {raw.strip()}")
-            transcript.append(f"TOOL RESULT:\n{result.summary()}")
+            # The planner is a model: it gets the output as marked third-party data, the
+            # way the governed loop hands it an external tool's result.
+            transcript.append(
+                "TOOL RESULT:\n"
+                + wrap_external_content(
+                    result.summary(), source="code_exec sandbox", tool="run_shell"
+                )
+            )
 
             if result.exit_code == 0 and last_stderr:
                 transcript.append(
@@ -933,6 +976,11 @@ def _make_code_exec_handler(
                     f"Last sandbox result:\n{last_result_summary}"
                 )
 
+        # The answer goes to the owner or channel (intent route) and into the transcript,
+        # and a lesson is derived from it: redact it (no envelope: it is not a model-bound
+        # external result here) so an instruction the planner repeated does not travel on.
+        final_answer = redact_external_content(final_answer)
+
         # Capture lesson (and strip the fenced JSON block from the answer text).
         if lesson_capture is not None:
             try:
@@ -1047,16 +1095,26 @@ def _make_code_exec_handler(
             logger.exception("code_exec handler failed for query=%r", task.query)
             return _friendly_llm_error(exc), {}
         if narration:
-            answer = "".join(narration) + "\n" + answer
+            # The streamed prose is the answer here, and it never passed the final-answer
+            # redaction in the loop: redact the joined text (issue #140).
+            answer = redact_external_content("".join(narration)) + "\n" + answer
         return answer, meta
 
     def stream_handler(task: AgentTask) -> Iterator[StreamChunk]:
+        prose = _ProseRedactor()
         try:
             for chunk in _run_loop_gen(task):
                 if isinstance(chunk, tuple):
                     answer, meta = chunk
+                    if tail := prose.flush():
+                        yield tail
                     yield answer
                     yield meta
+                elif isinstance(chunk, str):
+                    if ready := prose.feed(chunk):
+                        yield ready
+                elif isinstance(chunk, TraceChunk):
+                    yield TraceChunk(redact_external_content(chunk.text))
                 else:
                     yield chunk
         except Exception as exc:

@@ -43,6 +43,7 @@ iris_harness.sdk.config:config_path
 iris_harness.sdk.config:iris_home
 iris_harness.sdk.config:public_base_url
 iris_harness.sdk.config:workspace_dir
+iris_harness.sdk.content:redact_external_content
 iris_harness.sdk.content:wrap_external_content
 iris_harness.sdk.digest:DigestSettings
 iris_harness.sdk.digest:expiry_days

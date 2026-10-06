@@ -33,4 +33,16 @@ def wrap_external_content(text: str, *, source: str, tool: str | None = None) ->
     return wrap(scan(bare).text, source=source, tool=tool or source)
 
 
-__all__ = ["wrap_external_content"]
+def redact_external_content(text: str) -> str:
+    """``text`` with instruction-like spans redacted, and no envelope.
+
+    The tripwire alone, for text a plugin keeps for itself or shows the owner (a result it
+    returns to a channel, a note it stores) rather than hands to a model: the same
+    :func:`~iris_harness.kernel.governance.external_content.scan` the floor runs, so a
+    plugin that executes code over third-party data redacts its output the way a declared
+    ``content: external`` tool's result is. Idempotent. No model, no network.
+    """
+    return scan(text).text
+
+
+__all__ = ["redact_external_content", "wrap_external_content"]

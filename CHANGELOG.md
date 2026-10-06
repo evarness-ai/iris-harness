@@ -27,6 +27,16 @@ First public release of the IRIS harness.
   redacted too: see "The external-content floor" in `docs/concepts/governance.md` for the
   pattern list and its limits. The model guard (`IRIS_GOVERNANCE_PROMPT_GUARD`) is
   unchanged: opt-in, shadow-first, fail-open.
+- **`code_exec` output is treated as external content (issue #140).** The tool stays
+  `effect: read`, behind its Docker mount and sandbox limits, and its egress allowlist is
+  unchanged; what changed is that what a script printed is no longer assumed clean (a
+  script can print a page it fetched). The tool is declared `content: external`, so the
+  governed loop marks and scans its result; and the paths that do not run through the
+  loop's runner apply the same tripwire (`iris_harness.sdk.content.redact_external_content`,
+  new): the intent route's answer and trace, the nested planner's view of `run_shell`
+  stdout and stderr (inside the envelope), the session log's `tool_run` record, and a
+  code_exec lesson before it is stored and again before it is re-injected into a planner
+  prompt.
 - The retrieved-content guard's `guard unavailable` ledger row now records the tool, how
   many segments went unscanned, and the classifier's backend and detail. Docs and manifest
   comments that said external content is always scanned now say what is on by default.

@@ -65,6 +65,16 @@ on every call, and an `external` tool's result reaches the model inside an untru
 instruction-like text redacted (the always-on floor; the optional model guard adds a
 classifier). See [governance](../concepts/governance.md#the-external-content-floor).
 
+Code that calls an `external` tool through `api.tools` gets the redaction but not the
+envelope (it may show the text to the owner). If you put that text into a prompt of your own,
+mark it with the same implementation the kernel uses:
+
+```python
+from iris_harness.sdk.content import wrap_external_content
+
+prompt = f"Summarise:\n{wrap_external_content(result.text, source='my_plugin', tool='fetch')}"
+```
+
 ## The six registration kinds
 
 | Kind | Call | What it is for |

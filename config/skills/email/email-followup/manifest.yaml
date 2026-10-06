@@ -38,6 +38,8 @@ tools:
       Return open followup Tasks (Task with wait_for set, status open
       or doing, wait not yet resolved). Used by the morning brief.
     governor_route: task/read
+    # Titles and the `from` of each wait come from the email that raised the followup.
+    content: external
     args:
       - name: limit
         type: int

@@ -84,6 +84,8 @@ tools:
       owner's focus categories (Settings → Digest), newest first, minus
       senders marked not useful; each line carries a not-useful link.
     governor_route: email/read
+    # Sender names and subjects: text the senders wrote.
+    content: external
     args: []
   - name: email_needs_reply
     description: |
@@ -91,6 +93,8 @@ tools:
       in Needs reply that the owner has not answered, newest first, as
       "## Needs reply (N)" then "Sender: subject" lines.
     governor_route: email/read
+    # Sender names and subjects: text the senders wrote.
+    content: external
     args: []
   - name: email_judged_yesterday
     description: |

@@ -426,10 +426,15 @@ def test_research_wiki_and_web_fetch_declare_external_and_reach_the_floor(tmp_pa
 
 
 # ================================================================== the email skill tools
-#: The email skill tools that render email-derived text (sender names, subjects, followup
-#: titles), declared external; the rest return counts, ids or status and stay internal.
-EMAIL_EXTERNAL = {"email_focus", "email_needs_reply", "list_open_followups"}
-EMAIL_INTERNAL = {
+#: All nine email skill tools declare ``content: external``: everything they return is derived
+#: from the mailbox pipeline, so they are external as a class (owner decision, issue #104).
+#: Three return free text (senders, subjects, followup titles); the other six return counts,
+#: ids or status today, so the envelope is conservative there, and a later change that adds
+#: free text to one of them cannot silently skip the floor.
+EMAIL_EXTERNAL = {
+    "email_focus",
+    "email_needs_reply",
+    "list_open_followups",
     "email_inbox_summary",
     "email_judged_yesterday",
     "classify_email_by_id",
@@ -437,6 +442,7 @@ EMAIL_INTERNAL = {
     "fetch_new_emails",
     "detect_followups",
 }
+EMAIL_INTERNAL: set[str] = set()
 
 
 def _email_skill_specs() -> dict[str, ToolSpec]:
@@ -453,6 +459,17 @@ def test_the_shipped_email_skill_tools_declare_what_they_return() -> None:
     specs = _email_skill_specs()
     assert set(specs) == EMAIL_EXTERNAL | EMAIL_INTERNAL
     assert {n for n, s in specs.items() if s.content == "external"} == EMAIL_EXTERNAL
+    assert len(EMAIL_EXTERNAL) == 9
+
+
+def test_the_docs_search_skill_stays_internal_it_is_undecided() -> None:
+    from iris_harness.runtime.handlers.react import _skills_to_react_tools
+    from iris_harness.tools.skills.registry import SkillRegistry
+
+    registry = SkillRegistry(repo_root=Path(__file__).resolve().parents[5])
+    registry.discover()
+    docs = [s for s in _skills_to_react_tools(registry) if s.plugin == "skill:docs-search"]
+    assert docs and all(s.content == "internal" for s in docs)
 
 
 @pytest.mark.parametrize("name", sorted(EMAIL_EXTERNAL))

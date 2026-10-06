@@ -142,3 +142,35 @@ def test_a_wrapped_error_still_reaches_post_step_as_a_tool_error() -> None:
     )
     AgenticCore._fire_post_step(me, run_id="r", iteration=1, step=step, classification=None)  # type: ignore[arg-type]
     assert seen[0].payload["tool_error"] == "Error: upstream down"
+
+
+def test_a_counts_tools_result_survives_the_envelope_where_the_loop_reads_it(
+    tmp_path: Any,
+) -> None:
+    """The six counts / ids / status email tools are external as a class. Through the model
+    loop their one-line result is enveloped; the loop reads through it (the fallback answer
+    and the Error: check), an empty result is left alone, and a code caller gets it as is."""
+    from iris_harness.agent.agentic_core import ToolSpec
+    from iris_harness.agent.tool_runner import GovernedToolRunner, ToolCall
+    from iris_harness.kernel.governance import build_default_kernel
+    from iris_harness.kernel.governance.audit import AuditLog
+    from iris_harness.kernel.governance.plugins.external_content_floor import (
+        ExternalContentFloorHook,
+    )
+
+    kernel = build_default_kernel(
+        audit_log=AuditLog(tmp_path / "audit.db"), external_content_floor=ExternalContentFloorHook()
+    )
+
+    def run(output: str, caller: str | None = None) -> str:
+        tool = ToolSpec("run_email_triage", "d", lambda a: output, content="external")
+        runner = GovernedToolRunner(kernel=kernel, agent_type=caller or "email")
+        return str(runner.execute(tool, {}, ToolCall(run_id="r", caller=caller)).text)
+
+    line = "triaged 3 email(s) for gmail:a (3 classified, 0 soft-failed)"
+    model_text = run(line)
+    assert model_text.startswith("<external_content ")
+    assert _usable_observation(model_text) == line
+    assert run("") == ""
+    assert run(line, caller="core:email") == line
+    assert _usable_observation(run("Error: nope")) == ""  # still an error through the envelope

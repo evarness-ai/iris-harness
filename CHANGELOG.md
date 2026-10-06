@@ -38,9 +38,14 @@ First public release of the IRIS harness.
 - New stable name: `iris_harness.sdk.content.wrap_external_content(text, *, source, tool=None)`
   applies the floor's tripwire and envelope (the kernel's own implementation) to external text
   that plugin code puts into a prompt of its own. Idempotent and offline.
-- The email skill tools that render email-derived text (`email_focus`, `email_needs_reply`,
-  `list_open_followups`) declare `content: external`; the ones that return counts, ids or
-  status do not. `rag/docs-search` is undecided and unchanged.
+- All nine email skill tools (`email-triage`: `email_inbox_summary`, `email_focus`,
+  `email_needs_reply`, `email_judged_yesterday`, `classify_email_by_id`, `run_email_triage`;
+  `gmail-inbox`: `fetch_new_emails`; `email-followup`: `detect_followups`,
+  `list_open_followups`) declare `content: external`. Everything they return is derived from
+  the mailbox pipeline, so they are external as a class, not because each returns email text:
+  six of them carry only counts, ids or status today, so the envelope is conservative there,
+  and a later change that adds free text to one cannot silently skip the floor. Code callers
+  get no envelope. `rag/docs-search` is undecided and unchanged.
 - A skill package's tool can declare `content: internal | external` in its manifest
   (`web-fetch`'s `fetch_web_content` is external), served and in the loop alike.
 

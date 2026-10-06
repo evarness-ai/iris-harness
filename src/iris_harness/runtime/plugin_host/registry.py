@@ -860,19 +860,53 @@ class PluginRegistry:
         """``(plugin, seam, key)`` for every core seam filled through the API."""
         return list(self._seams)
 
+    def unavailable_optional_capabilities(self, plugin: str) -> tuple[str, ...]:
+        """The ``capabilities: uses`` of a mounted ``plugin`` that no mounted plugin provides.
+
+        Derived from the live providers on every call, so a provider that mounts late (or
+        stops being mounted) changes the answer. ``requires`` is not here: an unmet one
+        refuses the mount (the plugin is FAILED, with the reason). Empty for a plugin that
+        is not mounted.
+        """
+        record = self._plugins.get(plugin)
+        if record is None or record.manifest is None or record.status not in MOUNTED:
+            return ()
+        return tuple(
+            cap for cap in record.manifest.capabilities.uses if not self._mounted_providers(cap)
+        )
+
+    def degraded_reason(self, plugin: str) -> str | None:
+        """Why a mounted ``plugin`` is giving degraded answers, or None when it is not.
+
+        Two causes, both named: guarded calls that failed (``failure_count`` /
+        ``last_error``) and optional capabilities nothing provides. ONE source for the
+        Health line and the stable accessor, so they cannot disagree.
+        """
+        record = self._plugins.get(plugin)
+        if record is None or record.status not in MOUNTED:
+            return None
+        reasons: list[str] = []
+        if record.status is PluginStatus.DEGRADED:
+            reasons.append(f"{record.failure_count} failure(s); last: {record.last_error}")
+        reasons.extend(
+            f"optional capability {cap} unavailable (degraded)"
+            for cap in self.unavailable_optional_capabilities(plugin)
+        )
+        return "; ".join(reasons) or None
+
     # ------------------------------------------------------------------ health
     def health_checks(self) -> list[HealthCheck]:
         """One check per plugin (kind ``plugin``) for the System Health snapshot."""
         checks: list[HealthCheck] = []
         for rec in self._plugins.values():
             target = f"plugin:{rec.name}"
-            if rec.status is PluginStatus.LOADED:
+            degraded = self.degraded_reason(rec.name)
+            if degraded is not None:
+                state, detail = HealthState.YELLOW, degraded
+            elif rec.status is PluginStatus.LOADED:
                 state, detail = HealthState.GREEN, (
                     f"loaded from {rec.source}; {len(rec.registrations)} registration(s)"
                 )
-            elif rec.status is PluginStatus.DEGRADED:
-                state = HealthState.YELLOW
-                detail = f"{rec.failure_count} failure(s); last: {rec.last_error}"
             elif rec.status is PluginStatus.FAILED:
                 state, detail = HealthState.RED, rec.load_error or "failed to load"
             else:  # disabled / unsupported — informational

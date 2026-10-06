@@ -268,3 +268,42 @@ def test_declared_search_providers_and_their_drift_are_shown(services: HarnessSe
         assert row["search_providers"] == ["finder", "finder_news"]
     finally:
         restore_process_state(snapshot)
+
+
+def _degraded_registry() -> PluginRegistry:
+    """Two mounted plugins: ``cons`` uses a capability nothing provides; ``fine`` is healthy."""
+    from iris_harness.runtime.plugin_host.manifest import PluginManifest
+    from iris_harness.runtime.plugin_host.registry import PluginRecord, PluginStatus
+
+    registry = PluginRegistry()
+    for name, caps in (("cons", {"uses": ["test.ping"]}), ("fine", {})):
+        registry.add_plugin(
+            PluginRecord(
+                name=name,
+                source=f"home:{name}",
+                status=PluginStatus.LOADED,
+                manifest=PluginManifest.model_validate({"name": name, "capabilities": caps}),
+            )
+        )
+    return registry
+
+
+def test_degraded_reason_is_none_for_a_healthy_plugin(loaded: Any) -> None:
+    registry, prof, config = loaded
+    inv = plugins_inventory(registry, prof, config_dir=config)
+    assert all(p["degraded_reason"] is None for p in inv["plugins"])  # incl. failed/disabled
+    assert plugin_detail(registry, prof, "mine")["degraded_reason"] is None
+
+
+def test_a_mounted_plugin_missing_an_optional_capability_carries_the_reason() -> None:
+    registry = _degraded_registry()
+    inv = plugins_inventory(registry, None)
+    by_name = {p["name"]: p for p in inv["plugins"]}
+    # status stays the lifecycle state; the reason rides beside it.
+    assert by_name["cons"]["status"] == "loaded"
+    assert by_name["cons"]["degraded_reason"] == registry.degraded_reason("cons")
+    assert "optional capability test.ping unavailable" in by_name["cons"]["degraded_reason"]
+    assert by_name["fine"]["degraded_reason"] is None
+    assert plugin_detail(registry, None, "cons")["degraded_reason"] == (
+        by_name["cons"]["degraded_reason"]
+    )

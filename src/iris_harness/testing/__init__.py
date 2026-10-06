@@ -61,6 +61,7 @@ from iris_harness.testing.conformance import (
 )
 from iris_harness.testing.harness import (
     Harness,
+    PluginState,
     TurnAuditRow,
     TurnEvent,
     TurnRecord,
@@ -161,6 +162,7 @@ __all__ = [
     "FakeModelError",
     "Harness",
     "NetworkBlockedError",
+    "PluginState",
     "Reply",
     "Rule",
     "Script",

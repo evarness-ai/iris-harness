@@ -59,6 +59,9 @@ function Overview({ plugin }: { plugin: PluginDetail }) {
             ))}
           </div>
         )}
+        {plugin.degraded_reason && (
+          <CopyBlock label="degraded" text={plugin.degraded_reason} tone="text-warning" />
+        )}
         {plugin.load_error && (
           <CopyBlock label="load error" text={plugin.load_error} tone="text-danger" />
         )}

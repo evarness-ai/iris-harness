@@ -85,6 +85,8 @@ def cmd_list(
             f"  [{colour}]{status:<9}[/{colour}] {row.get('name', '?'):<22} "
             f"[dim]{', '.join(parts) or 'nothing registered'}[/dim]"
         )
+        if row.get("degraded_reason"):
+            console.print(f"            [yellow]degraded: {row['degraded_reason']}[/yellow]")
         if row.get("last_error") or row.get("load_error"):
             console.print(
                 f"            [red]{row.get('load_error') or row.get('last_error')}[/red]"
@@ -123,6 +125,8 @@ def cmd_show(
         f"  [bold]{data.get('name')}[/bold]  {data.get('status')}  "
         f"[dim]{data.get('source')}  v{data.get('version') or '?'}[/dim]"
     )
+    if data.get("degraded_reason"):
+        console.print(f"  [yellow]degraded: {data['degraded_reason']}[/yellow]")
     if data.get("last_error") or data.get("load_error"):
         console.print(f"  [red]{data.get('load_error') or data.get('last_error')}[/red]")
     sections: list[tuple[str, list[str]]] = [

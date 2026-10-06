@@ -87,6 +87,12 @@ class DocumentIndex:
             ],
         )
 
+    def count(self) -> int:
+        """Number of entries in the collection (0 when the index is unavailable)."""
+        if not self._ok:
+            return 0
+        return int(self._col.count())
+
     def index_chunks(self, chunks: Sequence[DocumentChunk]) -> None:
         if not self._ok or not chunks:
             return

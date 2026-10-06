@@ -24,7 +24,7 @@ from typer.testing import CliRunner
 import iris_harness.foundation.persistence.embedding as embedding
 from iris_harness.cli.docs import docs_app
 from iris_harness.services.rag.index import DocumentIndex
-from iris_harness.services.rag.ingest import ingest_path, reindex_all, sync_all
+from iris_harness.services.rag.ingest import EmptyStoreRefused, ingest_path, reindex_all, sync_all
 from iris_harness.services.rag.models import DocumentChunk
 from iris_harness.services.rag.retrieve import search_documents
 from iris_harness.services.rag.store import DocumentStore
@@ -167,12 +167,29 @@ def test_rebuild_is_idempotent(tmp_path: Path) -> None:
     assert _snapshot(index) == once
 
 
-def test_rebuild_of_an_empty_store_empties_the_index(tmp_path: Path) -> None:
+def test_rebuild_of_an_empty_store_is_refused_and_leaves_the_index(tmp_path: Path) -> None:
+    index = DocumentIndex(persist_dir=tmp_path / "chroma")
+    index.index_chunks([DocumentChunk("x:0", "x", "/x.md", "X", 0, "stale")])
+    before = _snapshot(index)
+
+    with pytest.raises(EmptyStoreRefused, match="--force"):
+        reindex_all(store=_store(tmp_path), index=index)
+
+    assert _snapshot(index) == before != {}
+
+
+def test_forced_rebuild_of_an_empty_store_empties_the_index(tmp_path: Path) -> None:
     index = DocumentIndex(persist_dir=tmp_path / "chroma")
     index.index_chunks([DocumentChunk("x:0", "x", "/x.md", "X", 0, "stale")])
 
-    assert reindex_all(store=_store(tmp_path), index=index) == 0
+    assert reindex_all(store=_store(tmp_path), index=index, force=True) == 0
     assert _snapshot(index) == {}
+
+
+def test_rebuild_of_an_empty_store_and_empty_index_is_a_noop(tmp_path: Path) -> None:
+    index = DocumentIndex(persist_dir=tmp_path / "chroma")
+
+    assert reindex_all(store=_store(tmp_path), index=index) == 0
 
 
 def test_rebuild_batches_large_stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -253,3 +270,52 @@ def test_docs_reindex_cli_reports_an_unavailable_index(
 
     assert result.exit_code == 1
     assert "unavailable" in result.output
+
+
+def _seed_index_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A populated index beside an empty rag.db: the wrong-IRIS_DATA_DIR shape."""
+    monkeypatch.setenv("IRIS_DATA_DIR", str(tmp_path / "data"))
+    from iris_harness.services.rag.index import DocumentIndex as CliIndex
+
+    CliIndex().index_chunks([DocumentChunk("x:0", "x", "/x.md", "X", 0, "stale")])
+
+
+def test_docs_reindex_cli_refuses_an_empty_store_without_force(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_index_only(monkeypatch, tmp_path)
+    from iris_harness.services.rag.index import DocumentIndex as CliIndex
+
+    result = CliRunner().invoke(docs_app, ["reindex"])
+
+    assert result.exit_code == 1
+    assert "--force" in result.output
+    assert _snapshot(CliIndex()) != {}
+
+
+def test_docs_reindex_cli_force_empties_the_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_index_only(monkeypatch, tmp_path)
+    from iris_harness.services.rag.index import DocumentIndex as CliIndex
+
+    result = CliRunner().invoke(docs_app, ["reindex", "--force"])
+
+    assert result.exit_code == 0, result.output
+    assert _snapshot(CliIndex()) == {}
+
+
+def test_docs_reindex_cli_reports_any_failure_not_just_runtime_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IRIS_DATA_DIR", str(tmp_path / "data"))
+
+    def boom(**_: Any) -> int:
+        raise ValueError("chroma exploded")
+
+    monkeypatch.setattr("iris_harness.services.rag.ingest.reindex_all", boom)
+
+    result = CliRunner().invoke(docs_app, ["reindex"])
+
+    assert result.exit_code == 1
+    assert "chroma exploded" in result.output

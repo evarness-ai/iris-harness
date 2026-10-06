@@ -37,6 +37,14 @@ it never refills an empty index. If `rag.db` is lost instead, re-run `iris docs 
 for each source; chunks ingested that way carry no classification stamp unless they go
 back through the ingest gate (`execute_rag_ingest`), which is what sets it.
 
+Two properties of `reindex_all` to know. It refuses (`EmptyStoreRefused`; `--force` on the
+CLI overrides) when `rag.db` holds zero chunks but the index does not, since the rebuild
+would delete every vector; the usual cause is a wrong `IRIS_DATA_DIR`. And it is not atomic
+with a running server: it snapshots the stored chunks, then upserts and prunes. A chunk the
+server ingests during the rebuild is missing from the snapshot, so the prune can drop it
+from the index until the next `iris docs sync` (or re-ingest) puts it back; it stays safe
+in `rag.db`. Run the rebuild while ingestion is quiet.
+
 ## Components
 
 | Component | File | Role |

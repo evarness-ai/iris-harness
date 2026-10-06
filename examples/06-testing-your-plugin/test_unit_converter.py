@@ -18,6 +18,7 @@ from iris_harness.sdk import PluginAPI
 from iris_harness.testing import (
     NetworkBlockedError,
     Script,
+    assert_conformant,
     check_stable_imports,
     harness,
     no_network,
@@ -118,3 +119,12 @@ def test_nothing_reaches_the_network() -> None:
 
 def test_the_plugin_imports_only_the_stable_api() -> None:
     assert check_stable_imports([HERE / "unit_converter.py"]) == []
+
+
+def test_the_plugin_conforms_to_governance() -> None:
+    """The conformance suite: one example call per declared tool, run from code as the
+    plugin's own caller, every call audited before and after under the harness's stamp."""
+    assert_conformant(
+        plugin(setup, manifest=MANIFEST),
+        tools={"convert_units": {"value": 10, "from_unit": "km", "to_unit": "mi"}},
+    )

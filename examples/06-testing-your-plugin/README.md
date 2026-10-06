@@ -7,7 +7,7 @@ test file is the example; read it top to bottom.
 |---|---|---|
 | 1. Logic | The conversion as plain functions, no IRIS. Fast, and where most of your cases belong. | plain pytest |
 | 2. In IRIS | A real governed IRIS in a throwaway home, the plugin mounted in-process, one chat turn on a scripted model: the tool is called, the answer comes from its result, both `chat` and `chat_stream`. An undeclared tool is refused and the plugin shows `degraded`. | `harness`, `plugin`, `Script` |
-| 3. Guarantees | Every model call and every answer has its audit row; nothing reached the network; the plugin imports only the stable API. | `audit_gaps`, `audit_rows`, `no_network`, `check_stable_imports` |
+| 3. Guarantees | Every model call and every answer has its audit row; nothing reached the network; the plugin imports only the stable API; the conformance suite passes. | `audit_gaps`, `audit_rows`, `no_network`, `check_stable_imports`, `assert_conformant` |
 
 | File | What it is |
 |---|---|
@@ -22,7 +22,7 @@ test file is the example; read it top to bottom.
 pytest examples/06-testing-your-plugin -q
 ```
 
-Expected output: `11 passed` in about 30 s (14 s with `--no-cov`).
+Expected output: `12 passed` in about 30 s (15 s with `--no-cov`).
 
 ## The pieces
 
@@ -48,6 +48,13 @@ Expected output: `11 passed` in about 30 s (14 s with `--no-cov`).
   example 02).
 - **`check_stable_imports([...])`** lists every import outside the stable API
   (`docs/reference/stable-api.md`); hold your plugin to it in CI.
+- **`assert_conformant(plugin(...), tools={...}, capabilities={...})`** is the governance
+  conformance suite. Give it one example call per declared tool (and per method of each
+  capability you provide); it runs each from code as your plugin and checks the audit
+  ledger: a `pre_tool_use` and `post_tool_use` row for every call, all naming the caller
+  the harness stamped, a destructive tool or confirming write held for the owner, run
+  once with the queued arguments when approved and never when rejected. A declared tool
+  with no example fails it. `check_conformance` returns the `Violation`s instead.
 
 ## Try changing
 
@@ -64,7 +71,7 @@ and a case to `test_convert`'s parameters in `test_unit_converter.py`:
         (1, "yd", "ft", 3.0),
 ```
 
-`12 passed`: the new unit is covered in milliseconds, with no IRIS built. Only what
+`13 passed`: the new unit is covered in milliseconds, with no IRIS built. Only what
 needs the harness (a turn, its tool call, its audit rows) belongs in layer 2.
 
 ## Next

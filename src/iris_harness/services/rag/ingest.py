@@ -364,10 +364,25 @@ def sync_all(
     )
 
 
+def reindex_all(*, store: DocumentStore, index: DocumentIndex) -> int:
+    """Rebuild the vector index from the store's chunks; return how many were indexed.
+
+    The repair for a lost, corrupted or drifted ``chroma_docs``: the store holds the
+    canonical chunk text (and each chunk's classification), the index only mirrors it.
+    ``sync_all`` cannot do this job, because it skips every file whose mtime or content
+    hash is unchanged and so never re-populates an empty index. Reads no source file.
+    Raises ``RuntimeError`` when the index is unavailable (nothing to rebuild into).
+    """
+    if not index.is_ready:
+        raise RuntimeError("document index unavailable; cannot rebuild it")
+    return index.rebuild(store.iter_chunks())
+
+
 __all__ = [
     "SecretIngestError",
     "ingest_path",
     "sync_all",
+    "reindex_all",
     "TEXT_SUFFIXES",
     "PDF_SUFFIXES",
     "IMAGE_SUFFIXES",

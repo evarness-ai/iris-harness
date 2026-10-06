@@ -28,6 +28,8 @@ from iris_harness.kernel.governance import GovernanceKernel, HookContext, HookDe
 from iris_harness.kernel.governance.approvals import ApprovalItem, ApprovalQueue
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.plugins import DestructiveApprovalHook, ToolPolicyHook
+from iris_harness.kernel.governance.side_effects import SideEffectLedger
+from iris_harness.kernel.governance.wiring import register_side_effect_ledger
 from iris_harness.memory.state import CheckpointStore
 from iris_harness.runtime.plugin_host.manifest import PluginManifest
 
@@ -131,6 +133,9 @@ class _World:
         self.kernel.register(ToolPolicyHook())
         if with_hook:
             self.kernel.register(DestructiveApprovalHook(approval_queue=self.queue))
+        # A pinned write runs only once its row is in the side-effect ledger (#73).
+        self.ledger = SideEffectLedger(tmp_path / "side_effects.db")
+        register_side_effect_ledger(self.kernel, self.ledger)
         self.kernel.init_lock()
         self.outbox = _Outbox()
 
@@ -199,6 +204,10 @@ def test_approving_sends_exactly_the_pinned_call_once(tmp_path: Path) -> None:
     assert world.outbox.sent[0] == _ARGS
     assert resumed.effects_executed[0] == "write"
     assert (resumed.steps[0].observation or "").startswith("The owner approved. Results:")
+    # A pinned write is high-risk: its row was written before it ran, then settled (#73).
+    rows = world.ledger.list_by_run(halted.run_id)
+    assert [(r.tool, r.status) for r in rows] == [("send_email", "completed")]
+    assert rows[0].probe_metadata["pre_recorded"] is True
 
 
 def test_rejecting_sends_nothing_and_says_so(tmp_path: Path) -> None:

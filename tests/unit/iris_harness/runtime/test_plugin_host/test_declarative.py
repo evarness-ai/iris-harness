@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 
 from iris_harness.agent.agent_executor import AgentExecutor
+from iris_harness.agent.tool_runner import ToolUnavailable
 from iris_harness.runtime.plugin_host import PluginRef, PluginRegistry, PluginStatus
 from iris_harness.runtime.plugin_host.loader import in_process_plugin, load_plugin
 from iris_harness.runtime.plugin_host.manifest import PluginManifest
@@ -168,9 +169,9 @@ def test_a_raising_function_is_charged_to_the_plugin(
     record, registry = _load(tmp_path, services, raw)
     (tool,) = [t for t in registry.tools() if t.name == "calc_shout"]
 
-    out = tool.call({"text": 1.5})
+    with pytest.raises(ToolUnavailable, match="AttributeError"):
+        tool.call({"text": 1.5})
 
-    assert "AttributeError" in out or "error" in out.lower()
     assert record.failure_count == 1
 
 

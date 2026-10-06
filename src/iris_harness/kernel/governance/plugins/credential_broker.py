@@ -57,8 +57,9 @@ class CredentialBroker:
 
     name: str = "credential_broker"
     hook_point: HookPoint = HookPoint.PRE_TOOL_USE
-    # Last at PRE_TOOL_USE (module docstring): every hook before it, the approval queue
-    # included, sees the handle; nothing after it sees the secret.
+    # Last at PRE_TOOL_USE but for the pre-execution ledger row, which never reads the
+    # arguments (module docstring): every hook before it, the approval queue included,
+    # sees the handle; nothing after it sees the secret.
     priority: int = 90
 
     def __init__(self, *, vault: _SecretLookup | None = None) -> None:

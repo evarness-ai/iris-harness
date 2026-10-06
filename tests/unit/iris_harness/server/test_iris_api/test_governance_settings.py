@@ -53,6 +53,7 @@ def test_governance_state_reports_flags(audit_client: TestClient) -> None:
     keys = {f["key"]: f["on"] for f in body["flags"]}
     assert keys["IRIS_GOVERNANCE_COMMAND_SANDBOX"] is True  # default-on
     assert keys["IRIS_GOVERNANCE_PROMPT_GUARD"] is False  # default-off (opt-in)
+    assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER"] is True  # default-on (issue #73)
 
 
 def test_governance_audit_returns_recent_decisions_newest_first(audit_client: TestClient) -> None:

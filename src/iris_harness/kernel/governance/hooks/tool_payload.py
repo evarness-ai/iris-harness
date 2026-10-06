@@ -14,6 +14,14 @@ Payload (``HookContext.payload``):
 - ``POST_TOOL_USE``: ``tool_name`` (str) and ``result`` (the tool's output). A hook may
   rewrite ``result`` in a ``transform``; the caller hands on the final ``result``.
 
+The pre-execution record (``PRE_TOOL_USE``): a high-risk call -- destructive, or a write
+approved per call -- is written to the side-effect ledger before it runs, by the last
+``PRE_TOOL_USE`` hook (``PreToolUseLedgerHook``). The hook confirms it by putting
+``side_effect_id`` (the row's key) in its decision's ``audit_metadata``; the runner runs the
+call only when the final decision carries it, so a call without a durable record never runs.
+(Not a payload transform: the hook runs after the credential broker and never reads the
+arguments, which by then may hold a resolved secret.)
+
 Audit fingerprints, beside the contract keys (the only trace of the call's text an audit
 row keeps, ``kernel._AUDITED_PAYLOAD_KEYS``): ``args_digest`` on ``PRE_TOOL_USE`` -- of the
 arguments as the caller wrote them, never a hook's rewrite (the credential broker puts
@@ -30,6 +38,8 @@ declaration, never chosen by the caller:
   injection guard scans.
 - ``tool_verify``: the side-effect probe that can tell whether a write landed, or None.
 - ``tool_call_id``: this call's id, unique within its run step.
+- ``tool_error`` (``POST_TOOL_USE``): the exception class name when the tool raised, else
+  None. Never the message: it can carry the call's content.
 - ``tool_sends_to`` (``PRE_TOOL_USE``): where the arguments go, when the tool declares it:
   ``search_engine`` for a tool that hands its arguments to a web search provider. The
   owner-PII web-search column applies to exactly these calls (ADR-0125), by declaration
@@ -56,6 +66,11 @@ TOOL_CONTENT = "tool_content"
 TOOL_VERIFY = "tool_verify"
 TOOL_CALL_ID = "tool_call_id"
 TOOL_SENDS_TO = "tool_sends_to"
+TOOL_ERROR = "tool_error"
+
+#: ``audit_metadata`` key of the final ``PRE_TOOL_USE`` decision: the ledger row written
+#: before the call ran.
+SIDE_EFFECT_ID = "side_effect_id"
 
 ToolContent = Literal["internal", "external"]
 TOOL_CONTENTS: tuple[ToolContent, ...] = ("internal", "external")
@@ -87,17 +102,19 @@ def tool_post_metadata(
     content: ToolContent,
     verify: str | None,
     tool_call_id: str | None,
+    error: str | None = None,
 ) -> dict[str, Any]:
     """The declaration a ``POST_TOOL_USE`` hook reads, as metadata.
 
     ``effect`` is None only for a tool that declares none (an external MCP server's tool):
-    nothing is assumed about it.
+    nothing is assumed about it. ``error`` is the exception class name when the tool raised.
     """
     return {
         TOOL_EFFECT: effect,
         TOOL_CONTENT: content,
         TOOL_VERIFY: verify,
         TOOL_CALL_ID: tool_call_id,
+        TOOL_ERROR: error,
     }
 
 
@@ -116,6 +133,15 @@ def args_of(payload: dict[str, Any]) -> dict[str, Any] | None:
 def result_of(payload: dict[str, Any]) -> Any:
     """What the tool returned (None when the payload carries no result)."""
     return payload.get(RESULT)
+
+
+def side_effect_id_of(audit_metadata: dict[str, Any]) -> str | None:
+    """The ledger key of the row written before the call ran, or None when there is none.
+
+    Read from the final ``PRE_TOOL_USE`` decision's ``audit_metadata``.
+    """
+    key = audit_metadata.get(SIDE_EFFECT_ID)
+    return key if isinstance(key, str) and key else None
 
 
 def sends_to_search_engine(metadata: dict[str, Any]) -> bool:
@@ -141,10 +167,12 @@ __all__ = [
     "RESULT_DIGEST",
     "RESULT",
     "SEARCH_ENGINE",
+    "SIDE_EFFECT_ID",
     "TOOL_CALL_ID",
     "TOOL_CONTENT",
     "TOOL_CONTENTS",
     "TOOL_EFFECT",
+    "TOOL_ERROR",
     "TOOL_NAME",
     "TOOL_SENDS_TO",
     "TOOL_VERIFY",
@@ -155,6 +183,7 @@ __all__ = [
     "post_tool_payload",
     "pre_tool_payload",
     "result_of",
+    "side_effect_id_of",
     "sends_to_search_engine",
     "tool_name_of",
     "tool_post_metadata",

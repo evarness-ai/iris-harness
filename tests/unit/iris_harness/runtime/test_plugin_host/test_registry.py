@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from iris_harness.agent.agentic_core import ToolSpec
+from iris_harness.agent.tool_runner import ToolUnavailable
 from iris_harness.runtime.intercepts import InterceptSpec
 from iris_harness.runtime.plugin_host.manifest import RegistrationKind
 from iris_harness.runtime.plugin_host.registry import PluginRecord, PluginRegistry, PluginStatus
@@ -35,14 +36,17 @@ def test_intercept_failure_falls_through_and_marks_degraded() -> None:
     assert "kaboom" in (rec.last_error or "")
 
 
-def test_tool_failure_returns_error_observation() -> None:
+def test_tool_failure_is_recorded_and_raises_tool_unavailable() -> None:
+    """The boundary records the failure against the plugin and raises a typed error
+    carrying what the caller is told, so the runner counts the call as failed rather
+    than as one that ran (an approved call that raised used to settle as ``ran``)."""
     registry = PluginRegistry()
-    _loaded(registry)
+    record = _loaded(registry)
     registry.add_tool("p", ToolSpec("t", "desc", lambda args: 1 / 0))
     (tool,) = registry.tools()
-    out = tool.call({})
-    assert "t is unavailable" in out and "ZeroDivisionError" in out
-    assert registry.get("p").status is PluginStatus.DEGRADED  # type: ignore[union-attr]
+    with pytest.raises(ToolUnavailable, match=r"^t is unavailable \(plugin 'p' raised Zero"):
+        tool.call({})
+    assert record.status is PluginStatus.DEGRADED and record.failure_count == 1
 
 
 def test_intent_handler_failure_returns_apology_and_stream_reraises() -> None:

@@ -27,6 +27,7 @@ from collections import defaultdict
 from typing import Any
 
 from iris_harness.kernel.governance.audit import AuditLog
+from iris_harness.kernel.governance.hooks.tool_payload import SIDE_EFFECT_ID
 from iris_harness.kernel.governance.hooks.types import (
     Hook,
     HookContext,
@@ -204,13 +205,19 @@ class GovernanceKernel:
                 updates["classification"] = decision.set_classification
             if decision.set_tier is not None:
                 updates["tier"] = decision.set_tier
+            recorded = decision.audit_metadata.get(SIDE_EFFECT_ID)
+            if isinstance(recorded, str) and recorded:
+                # Sticky: ``fire`` hands back only the last hook's decision, so a hook that
+                # runs after the pre-execution ledger hook would hide the row it wrote.
+                # The runner reads it from the final context instead.
+                updates["metadata"] = {**current_ctx.metadata, SIDE_EFFECT_ID: recorded}
             if decision.outcome == "transform" and decision.transformed_payload is not None:
                 updates["payload"] = decision.transformed_payload
                 # Who rewrote the payload, in order: a caller that finds the payload
                 # inconsistent (a capability result whose text disagrees with its field
                 # map) can refuse it and name the hook responsible.
                 updates["metadata"] = {
-                    **current_ctx.metadata,
+                    **updates.get("metadata", current_ctx.metadata),
                     "transformed_by": [*current_ctx.metadata.get("transformed_by", ()), hook.name],
                 }
             if updates:

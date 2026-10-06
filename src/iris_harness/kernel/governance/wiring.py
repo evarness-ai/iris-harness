@@ -57,6 +57,7 @@ from iris_harness.kernel.governance.plugins import (
     PersonaPolicyDocument,
     PersonaSurface,
     PostToolUseLedgerHook,
+    PreToolUseLedgerHook,
     RedactionFilterHook,
     ToolPolicyHook,
 )
@@ -143,6 +144,7 @@ def build_default_kernel(
     mcp_allowlist_enabled: bool = True,
     mcp_governance_map: dict[str, MCPServerGovernance] | None = None,
     side_effect_ledger: SideEffectLedger | None = None,
+    side_effect_ledger_enabled: bool = True,
     prompt_guard_inbound: Hook | None = None,
     prompt_guard_retrieved: Hook | None = None,
     input_safety: Hook | None = None,
@@ -177,12 +179,22 @@ def build_default_kernel(
     ``PreLLMCall`` and ``cost_budget`` at ``PostStep``. ``cost_user_id``
     defaults to ``"local"`` for the single-user assumption.
 
+    ``side_effect_ledger`` is the write-ahead ledger of high-risk calls and the record of
+    every other non-read one. On by default: when ``None`` and ``side_effect_ledger_enabled``
+    is true, the default ledger (``<governance data dir>/side_effects.db``) is opened, as
+    ``audit_log`` is. A kernel with no ledger (``side_effect_ledger_enabled=False``, or one
+    that could not be opened) denies every high-risk call -- a destructive tool, or a write
+    declared ``approval: pinned`` -- rather than run it with no durable record first
+    (``PreToolUseLedgerHook``, ``register_side_effect_ledger``).
+
     ``owner_pii_mode="shadow"`` registers ``OwnerPiiShadowHook`` at ``PreToolUse``,
     ``PreLLMCall`` and ``PreResponse`` (priority 1, first at each): it audits what each
     owner-PII guard would do and changes nothing (ADR-0125 PR 4). ``"off"`` registers
     nothing, so the kernel is exactly what it was before the mode existed.
     """
     kernel = GovernanceKernel(audit_log=audit_log or AuditLog())
+    if side_effect_ledger is None and side_effect_ledger_enabled:
+        side_effect_ledger = _open_side_effect_ledger()
     # PromptGuardInboundHook (priority 5) runs before DataClassifierHook (10):
     # Phase 6 G1, opt-in, shadow-first. Off unless explicitly built/passed.
     if prompt_guard_inbound is not None:
@@ -276,11 +288,11 @@ def build_default_kernel(
     # (plugin-capabilities §4) has the owner's identity literals masked out of its declared
     # text fields before any consumer sees it. Only `capability:` calls; always registered.
     kernel.register(CapabilityRedactionHook())
-    # PostToolUseLedgerHook (priority 40) observes tool results and records
-    # irreversible side effects (git commits, pushes, PR creation, file writes)
-    # so the resume flow can verify them with probes before re-executing.
-    if side_effect_ledger is not None:
-        kernel.register(PostToolUseLedgerHook(ledger=side_effect_ledger))
+    # The side-effect ledger: PostToolUseLedgerHook (priority 40) records every non-read
+    # call's effect so the resume flow can verify it with a probe before re-executing,
+    # and PreToolUseLedgerHook (priority 100, last at PreToolUse) writes a high-risk
+    # call's row before it runs (issue #73). With no ledger, high-risk calls are denied.
+    register_side_effect_ledger(kernel, side_effect_ledger)
     # PromptGuardRetrievedHook (priority 45) runs after the ledger (40): Phase 6
     # G2 indirect-injection guard over tool/RAG results. Opt-in, shadow-first.
     if prompt_guard_retrieved is not None:
@@ -435,6 +447,9 @@ def kernel_from_env() -> GovernanceKernel | None:
         mcp_allowlist_enabled=mcp_allowlist_enabled,
         mcp_governance_map=mcp_governance_map,
         side_effect_ledger=side_effect_ledger,
+        # Resolved from the environment above: no ledger there is the operator's opt-out
+        # (or a ledger that would not open), not a request for the default.
+        side_effect_ledger_enabled=False,
         prompt_guard_inbound=prompt_guard_inbound,
         prompt_guard_retrieved=prompt_guard_retrieved,
         input_safety=input_safety,
@@ -985,21 +1000,52 @@ def _redaction_store_from_env() -> VaultStore | None:
         return None
 
 
-def _side_effect_ledger_from_env() -> SideEffectLedger | None:
-    """Build a SideEffectLedger iff ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1``.
+def register_side_effect_ledger(kernel: GovernanceKernel, ledger: SideEffectLedger | None) -> None:
+    """Register the side-effect ledger's hooks on ``kernel`` (before ``init_lock``).
 
-    DB path from ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH``; defaults
-    to ``~/.local/share/iris/side_effects.db``. Returns ``None`` on failure
-    so the kernel degrades gracefully (no side-effect recording) rather
-    than crashing at startup.
+    ``PreToolUseLedgerHook`` is always registered: it writes a high-risk call's row before
+    the call runs, and with ``ledger=None`` it denies that call (fail closed) -- as the
+    runner does a high-risk call no hook recorded. ``PostToolUseLedgerHook`` records (or
+    settles) rows when there is a ledger to write. ``build_default_kernel`` wires the
+    ledger through here; a kernel assembled by hand that runs high-risk tools calls it too.
     """
-    raw = os.getenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "0").strip().lower()
-    if raw not in _TRUTHY:
-        return None
-    db_raw = os.getenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", "").strip()
-    db_path = Path(db_raw) if db_raw else None
+    if ledger is not None:
+        kernel.register(PostToolUseLedgerHook(ledger=ledger))
+    kernel.register(PreToolUseLedgerHook(ledger=ledger))
+
+
+def _open_side_effect_ledger(db_path: Path | None = None) -> SideEffectLedger | None:
+    """The ledger at ``db_path`` (default: ``<governance data dir>/side_effects.db``), or
+    ``None`` (logged) when it will not open: high-risk calls then fail closed, never run
+    unrecorded."""
     try:
         return SideEffectLedger(db_path=db_path)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("governance: side_effect_ledger disabled because init failed: %s", exc)
+        logger.error(
+            "governance: side_effect_ledger could not open (%s); high-risk tool calls "
+            "will be denied until it can",
+            type(exc).__name__,
+        )
         return None
+
+
+def _side_effect_ledger_from_env() -> SideEffectLedger | None:
+    """Build the ``SideEffectLedger``; on unless ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`` is
+    falsy (``0``/``false``/``no``/``off``).
+
+    DB path from ``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH``; defaults to
+    ``<governance data dir>/side_effects.db``. Returns ``None`` when opted out or when it
+    cannot be opened. The kernel then denies every high-risk call (a destructive tool, or a
+    pinned write) instead of running it with no durable record: the ledger is what makes
+    those calls safe to attempt, so opting out also turns them off.
+    """
+    raw = os.getenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", "").strip().lower()
+    if raw in _FALSY:
+        logger.warning(
+            "governance: IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=%r -- the side-effect ledger is "
+            "OFF; destructive tools and pinned writes will be denied.",
+            raw,
+        )
+        return None
+    db_raw = os.getenv("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH", "").strip()
+    return _open_side_effect_ledger(Path(db_raw).expanduser() if db_raw else None)

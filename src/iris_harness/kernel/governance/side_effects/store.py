@@ -2,8 +2,11 @@
 
 Story 12.gov-4.10 / design §10.3.
 
-Each row records one side effect produced by a PostToolUse hook call.
-At resume time, ``pending(run_id)`` returns rows whose probes haven't
+Each row records one side effect. A plain write is recorded by the PostToolUse hook, after
+the call. A high-risk call (destructive, or a write the owner approves per call) is
+written *before* it runs by the PreToolUse hook as a ``pending`` row, and the PostToolUse
+hook finalises that same row (``finalize``), so a process that dies mid-call leaves
+evidence of the attempt. At resume time, ``pending(run_id)`` returns rows whose probes haven't
 confirmed completion yet; the resume flow then decides to skip,
 re-execute, or enqueue an approval.
 """
@@ -212,3 +215,55 @@ class SideEffectLedger:
                 (status, completed_at, error, side_effect_id),
             )
             conn.commit()
+
+    def finalize(
+        self,
+        side_effect_id: str,
+        *,
+        status: ProbeStatus,
+        error: str | None = None,
+        verification_probe: str | None = None,
+        probe_metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """Settle a row written before its call ran; ``False`` when there is no such row.
+
+        ``status`` is the outcome (``completed`` / ``error``); ``error`` only ever names
+        the exception class, never its message. ``verification_probe`` and
+        ``probe_metadata`` replace the pre-call values when the call's result named the
+        effect (a commit SHA, a PR URL): the metadata is merged over the row's own, so the
+        pre-call keys survive.
+        """
+        completed_at = datetime.now(UTC).isoformat() if status == "completed" else None
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT probe_metadata, verification_probe FROM side_effect_ledger "
+                "WHERE side_effect_id = ?",
+                (side_effect_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            try:
+                merged = json.loads(row["probe_metadata"] or "{}")
+            except json.JSONDecodeError:
+                merged = {}
+            if not isinstance(merged, dict):
+                merged = {}
+            merged.update(probe_metadata or {})
+            conn.execute(
+                """
+                UPDATE side_effect_ledger
+                   SET status = ?, completed_at = ?, error = ?,
+                       verification_probe = ?, probe_metadata = ?
+                 WHERE side_effect_id = ?
+                """,
+                (
+                    status,
+                    completed_at,
+                    error,
+                    row["verification_probe"] if verification_probe is None else verification_probe,
+                    json.dumps(merged, default=str, sort_keys=True),
+                    side_effect_id,
+                ),
+            )
+            conn.commit()
+        return True

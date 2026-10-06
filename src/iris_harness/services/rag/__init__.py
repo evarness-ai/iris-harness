@@ -15,6 +15,7 @@ from .ingest import (
     PDF_SUFFIXES,
     TEXT_SUFFIXES,
     ingest_path,
+    reindex_all,
     sync_all,
 )
 from .loaders import extract_docx_text, extract_pdf_pages
@@ -37,6 +38,7 @@ __all__ = [
     "parse_note",
     "ingest_path",
     "sync_all",
+    "reindex_all",
     "search_documents",
     "GroundedAnswer",
     "answer_question",

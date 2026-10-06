@@ -30,8 +30,8 @@ list under ``capabilities: provides``, or ``capability`` of one not under ``uses
 ``requires``, is recorded as your plugin's failure and has no effect. Providers mount
 before consumers. Design: docs/architecture/plugin-capabilities.md §2.
 
-``CAPABILITIES`` is every capability this SDK version publishes -- empty until rollout
-step 4. The catalogue is closed: a new capability ships in an SDK release. Re-exports: the
+``CAPABILITIES`` is every capability this SDK version publishes (``weather.forecast``
+so far; more with rollout step 4). The catalogue is closed: a new capability ships in an SDK release. Re-exports: the
 catalogue is defined in ``iris_harness.foundation.capabilities`` because the host and the
 core's own consumers sit below the SDK and must import it too.
 """
@@ -43,7 +43,10 @@ from iris_harness.foundation.capabilities import (
     CapabilityDenied,
     CapabilitySpec,
     CapabilityUnavailable,
+    Forecast,
+    ForecastPeriod,
     MethodSpec,
+    WeatherForecast,
 )
 
 __all__ = [
@@ -51,5 +54,8 @@ __all__ = [
     "CapabilityDenied",
     "CapabilitySpec",
     "CapabilityUnavailable",
+    "Forecast",
+    "ForecastPeriod",
     "MethodSpec",
+    "WeatherForecast",
 ]

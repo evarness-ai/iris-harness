@@ -138,9 +138,10 @@ async def test_declared_credentials_not_in_the_args_leave_the_call_as_it_is() ->
 
 async def test_broker_runs_last_at_pre_tool_use() -> None:
     """Every other PRE_TOOL_USE hook -- the approval queue that pins a call included --
-    judges the call with its handles; nothing after the broker sees the secret."""
+    judges the call with its handles; nothing after the broker sees the secret. The one hook
+    after it, the pre-execution ledger row, never reads the arguments."""
     from iris_harness.kernel.governance.wiring import build_default_kernel
 
     kernel = build_default_kernel()
     names = kernel.hook_names(HookPoint.PRE_TOOL_USE)
-    assert names[-1] == "credential_broker", names
+    assert names[-2:] == ("credential_broker", "pre_tool_use_ledger"), names

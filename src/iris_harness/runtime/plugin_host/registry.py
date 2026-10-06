@@ -56,7 +56,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.agent.agentic_core import ToolSpec
-from iris_harness.agent.tool_runner import CapabilityCall, GovernedToolRunner
+from iris_harness.agent.tool_runner import CapabilityCall, GovernedToolRunner, ToolUnavailable
 from iris_harness.foundation.capabilities import (
     CapabilitySpec,
     CapabilityUnavailable,
@@ -450,15 +450,18 @@ class PluginRegistry:
     def add_tool(self, plugin: str, tool: ToolSpec) -> None:
         if any(t.name == tool.name for t in self._tools):
             raise ValueError(f"tool {tool.name!r} already registered by a plugin")
-        guarded = self.guard(
-            plugin,
-            RegistrationKind.TOOL,
-            tool.name,
-            tool.call,
-            degrade=lambda exc: (
+
+        def unavailable(exc: BaseException) -> Any:
+            # Raised past the boundary (the failure is already recorded against the
+            # plugin), so the runner sees a failed call rather than a result: the caller
+            # is told this sentence, but the call does not count as one that ran.
+            raise ToolUnavailable(
                 f"{tool.name} is unavailable (plugin {plugin!r} raised "
                 f"{type(exc).__name__}: {exc}). Answer without it."
-            ),
+            ) from exc
+
+        guarded = self.guard(
+            plugin, RegistrationKind.TOOL, tool.name, tool.call, degrade=unavailable
         )
         # `_replace`, not a field-by-field copy: a copy silently drops every field
         # added to ToolSpec later (ADR-0118's describe/undo would have been lost here).

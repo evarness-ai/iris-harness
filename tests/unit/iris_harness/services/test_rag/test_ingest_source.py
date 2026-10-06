@@ -64,13 +64,25 @@ def test_indexed_document_carries_what_the_domain_needs(
 
 def test_classification_is_scanned_in_the_core(store: DocumentStore, tmp_path: Path) -> None:
     """A core-only install still classifies content: the scanner is the kernel's."""
-    doc = tmp_path / "creds.md"
-    doc.write_text(f"aws_secret_access_key = {_AWS_KEY}")
+    doc = tmp_path / "contact.md"
+    doc.write_text("Reach me at jane@example.com")
     rec = Recorder()
 
     ingest_path(doc, store=store, index=None, kind="file", source=rec)
 
-    assert rec.indexed[0].classification == "secret"
+    assert rec.indexed[0].classification == "personal"
+
+
+def test_secret_content_is_refused_and_never_reported(store: DocumentStore, tmp_path: Path) -> None:
+    """Secret content never enters RAG, so the file domain hears nothing of it."""
+    doc = tmp_path / "creds.md"
+    doc.write_text(f"aws_secret_access_key = {_AWS_KEY}")
+    rec = Recorder()
+
+    result = ingest_path(doc, store=store, index=None, kind="file", source=rec)
+
+    assert result.sources_denied == 1
+    assert rec.indexed == [] and store.list_sources() == []
 
 
 def test_a_failing_source_never_breaks_the_ingest(store: DocumentStore, tmp_path: Path) -> None:

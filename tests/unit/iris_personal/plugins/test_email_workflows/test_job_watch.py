@@ -200,3 +200,10 @@ def test_register_adds_the_check_and_the_footer_line(tmp_path: Path, monkeypatch
     assert row.state is HealthState.GREEN  # no mail, nothing hidden
     lines = footer.footer_lines(now=datetime.now(UTC) + timedelta(days=1), tz=CT)
     assert len(lines) == 1 and lines[0].startswith("Email jobs: sweep ")
+
+
+def test_probe_reads_a_tier_on_an_unknown_provider_as_unreachable() -> None:
+    from iris_harness.sdk.llm import provider_root_url
+
+    probe = job_watch.ollama_probe(lambda: provider_root_url("typo"), "/api/version", 1.0)
+    assert probe() is False

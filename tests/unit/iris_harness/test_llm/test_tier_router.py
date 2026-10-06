@@ -7,8 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
+from iris_harness.llm.errors import ConfigurationError
 from iris_harness.llm.model_metadata import ModelMetadata
-from iris_harness.llm.tier_router import ModelTier, TierRouter, model_tier_for
+from iris_harness.llm.tier_router import ModelTier, TierRouter, model_tier_for, provider_root_url
 
 
 def _patch_meta(meta: ModelMetadata | None):
@@ -221,12 +222,55 @@ def test_lmstudio_base_url_is_read_when_the_config_is_built(
     assert router.get_llm_config("general").base_url == "http://127.0.0.1:9/v1"
 
 
-def test_unknown_provider_falls_back_to_the_current_ollama_url(
+def test_unknown_provider_fails_closed_instead_of_dialing_ollama(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    router = _one_tier_router(tmp_path, "somethingelse")
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")
-    assert router.get_llm_config("general").base_url == "http://127.0.0.1:9/v1"
+    with pytest.raises(ConfigurationError, match="somethingelse"):
+        _one_tier_router(tmp_path, "somethingelse").get_llm_config("general")
+
+
+def test_copilot_tier_resolves_to_the_copilot_endpoint_and_sign_in(tmp_path: Path) -> None:
+    cfg = _one_tier_router(tmp_path, "copilot").get_llm_config("general")
+    assert cfg.base_url == "https://api.githubcopilot.com"
+    assert cfg.auth_mode == "copilot"
+    assert cfg.api_key_env is None
+    assert cfg.headers_map()["Copilot-Integration-Id"] == "vscode-chat"
+
+
+def test_forced_copilot_provider_resolves_to_the_copilot_endpoint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IRIS_LLM_PROVIDER", "copilot")
+    router = _one_tier_router(tmp_path, "ollama")
+    cfg = router.get_llm_config("general")
+    assert cfg.provider == "copilot"
+    assert cfg.base_url == "https://api.githubcopilot.com"
+    assert cfg.auth_mode == "copilot"
+
+
+def test_every_shipped_tier_provider_is_routable() -> None:
+    router = TierRouter.load_from_yaml(Path("config/llm_tiers.yaml"))
+    for intent in router.intent_tier_map():
+        assert router.get_llm_config(intent).base_url
+
+
+def test_a_typo_in_a_tier_provider_fails_at_load(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="somethingelse"):
+        _one_tier_router(tmp_path, "somethingelse")
+
+
+def test_a_typo_in_the_forced_provider_fails_at_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("IRIS_LLM_PROVIDER", "copliot")
+    with pytest.raises(ConfigurationError, match="copliot"):
+        _one_tier_router(tmp_path, "ollama")
+
+
+def test_unknown_provider_has_no_root_url() -> None:
+    with pytest.raises(ConfigurationError, match="typo"):
+        provider_root_url("typo")
 
 
 class _DownshiftEverything:

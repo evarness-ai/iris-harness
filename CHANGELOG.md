@@ -101,7 +101,7 @@ First public release of the IRIS harness.
   could erase the content after it). Output is asymptotically at most 2x the input plus a fixed 7 KB (the first 64 spans of
   each pass carry the full marker), every span is still redacted, and the span and pattern counts in the ledger row stay exact. A `source` or
   `tool` label with a newline or other control or invisible character can no longer inject a log line or
-  ledger value: `redact_text` cleans and caps both (200 characters).
+  ledger value: `redact_text` and the tool-result floor hook clean and cap both (200 characters).
 - The side-effect ledger is one shared handle per database, not one per kernel, and a ledger
   key that already holds a row is no longer ignored silently (issue #102). A destructive or
   pinned call whose key is taken is denied before it runs; a call's post-run record that

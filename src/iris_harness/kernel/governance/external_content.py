@@ -327,7 +327,7 @@ _LABEL_CONTROL_RE = re.compile(
 )
 
 
-def _clean_label(value: str) -> str:
+def clean_label(value: str) -> str:
     """``value`` safe to log and write: control characters (newlines included) become one
     space and the length is capped, so a label cannot inject a log line or a huge row."""
     return _LABEL_CONTROL_RE.sub(" ", str(value))[:_MAX_LABEL]
@@ -349,8 +349,8 @@ def redact_text(text: str, *, source: str, tool: str | None = None, caller: str 
     found = scan(text)
     if not found.matched:
         return text
-    source = _clean_label(source)
-    tool = _clean_label(tool) if tool is not None else None
+    source = clean_label(source)
+    tool = clean_label(tool) if tool is not None else None
     logger.warning(
         "external_content_floor: redacted %d span(s) (%s) in text from %s%s",
         found.spans,
@@ -441,6 +441,7 @@ __all__ = [
     "PATTERNS",
     "FloorPattern",
     "ScanResult",
+    "clean_label",
     "floor_enabled",
     "redact_text",
     "scan",

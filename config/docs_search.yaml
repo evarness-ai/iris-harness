@@ -1,0 +1,40 @@
+# The corpus the `search_docs` tool may search (services/docs_search/). It is an
+# ALLOW-LIST: the tool reads these directories and nothing else, and every path it
+# opens is resolved and checked to sit inside one of them (symlinks and `..` refused).
+# Nothing here can name the identity files (SOUL/USER/AGENTS), the vault, a .env, the
+# user's data directories or any store: they are not under these roots, and a root that
+# overlaps IRIS_HOME / the data or governance directories is refused at load.
+#
+# This shipped file is the allow-list. A docs_search.yaml under IRIS_CONFIG_DIR can only
+# NARROW it (roots and extensions intersect, limits take the smaller value); a root it adds
+# is ignored. Every root must be a plain relative path under docs/.
+#
+# Roots are relative to the source checkout and are shipped documentation only. The docs
+# are not package data, so on an installed wheel none of them exist and the tool says
+# "docs not present on this install" instead of searching anywhere else. Adding a root is
+# a security decision: it must hold nothing the owner would not publish.
+roots:
+  - docs/architecture   # includes docs/architecture/adrs/ where present
+  - docs/concepts
+  - docs/guides
+  - docs/reference
+  - docs/usage-guides
+
+# Only these file types are read, from inside the roots.
+extensions:
+  - .md
+
+# Bounded work: a runaway tree costs a capped, deterministic amount.
+limits:
+  max_files: 400            # documents indexed; more are ignored (the result says so)
+  max_file_bytes: 400000    # a larger file is skipped, not truncated
+  max_total_bytes: 8000000  # across all documents
+  max_query_chars: 200
+  max_query_terms: 8
+  default_results: 5
+  max_results: 10
+  snippet_chars: 240
+  max_output_chars: 4000
+  scan_chunk_chars: 4000    # the secret scan sees a document in pieces of this size
+  scan_budget_ms: 2000      # a document that uses this up scanning is withheld
+  scan_total_ms: 10000      # per call; documents not yet scanned wait for the next call

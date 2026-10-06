@@ -29,6 +29,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Protocol
 
 from iris_harness.foundation.observability.session_log import bind_context, current_turn_id
+from iris_harness.kernel.governance.reentry import reenter_many, reenter_text
 from iris_harness.llm.budget import estimate_tokens
 from iris_harness.memory.compactor import CompactedHistory, ConversationTurn
 from iris_harness.memory.retention import is_ephemeral_session
@@ -266,7 +267,21 @@ class SessionMemory:
         # We hand over the whole in-memory window (the compactor already bounds it) and
         # let the prompt builder fill its transcript budget from the newest end, instead
         # of pre-cutting to 6 lines here and 3 lines there.
-        recent = tuple(f"{t.role}: {t.content}" for t in history[-_MEMORY_CONTEXT_MAX_TURNS:])
+        window = history[-_MEMORY_CONTEXT_MAX_TURNS:]
+        # The one place the stored window and summary become prompt text for every reader
+        # (the loop, the general lane, code_exec, escalation actions, the reloaded session
+        # after a restart): assistant turns and the summary are scanned, the owner's own
+        # turns are not (#145). The stored rows and the in-memory window stay as written.
+        shown = reenter_many(
+            [(t.role, t.content) for t in window],
+            reader="session_window",
+            origin="transcript",
+        )
+        recent = tuple(f"{t.role}: {r.text}" for t, r in zip(window, shown, strict=True))
+        if summary:
+            summary = reenter_text(
+                summary, reader="session_summary", origin="summary", role="summary"
+            ).text
         pointers: list[str] = []
         if summary:
             pointers.append(
@@ -324,8 +339,16 @@ class SessionMemory:
         used = 0
         # Most recent first — the latest exchange matters most for routing — then
         # stop as soon as the total budget is hit.
-        for turn in reversed(history[-self._ROUTING_CONTEXT_MAX_TURNS :]):
-            text = (getattr(turn, "content", "") or "").strip().replace("\n", " ")
+        window = history[-self._ROUTING_CONTEXT_MAX_TURNS :]
+        # Stored text going into the router's prompt: assistant turns are scanned whole,
+        # before the per-turn cut so a phrase cannot hide at it; the owner's are not (#145).
+        shown = reenter_many(
+            [(getattr(t, "role", ""), getattr(t, "content", "") or "") for t in window],
+            reader="router_context",
+            origin="transcript",
+        )
+        for turn, scanned in zip(reversed(window), reversed(shown), strict=True):
+            text = (scanned.text or "").strip().replace("\n", " ")
             if not text:
                 continue
             role = "User" if getattr(turn, "role", "") == "user" else "Assistant"

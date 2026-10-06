@@ -111,6 +111,23 @@ kept. A capability result is typed data read by plugin code, redacted field by f
 it gets the tripwire and not the envelope; the consumer's own tool that hands that text to
 the model declares `content: external` and is wrapped there.
 
+**Briefs and digests.** A brief slot calls its skill tool in-process, so no `POST_TOOL_USE`
+fires for it. A slot over a tool that declares `content: external` (the email skills,
+`fetch_web_content`) therefore has its text passed through the same tripwire (`scan`) where
+the slot is rendered, with the same ledger row (caller `core:skill_render`). The digest
+store, Telegram, web push, the chat transcript and a skill answered directly in chat all
+get redaction and no envelope, because the owner reads them. The `render_<brief>` tool the
+loop calls is declared `content: external` when any of its slot tools is, so the runner
+envelopes what the model reads. A slot over an internal tool is not touched.
+
+Every tripwire-only caller (a slot, a skill answered directly, a lesson, an SDK plugin)
+goes through one kernel helper, `redact_text` in `kernel/governance/external_content.py`:
+the floor setting, then `scan`, then one ledger row (pattern ids and counts, never the
+text). With the floor off it returns the text unchanged and writes nothing. `scan` redacts
+at most 64 spans one by one; past that, the rest of the text becomes one marker that says
+how many further spans it held (the span count and pattern ids still cover all of them), so
+a hostile text cannot grow to many times its size in markers and its tail is never left raw.
+
 **2. The instruction-pattern tripwire.** A short list of phrase-level patterns
 (`kernel/governance/external_content.py`). A match is replaced with
 `[redacted: instruction-like text in external content]`; a phrase match is redacted from
@@ -160,6 +177,44 @@ and read by nothing. A guard that cannot run lets the text through and writes a
 carries `fail_mode` stops startup when a guard that reads it is requested, with an error that
 names the file and the key (delete the line); other config errors still turn the guards off
 with a warning.
+
+### Stored text coming back into a prompt
+
+The floor screens a tool result once, when it arrives. The same words can come back later:
+the model restates a tool's output in its answer, the turn is stored, and the stored text
+re-enters a prompt through the conversation window, the session summary,
+`recall_conversation`, `memory_search` over sessions, the related earlier turns the
+retriever adds, and the recent-turns block of the intent router's prompt. `kernel/governance/reentry.py` is the second look, at that re-entry
+(issue #145, step one).
+
+- **What is scanned.** Assistant turns and summaries, with the floor's own tripwire (the
+  patterns are not copied). A `user` turn is the owner's words and comes back verbatim: a
+  note that says "ignore previous instructions" is not rewritten. The stored rows are never
+  altered; the redaction is on the copy that goes to the prompt. A match is replaced with
+  the same visible marker the floor uses.
+- **Where.** Where the text is read back, shared by every path: `rt.chat`, `rt.chat_stream`,
+  the general lane, `code_exec` and escalation actions all read the window built in
+  `SessionMemory.build_memory_context`, and the intent router's "Conversation so far" block
+  (`format_recent_context`, scanned before its 200-character cut) is its only producer. `recall_conversation` and `memory_search` run in the
+  loop only (`iris mcp serve` and `api.tools` resolve plugin tools, which do not include them).
+- **Limits.** A text over 16 KB is cut, and a read that has scanned 128 KB (newest texts
+  first) replaces the older ones, each with a visible `[not scanned: ...]` marker; an
+  unscanned tail is never passed on. A hash-keyed memo makes a 40-turn window cheap to
+  scan every turn.
+- **Ledger.** One `audit_log` row per read (`hook_point` `reentry_scan`, plugin `reentry`)
+  with counts only: the reader, role counts, characters scanned, spans, pattern ids, capped
+  items, with the session and trace ids. It is written only when something matched or a cap
+  was hit; a clean read writes nothing. If the write fails the redaction still applies and a
+  warning is logged.
+- **The setting.** There is none of its own: `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR` off
+  means no scan here either.
+
+**Known limits.** Phrase-level only, like the floor: a paraphrase, another language, a
+homoglyph spelling, and a summary the model wrote that rewords an instruction all pass. The
+recalled text is redacted, not marked: it does not arrive in an `<external_content>`
+envelope, because the turn's origin (third-party text or the owner's own conversation) is not
+recorded yet; that is a later step. Not covered yet: the compactor's summarizer input, the
+behavior miner, intention roll-up and notices injected into the window.
 
 ## The audit ledger
 

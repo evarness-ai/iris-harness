@@ -19,6 +19,7 @@ from langchain_core.tools import BaseTool
 from iris_harness.foundation.clock import local_now
 from iris_harness.foundation.public_url import PUBLIC_URL_ENV as _PUBLIC_URL_ENV
 from iris_harness.foundation.public_url import public_base_url
+from iris_harness.runtime.external_text import redact_external_text
 from iris_harness.runtime.handlers.brief_formats import (
     BriefSection,
     failure_text,
@@ -58,6 +59,9 @@ class SlotContext:
     tool_index: dict[tuple[str, str], type[BaseTool]]
     greeting: str = ""
     daypart: str = ""
+    #: ``(skill, tool)`` pairs whose manifest declares ``content: external``; a slot over one
+    #: has its text passed through the external-content tripwire (see ``_resolve_tool_counted``).
+    external_tools: frozenset[tuple[str, str]] = frozenset()
 
 
 def _build_tool_index(
@@ -71,6 +75,33 @@ def _build_tool_index(
         ):
             index[(package.manifest.name, tool_manifest.name)] = tool_class
     return index
+
+
+def _build_external_index(skill_registry: SkillRegistryService) -> frozenset[tuple[str, str]]:
+    """``(skill, tool)`` of every loadable tool that declares ``content: external``."""
+    return frozenset(
+        (package.manifest.name, tool_manifest.name)
+        for package in skill_registry.list_packages(only_loadable=True)
+        for tool_manifest in package.manifest.tools
+        if tool_manifest.content == "external"
+    )
+
+
+def build_slot_context(
+    skill_registry: SkillRegistryService,
+    *,
+    now: datetime,
+    greeting: str = "",
+    daypart: str = "",
+) -> SlotContext:
+    """The one way to build a :class:`SlotContext`, so no render path misses the declarations."""
+    return SlotContext(
+        now=now,
+        tool_index=_build_tool_index(skill_registry),
+        greeting=greeting,
+        daypart=daypart,
+        external_tools=_build_external_index(skill_registry),
+    )
 
 
 def _resolve_literal(slot: BriefLiteralSlot, ctx: SlotContext) -> str:
@@ -134,6 +165,10 @@ def _resolve_tool_counted(
     text = _format_tool_output(
         result, slot.format, slot.empty, slot.item_template, line_cap=line_cap
     )
+    if (slot.skill, slot.tool) in ctx.external_tools:
+        # Text a third party wrote (a subject line, a feed item) goes to the owner's digest,
+        # Telegram, web push or chat from here: tripwire only, no envelope (owner channel).
+        text = redact_external_text(text, skill=slot.skill, tool=slot.tool)
     return text, _counted_items(result, slot, line_cap=line_cap)
 
 
@@ -508,12 +543,7 @@ def render_brief_result(
     spec = package.manifest.brief
     at = now or local_now()
     greeting, daypart = brief_greeting(spec, at)
-    ctx = SlotContext(
-        now=at,
-        tool_index=_build_tool_index(skill_registry),
-        greeting=greeting,
-        daypart=daypart,
-    )
+    ctx = build_slot_context(skill_registry, now=at, greeting=greeting, daypart=daypart)
 
     if section_keys is None:
         # Full-brief path (synthetic render tool, direct-local exec): every slot.
@@ -1035,6 +1065,7 @@ __all__ = [
     "SlotContext",
     "_build_skill_brief_handler",
     "_build_tool_index",
+    "build_slot_context",
     "_find_brief_package",
     "digest_buttons",
     "digest_layout",

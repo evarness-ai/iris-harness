@@ -73,7 +73,10 @@ from iris_harness.kernel.governance.plugins.owner_pii_shadow import (
     owner_pii_mode_from_env,
 )
 from iris_harness.kernel.governance.plugins.response_safety import ResponseSafetyHook
-from iris_harness.kernel.governance.side_effects import DeferredSideEffectLedger, SideEffectLedger
+from iris_harness.kernel.governance.side_effects import (
+    SideEffectLedger,
+    shared_side_effect_ledger,
+)
 from iris_harness.kernel.governance.vault import VaultStore
 
 if TYPE_CHECKING:
@@ -185,11 +188,12 @@ def build_default_kernel(
     opt-in: every non-read call is recorded after it runs, and a high-risk call (a
     destructive tool, or a write declared ``approval: pinned``) is written before it runs.
     Left ``None`` with ``side_effect_ledger_enabled`` true (the default), the ledger covers
-    the high-risk class only, and only opens (``DeferredSideEffectLedger``) when such a call
-    first runs: a plain write or a read leaves no row and touches no file, exactly as before
-    issue #73. A kernel with no ledger (``side_effect_ledger_enabled=False``) denies every
-    high-risk call rather than run it with no durable record first (``PreToolUseLedgerHook``,
-    ``register_side_effect_ledger``).
+    the high-risk class only, and only opens (the process's shared ``DeferredSideEffectLedger``
+    for that database, ``shared_side_effect_ledger``: one handle however many kernels are
+    built) when such a call first runs: a plain write or a read leaves no row and touches no
+    file, exactly as before issue #73. A kernel with no ledger
+    (``side_effect_ledger_enabled=False``) denies every high-risk call rather than run it
+    with no durable record first (``PreToolUseLedgerHook``, ``register_side_effect_ledger``).
 
     ``owner_pii_mode="shadow"`` registers ``OwnerPiiShadowHook`` at ``PreToolUse``,
     ``PreLLMCall`` and ``PreResponse`` (priority 1, first at each): it audits what each
@@ -199,7 +203,7 @@ def build_default_kernel(
     kernel = GovernanceKernel(audit_log=audit_log or AuditLog())
     high_risk_only = False
     if side_effect_ledger is None and side_effect_ledger_enabled:
-        side_effect_ledger = DeferredSideEffectLedger(side_effect_ledger_db_path)
+        side_effect_ledger = shared_side_effect_ledger(side_effect_ledger_db_path)
         high_risk_only = True
     # PromptGuardInboundHook (priority 5) runs before DataClassifierHook (10):
     # Phase 6 G1, opt-in, shadow-first. Off unless explicitly built/passed.
@@ -1034,7 +1038,10 @@ def _open_side_effect_ledger(db_path: Path | None = None) -> SideEffectLedger | 
     ``None`` (logged) when it will not open: high-risk calls then fail closed, never run
     unrecorded."""
     try:
-        return SideEffectLedger(db_path=db_path)
+        # The process's one ledger for this database: opened here, once, not per kernel.
+        ledger = shared_side_effect_ledger(db_path)
+        ledger.open()
+        return ledger
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "governance: side_effect_ledger could not open (%s); high-risk tool calls "

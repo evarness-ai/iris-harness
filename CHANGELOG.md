@@ -53,6 +53,15 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- The side-effect ledger is one shared handle per database, not one per kernel, and a ledger
+  key that already holds a row is no longer ignored silently (issue #102). A destructive or
+  pinned call whose key is taken is denied before it runs; a call's post-run record that
+  finds its key taken is reported as a warning instead of confirmed.
+  If the database file is removed while the process runs, the ledger creates it again,
+  empty, and logs one warning (pending write-ahead rows it held are gone). Not covered by
+  this change: `iris run resume` (`main.py`) still builds its own `SideEffectLedger`
+  instead of the shared handle, and MCP-bridge calls get no write-ahead record (they declare
+  no effect today, and calls with no call id need a key scheme first; see #134).
 - A ReAct step's `pre_llm_call` audit row names the model and provider the step
   actually called: the step resolves its model once and the row and the call share
   it, where the row used to carry a snapshot from when the loop was built and the call

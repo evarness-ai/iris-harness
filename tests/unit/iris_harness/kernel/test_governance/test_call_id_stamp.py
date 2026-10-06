@@ -113,3 +113,35 @@ def test_the_ledger_key_keeps_its_shape_with_the_ulid_as_the_call_part() -> None
         "run-1:2:01JABCDEFGHJKMNPQRSTVWXYZ0"
     )
     assert side_effect_key("run-1", 2, None) == "run-1:2:-"
+
+
+def test_an_egress_row_takes_its_ids_from_the_metadata_only(tmp_path: Path) -> None:
+    """#103 + #134: ``call_id`` / ``parent_call_id`` on a PRE_EGRESS row are the metadata's;
+    the same keys in the payload or a hook's ``audit_metadata`` are never read."""
+    from iris_harness.kernel.governance.hooks.tool_payload import PARENT_CALL_ID
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    stamped = _fire(
+        tmp_path / "a",
+        _ctx(
+            HookPoint.PRE_EGRESS,
+            {"egress": {"host": "h"}, CALL_ID: "FORGED", PARENT_CALL_ID: "FORGED"},
+            {CALL_ID: "01REQ", PARENT_CALL_ID: "01TOOL"},
+        ),
+        call_id="FORGED-META",
+        parent_call_id="FORGED-META",
+    )
+    assert (stamped["call_id"], stamped["parent_call_id"]) == ("01REQ", "01TOOL")
+
+    bare = _fire(
+        tmp_path / "b",
+        _ctx(
+            HookPoint.PRE_EGRESS,
+            {"egress": {"host": "h"}, CALL_ID: "FORGED", PARENT_CALL_ID: "FORGED"},
+            {},
+        ),
+        call_id="FORGED-META",
+        parent_call_id="FORGED-META",
+    )
+    assert "call_id" not in bare and "parent_call_id" not in bare

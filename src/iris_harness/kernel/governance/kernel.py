@@ -30,6 +30,7 @@ from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.hooks.tool_payload import (
     CALL_ID,
     HELD_CALL_ID,
+    PARENT_CALL_ID,
     SIDE_EFFECT_ID,
     call_id_of,
 )
@@ -67,6 +68,10 @@ _AUDITED_PAYLOAD_KEYS: tuple[str, ...] = (
     "capability_provider",
     "args_digest",
     "result_digest",
+    # PRE/POST_EGRESS (issue #103): host, port, scheme, method, the declared data class,
+    # and on the outcome status, byte counts, duration and the error class. Built by the
+    # governed HTTP client from the request's address -- never a path, query, header or body.
+    "egress",
     # Which keyed digest the two above are (``hmac-sha256/v1/<key-id>``): every governed
     # tool, capability and MCP call carries them (``kernel/governance/audit/digest.py``).
     "digest_alg",
@@ -272,6 +277,13 @@ class GovernanceKernel:
                 payload[HELD_CALL_ID] = held
             else:
                 payload.pop(HELD_CALL_ID, None)  # only the kernel's metadata names the held call
+            # An egress request's row names the governed call it was made inside, the same
+            # way: from the metadata the governed client stamped, never from the payload.
+            parent = ctx.metadata.get(PARENT_CALL_ID)
+            if isinstance(parent, str) and parent:
+                payload[PARENT_CALL_ID] = parent
+            else:
+                payload.pop(PARENT_CALL_ID, None)
             trace_id = _current_trace_id_hex()
             if trace_id is not None:
                 payload.setdefault("trace_id", trace_id)

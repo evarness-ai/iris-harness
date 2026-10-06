@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from iris_harness.agent.agentic_core import ToolDescription, ToolSpec
 from iris_harness.kernel.governance.identity_redaction import register_owner_identity_source
+from iris_harness.runtime.governed_http import GovernedHttp
 from iris_harness.runtime.harness_services import HarnessServices
 from iris_harness.runtime.intercepts import InterceptSpec
 from iris_harness.runtime.plugin_host.harness_topics import harness_bus, refuse_harness_topic
@@ -109,6 +110,19 @@ class PluginAPI:
         """
         service = self._tool_service
         return service.for_caller(f"plugin:{self.plugin}") if service is not None else None
+
+    # -- http: the plugin's own outbound requests, through governance ---------------
+    @property
+    def http(self) -> GovernedHttp:
+        """The governed HTTP client, bound to this plugin (``iris_harness.sdk.http``).
+
+        A request goes only to a host the manifest's ``egress:`` declares, is recorded in
+        the governance ledger (host, method, caller, tool, bytes, outcome; never the path,
+        query or body), and has what it carries read by the owner-PII guards. The plugin
+        is the harness's stamp, not the caller's claim. In a test,
+        ``iris_harness.testing.fake_http`` replaces the transport only.
+        """
+        return GovernedHttp(self.plugin)
 
     def on_approved_call(self, handler: Callable[[Any], Any]) -> None:
         """Run ``handler(payload)`` when one of THIS plugin's queued calls is settled.

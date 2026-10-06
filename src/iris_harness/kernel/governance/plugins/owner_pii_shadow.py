@@ -1,7 +1,7 @@
 """Owner-PII shadow mode (ADR-0125 PR 4, amendment 7): what each guard WOULD do.
 
 ``IRIS_GOVERNANCE_OWNER_PII=shadow`` registers one hook, :class:`OwnerPiiShadowHook`, at
-the three points where the owner-PII guards will act. For every call it runs
+the four points where the owner-PII guards act. For every call it runs
 ``owner_pii.decide`` over the text each guard reads and records, on its one audit row,
 what the ``identity.yaml`` table says that guard would do with every occurrence. It never
 changes anything: it returns ``allow`` with no transform, no label and no tier, and it
@@ -22,6 +22,8 @@ Where each column is checked:
   never by a list of tool names: the research plugin may import only the SDK, so its own
   guard cannot write a kernel row, and the kernel learns what research is from what
   research says about itself.
+- ``egress`` also -- ``PRE_EGRESS``, over the strings a plugin's governed HTTP request
+  carries (address and parameters), the destination being the host (issue #103).
 - ``tier3`` -- ``PRE_LLM_CALL`` when the target tier the kernel was given is ``tier_3``
   (the egress gate's reading of "leaves the machine"), over the prompt. A local tier is
   never observed. How that tier is derived is the caller's; this hook only reads it.
@@ -138,6 +140,8 @@ SHADOW_POINTS: tuple[HookPoint, ...] = (
     HookPoint.PRE_TOOL_USE,
     HookPoint.PRE_LLM_CALL,
     HookPoint.PRE_RESPONSE,
+    # What a plugin's governed HTTP request carries out (issue #103).
+    HookPoint.PRE_EGRESS,
 )
 #: Span offsets kept per observation (the count is always complete).
 MAX_SPANS: Final = 20
@@ -253,7 +257,7 @@ def observe_texts(
 class OwnerPiiShadowHook:
     """Audits what every owner-PII guard would do; changes nothing (ADR-0125 PR 4).
 
-    Registered at ``PRE_TOOL_USE``, ``PRE_LLM_CALL`` and ``PRE_RESPONSE`` (one instance,
+    Registered at ``PRE_TOOL_USE``, ``PRE_LLM_CALL``, ``PRE_RESPONSE`` and ``PRE_EGRESS`` (one instance,
     ``kernel.register(hook, at=...)``). ``network_tools`` is the egress guard's pattern
     set, empty when that guard is not registered (nothing to shadow).
     """
@@ -303,6 +307,18 @@ class OwnerPiiShadowHook:
                 checks.append(("egress", args, {"destination": tool}))
             if sends_to_search_engine(ctx.metadata):
                 checks.append(("web_search", args, {}))
+        elif ctx.hook_point == HookPoint.PRE_EGRESS:
+            # The request a plugin makes through the governed client: the strings in its
+            # address and parameters, against the egress column, destination the host.
+            egress = ctx.payload.get("egress")
+            host = egress.get("host") if isinstance(egress, dict) else None
+            checks.append(
+                (
+                    "egress",
+                    list(_leaves(ctx.payload.get("egress_content"))),
+                    {"destination": str(host or "")},
+                )
+            )
         elif ctx.hook_point == HookPoint.PRE_LLM_CALL:
             prompt = payload.get("prompt")
             if ctx.tier == CLOUD_TIER and isinstance(prompt, str):

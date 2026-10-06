@@ -30,6 +30,11 @@ class HookPoint(str, Enum):
     POST_TOOL_USE = "post_tool_use"
     POST_STEP = "post_step"
     PRE_RESPONSE = "pre_response"
+    # A request a plugin makes through the SDK's governed HTTP client (issue #103): before
+    # it is sent (is the host declared, may this run's data go there) and after it ends
+    # (status, bytes, duration). Never the path, query, headers or body.
+    PRE_EGRESS = "pre_egress"
+    POST_EGRESS = "post_egress"
 
 
 HookOutcome = Literal["allow", "deny", "transform", "require_approval"]

@@ -85,6 +85,7 @@ from iris_harness.kernel.governance.hooks.tool_payload import (
     side_effect_id_of,
     tool_post_metadata,
 )
+from iris_harness.kernel.governance.plugin_egress import EgressScope, egress_scope
 from iris_harness.kernel.governance.plugins.destructive_approval import pinned_by_declaration
 from iris_harness.kernel.governance.plugins.output_classifier import more_restrictive
 from iris_harness.kernel.governance.turn_label import lift_turn_label
@@ -272,6 +273,23 @@ class CapabilityCall:
         return capability_tool_name(self.capability, self.method)
 
 
+def _capability_scope(call: CapabilityCall, run_id: str, agent_type: str, call_id: str) -> Any:
+    """The egress scope of a capability method call: a request the provider's code makes
+    through the governed HTTP client while it runs (issue #103). Not covered: the items a
+    streamed method yields after it returns (the generator body runs lazily, outside)."""
+    return egress_scope(
+        EgressScope(
+            run_id=run_id,
+            agent_type=agent_type,
+            tool=call.tool_name,
+            tool_plugin=call.provider,
+            caller=call.caller,
+            classification=call.classification,
+            tool_call_id=call_id,
+        )
+    )
+
+
 _NO_KERNEL = "no governance kernel is bound, so capability calls fail closed"
 _IN_LOOP = (
     "a sync capability method cannot be governed inside a running event loop (the kernel "
@@ -417,7 +435,22 @@ class GovernedToolRunner:
         ok = True
         error: str | None = None
         try:
-            result = str(tool.call(tool_args))
+            # The request a plugin's code makes through the governed HTTP client while it
+            # runs belongs to this call: its egress rows carry the run, step, tool, caller
+            # and the run's data class (issue #103).
+            with egress_scope(
+                EgressScope(
+                    run_id=call.run_id or "",
+                    agent_type=self._agent_type,
+                    tool=name,
+                    tool_plugin=tool.plugin,
+                    caller=call.caller or f"model:{self._agent_type}",
+                    step_id=call.step_id,
+                    classification=call.classification,
+                    tool_call_id=tool_call_id,
+                )
+            ):
+                result = str(tool.call(tool_args))
         except ToolUnavailable as exc:
             result = str(exc)
             ok = False
@@ -667,7 +700,8 @@ class GovernedToolRunner:
         call_id = new_ulid()  # one id for the call; the run id is not it (#134)
         args = self.capability_pre(call, args, run_id, call_id)
         try:
-            result = provider_call(**args)
+            with _capability_scope(call, run_id, self._agent_type, call_id):
+                result = provider_call(**args)
         except Exception as exc:
             self._capability_failed(call, run_id, call_id, exc)
             raise
@@ -683,7 +717,8 @@ class GovernedToolRunner:
         call_id = new_ulid()
         args = await self.capability_apre(call, args, run_id, call_id)
         try:
-            result = await provider_call(**args)
+            with _capability_scope(call, run_id, self._agent_type, call_id):
+                result = await provider_call(**args)
         except Exception as exc:
             await self._capability_afailed(call, run_id, call_id, exc)
             raise

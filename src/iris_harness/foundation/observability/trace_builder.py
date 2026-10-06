@@ -322,6 +322,9 @@ _HOOK_HOST_KINDS: dict[str, tuple[list[str], ...]] = {
     "pre_tool_use": (["tool"], ["agent"]),
     "post_tool_use": (["tool"], ["agent"]),
     "post_step": (["agent"],),
+    # A plugin's outbound request, under the tool call that made it (issue #103).
+    "pre_egress": (["tool"], ["agent"]),
+    "post_egress": (["tool"], ["agent"]),
     # A generated answer is checked in the curator; a deterministic one in the guard.
     "pre_response": (["response_curator"], ["guard"]),
 }

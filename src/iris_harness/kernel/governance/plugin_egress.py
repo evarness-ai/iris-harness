@@ -2,16 +2,16 @@
 
 A plugin's manifest says which hosts its code talks to (``egress:``). The plugin host, which
 sits above the kernel and is what knows the manifests, compiles every mounted manifest into
-one :class:`PluginEgressPolicy` and registers it once plugins have mounted. The same seam as
-``caller_policy.py``.
+one :class:`PluginEgressPolicy` and registers it once plugins have mounted; the kernel's
+``plugin_egress`` hook reads it on every ``PRE_EGRESS`` (a call a plugin makes through the
+SDK's governed HTTP client). The same seam as ``caller_policy.py``.
 
-Declared only, NOT ENFORCED until #103b: nothing in the kernel reads the registered policy
-yet, so it changes no plugin's behaviour.
+Fail closed, and say so: with no policy registered, or for a plugin the policy does not
+know, every host is denied with a reason naming what is missing -- never allowed because
+nobody was asked. An empty declaration is a closed door.
 
-The policy itself fails closed, and says so: asked about a host with no policy registered,
-or for a plugin it does not know, it denies with a reason naming what is missing. Once the
-governed client (#103b) consults it, an empty declaration will be a closed door; today it is
-not one.
+What a decision proves is bounded by what asks: it covers calls made through the governed
+client. An in-process plugin can still open its own socket (docs/architecture/plugin-egress.md).
 """
 
 from __future__ import annotations
@@ -19,9 +19,11 @@ from __future__ import annotations
 import ipaddress
 import re
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
 from iris_harness.foundation.process_state import track_globals
 
@@ -238,20 +240,88 @@ def egress_policy() -> PluginEgressPolicy | None:
         return _policy
 
 
+_kernel_getter: Callable[[], Any] | None = None
+
+
+def bind_egress_kernel(getter: Callable[[], Any] | None) -> None:
+    """Govern governed-client requests by ``getter()``'s kernel (read per call)."""
+    global _kernel_getter
+    with _lock:
+        _kernel_getter = getter
+
+
+def egress_kernel() -> Any:
+    """The kernel the governed client fires ``PRE/POST_EGRESS`` on, or ``None`` (fail closed)."""
+    with _lock:
+        getter = _kernel_getter
+    return getter() if getter is not None else None
+
+
+# -- the call in progress ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EgressScope:
+    """The governed call a plugin's HTTP request is made inside, stamped by the harness.
+
+    Set around the tool (or capability provider) invocation by the tool runner, so the
+    egress rows carry the turn's run id, step, tool, caller and data class. Never the
+    plugin's claim: the plugin never constructs one.
+    """
+
+    run_id: str
+    agent_type: str
+    tool: str
+    #: The plugin that owns the tool being run (the client is authorised by its OWN plugin,
+    #: bound by the harness, not by this).
+    tool_plugin: str | None = None
+    caller: str | None = None
+    step_id: int | None = None
+    classification: str | None = None
+    #: The governed call's own id (the runner's ``call_id``, a ULID, #134): the parent of
+    #: every request made inside it, for a tool call and a capability call alike.
+    tool_call_id: str | None = None
+    #: Requests seen inside this call, by (method, host, port), for ``attempt`` / ``replay_of``.
+    attempts: dict[Any, list[Any]] = field(default_factory=dict, compare=False, repr=False)
+
+
+_scope: ContextVar[EgressScope | None] = ContextVar("iris_egress_scope", default=None)
+
+
+@contextmanager
+def egress_scope(scope: EgressScope) -> Iterator[None]:
+    """Mark the code run inside the block as part of ``scope``'s governed call."""
+    token = _scope.set(scope)
+    try:
+        yield
+    finally:
+        _scope.reset(token)
+
+
+def current_egress_scope() -> EgressScope | None:
+    """The governed call in progress on this thread/task, or ``None`` outside one."""
+    return _scope.get()
+
+
 __all__ = [
     "DEFAULT_DATA_CLASS",
     "DEFAULT_SCHEMES",
     "EGRESS_DATA_CLASSES",
     "SCHEMES",
+    "EgressScope",
     "EgressVerdict",
     "HostRule",
     "PluginEgress",
     "PluginEgressPolicy",
+    "current_egress_scope",
     "egress_policy",
+    "egress_scope",
     "normalize_host",
     "normalize_host_pattern",
     "register_egress_policy",
+    "bind_egress_kernel",
+    "egress_kernel",
 ]
 
 # Process-wide state: put back when a harness run ends (foundation/process_state.py).
-track_globals(__name__, "_policy")
+track_globals(__name__, "_policy", "_kernel_getter")

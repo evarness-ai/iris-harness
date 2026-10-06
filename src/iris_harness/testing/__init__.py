@@ -9,6 +9,10 @@ Stable tier (OSS plan R16): what a test imports to run the harness deterministic
   the format) -- given as a :class:`Script`, a mapping, or a YAML file.
 * :func:`transcript` lists every call the fake answered, so a test can assert on what
   the model was asked and what the audit ledger holds for it.
+* :func:`fake_http` answers the requests a plugin makes through the governed HTTP client
+  (``iris_harness.sdk.http``) from a script, replacing only the transport: the manifest's
+  ``egress`` declaration, the hooks and the audit rows run as in production, so a test
+  proves a declared host is allowed and an undeclared one is denied without a socket.
 * :func:`no_network` refuses every outbound socket connection for a ``with`` block, so
   a test proves a path is offline instead of hoping it is.
 * :func:`harness` builds a real, governed IRIS in a throwaway home -- the composition
@@ -22,6 +26,9 @@ Stable tier (OSS plan R16): what a test imports to run the harness deterministic
   checks that every model call and every answer was audited (R14). Process-wide state the run
   filled is put back on exit (:mod:`iris_harness.foundation.process_state`). See
   :mod:`iris_harness.testing.harness`.
+* :func:`check_network_imports` reports every import of a raw network library (``httpx``,
+  ``requests``, ``socket``, ...) in a plugin's source: its outbound calls belong on
+  ``api.http``, where each is declared and recorded.
 * :func:`check_stable_imports` reports every import of IRIS code outside the stable
   tier (``iris_harness/sdk/stable_tier.yaml``); the examples and the scaffold are held
   to it, and a plugin's CI can hold itself to it the same way.
@@ -35,10 +42,12 @@ from __future__ import annotations
 
 import os
 import socket
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from iris_harness.llm.fake import (
     FAKE_PROVIDER,
@@ -53,6 +62,7 @@ from iris_harness.llm.fake import (
     transcript,
 )
 from iris_harness.llm.tier_router import FORCED_PROVIDER_ENV
+from iris_harness.runtime.governed_http import _use_transport
 from iris_harness.testing.conformance import (
     ConformanceError,
     Violation,
@@ -68,6 +78,11 @@ from iris_harness.testing.harness import (
     TurnResult,
     harness,
     plugin,
+)
+from iris_harness.testing.network_imports import (
+    NETWORK_MODULES,
+    NetworkImportViolation,
+    check_network_imports,
 )
 from iris_harness.testing.stable import (
     StableImportViolation,
@@ -110,6 +125,46 @@ def use_fake_model(script: Script | Mapping[str, Any] | Path | str) -> Iterator[
             os.environ.pop(FORCED_PROVIDER_ENV, None)
         else:
             os.environ[FORCED_PROVIDER_ENV] = previous
+
+
+HttpRoute = Mapping[str, Any]
+
+
+@contextmanager
+def fake_http(
+    routes: Callable[[httpx.Request], httpx.Response] | Mapping[str, HttpRoute | httpx.Response],
+) -> Iterator[list[httpx.Request]]:
+    """Answer governed HTTP requests from ``routes`` inside the block; yield what was sent.
+
+    ``routes`` is either a function ``request -> httpx.Response`` or a mapping from a URL
+    without its query (``"https://api.open-meteo.com/v1/forecast"``, optionally prefixed with
+    a method, ``"POST https://..."``) to a reply: an :class:`httpx.Response`, or a mapping of
+    ``status`` (default 200) and one of ``json`` / ``text`` / ``content`` / ``headers``. A
+    request no route matches gets a 404, so a plugin that reaches an unexpected URL fails
+    visibly. The returned list holds every request that was actually sent (a request the
+    egress policy denied never reaches the transport, so it is not in it).
+
+    Only the transport is replaced: ``api.http`` still checks the manifest's declaration and
+    writes the ledger rows. Real sockets stay refused by :func:`no_network`.
+    """
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        if callable(routes):
+            return routes(request)
+        bare = str(request.url.copy_with(query=None, fragment=None))
+        reply = routes.get(f"{request.method} {bare}", routes.get(bare))
+        if reply is None:
+            return httpx.Response(404, json={"error": f"no fake route for {request.method} {bare}"})
+        if isinstance(reply, httpx.Response):
+            return reply
+        spec = dict(reply)
+        status = int(spec.pop("status", 200))
+        return httpx.Response(status, **spec)
+
+    sent: list[httpx.Request] = []
+    with _use_transport(httpx.MockTransport(answer)):
+        yield sent
 
 
 @contextmanager
@@ -161,7 +216,9 @@ __all__ = [
     "FakeCall",
     "FakeModelError",
     "Harness",
+    "NETWORK_MODULES",
     "NetworkBlockedError",
+    "NetworkImportViolation",
     "PluginState",
     "Reply",
     "Rule",
@@ -176,11 +233,13 @@ __all__ = [
     "Violation",
     "assert_conformant",
     "check_conformance",
+    "check_network_imports",
     "check_stable_imports",
     "harness",
     "no_network",
     "plugin",
     "stable_tier",
     "transcript",
+    "fake_http",
     "use_fake_model",
 ]

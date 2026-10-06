@@ -116,3 +116,34 @@ def test_a_denied_capability_call_still_names_its_call(tmp_path: Path) -> None:
     assert len(runs) == 1
     [payloads] = runs.values()
     assert payloads and all(is_ulid(p.get("call_id")) for p in payloads)
+
+
+def test_a_request_made_inside_a_capability_call_names_that_call_as_its_parent(
+    tmp_path: Path,
+) -> None:
+    """#103 + #134: the egress scope a capability method runs in carries the call's minted
+    id, so a governed HTTP request the provider makes has ``parent_call_id`` = that id."""
+    from iris_harness.kernel.governance.plugin_egress import current_egress_scope
+
+    pre, post = Spy(HookPoint.PRE_TOOL_USE), Spy(HookPoint.POST_TOOL_USE)
+    kernel, _ = _kernel(tmp_path, pre, post)
+    registry, provider = _registry(tmp_path, kernel)
+    seen: list[str | None] = []
+    real_search, real_asearch = provider.search, provider.asearch
+
+    def search(query: str) -> Any:
+        scope = current_egress_scope()
+        seen.append(scope.tool_call_id if scope else None)
+        return real_search(query)
+
+    async def asearch(query: str) -> Any:
+        scope = current_egress_scope()
+        seen.append(scope.tool_call_id if scope else None)
+        return await real_asearch(query)
+
+    provider.search, provider.asearch = search, asearch  # type: ignore[method-assign]
+    inbox = registry.resolve_capability("fin", "test.inbox")
+    inbox.search("a")
+    asyncio.run(inbox.asearch("b"))
+    call_ids = [c.metadata["call_id"] for c in pre.seen]
+    assert len(call_ids) == 2 and seen == call_ids and all(is_ulid(c) for c in seen)

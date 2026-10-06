@@ -81,6 +81,9 @@ iris_harness.sdk.heartbeat:describe_schedule
 iris_harness.sdk.heartbeat:heartbeat_runs
 iris_harness.sdk.heartbeat:load_heartbeats
 iris_harness.sdk.heartbeat:tally
+iris_harness.sdk.http:EgressDenied
+iris_harness.sdk.http:GovernedHttp
+iris_harness.sdk.http:current_http
 iris_harness.sdk.identity:DUES_EXCLUDE_RE
 iris_harness.sdk.identity:Fingerprint
 iris_harness.sdk.identity:IdentityKind
@@ -264,6 +267,9 @@ iris_harness.testing.harness:TurnRecord
 iris_harness.testing.harness:TurnResult
 iris_harness.testing.harness:harness
 iris_harness.testing.harness:plugin
+iris_harness.testing.network_imports:NETWORK_MODULES
+iris_harness.testing.network_imports:NetworkImportViolation
+iris_harness.testing.network_imports:check_network_imports
 iris_harness.testing.proof_bundle:FORMAT
 iris_harness.testing.proof_bundle:INVARIANTS
 iris_harness.testing.proof_bundle:MailboxWrite
@@ -288,7 +294,9 @@ iris_harness.testing:ConformanceError
 iris_harness.testing:FakeCall
 iris_harness.testing:FakeModelError
 iris_harness.testing:Harness
+iris_harness.testing:NETWORK_MODULES
 iris_harness.testing:NetworkBlockedError
+iris_harness.testing:NetworkImportViolation
 iris_harness.testing:PluginState
 iris_harness.testing:Reply
 iris_harness.testing:Rule
@@ -303,7 +311,9 @@ iris_harness.testing:TurnResult
 iris_harness.testing:Violation
 iris_harness.testing:assert_conformant
 iris_harness.testing:check_conformance
+iris_harness.testing:check_network_imports
 iris_harness.testing:check_stable_imports
+iris_harness.testing:fake_http
 iris_harness.testing:harness
 iris_harness.testing:no_network
 iris_harness.testing:plugin

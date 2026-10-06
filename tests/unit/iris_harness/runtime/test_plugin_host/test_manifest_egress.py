@@ -149,3 +149,29 @@ def test_hosts_per_plugin_are_capped() -> None:
     assert len(decl(MAX_HOSTS_PER_PLUGIN).hosts) == MAX_HOSTS_PER_PLUGIN
     with pytest.raises(ValueError):
         decl(MAX_HOSTS_PER_PLUGIN + 1)
+
+
+def test_iris_plugins_list_and_show_carry_the_declared_egress() -> None:
+    from iris_harness.cli.plugins import egress_lines
+    from iris_harness.runtime.plugin_host.inventory import plugin_detail, plugins_inventory
+
+    registry = _registry(
+        weather=(
+            PluginStatus.LOADED,
+            "egress: {hosts: [api.open-meteo.com, {host: geo.example.org, data: personal, "
+            "ports: [8443]}]}",
+        ),
+        fetcher=(PluginStatus.LOADED, "egress: {open_web: true}"),
+        quiet=(PluginStatus.LOADED, ""),
+    )
+    rows = {p["name"]: p for p in plugins_inventory(registry, None)["plugins"]}
+    assert rows["quiet"]["egress"] == {"open_web": False, "hosts": []}
+    assert rows["fetcher"]["egress"]["open_web"] is True
+    detail = plugin_detail(registry, None, "weather")
+    assert detail is not None and detail["egress"] == rows["weather"]["egress"]
+    assert detail["manifest"]["egress"]["hosts"][0]["host"] == "api.open-meteo.com"
+    lines = egress_lines(detail["egress"])
+    assert lines[0].startswith("https://api.open-meteo.com") and "data: internal" in lines[0]
+    assert lines[1].startswith("https://geo.example.org:8443") and "data: personal" in lines[1]
+    assert "open_web" in egress_lines(rows["fetcher"]["egress"])[0]
+    assert egress_lines(rows["quiet"]["egress"]) == []

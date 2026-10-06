@@ -138,6 +138,7 @@ def test_the_turn_audit_row_fields_are_the_declared_ones() -> None:
         "handler",
         "caller",
         "tool_plugin",
+        "egress",
     )
 
 

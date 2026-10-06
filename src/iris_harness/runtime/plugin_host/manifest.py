@@ -75,7 +75,7 @@ EgressScheme = Literal["http", "https"]
 
 
 class EgressHostDecl(BaseModel):
-    """One host a plugin's code may contact (issue #103).
+    """One host a plugin's code may contact through the governed HTTP client (issue #103).
 
     A bare string is the shorthand for ``{host: <it>}``: HTTPS on 443, receiving ``internal``
     data. ``host`` is an exact host or ``*.<domain>`` (subdomains, never the apex). ``ports``
@@ -625,9 +625,9 @@ class PluginManifest(BaseModel):
     provides: tuple[RegistrationKind, ...] = Field(default_factory=tuple)
     requires: PluginRequirements = Field(default_factory=PluginRequirements)
     uses: PluginUses = Field(default_factory=PluginUses)
-    # Issue #103: the hosts this plugin's code may contact, compiled into the kernel's
-    # egress policy when the plugin mounts. Declared only, NOT ENFORCED until #103b (absent will
-    # then mean no host); see docs/architecture/plugin-egress.md.
+    # Issue #103: the hosts this plugin's code may contact through the SDK's governed HTTP
+    # client, compiled into the kernel's egress policy when the plugin mounts. Absent: no
+    # host. See docs/architecture/plugin-egress.md for what it does and does not prove.
     egress: PluginEgressDecl = Field(default_factory=PluginEgressDecl)
     capabilities: PluginCapabilities = Field(default_factory=PluginCapabilities)
     # ADR-0125: the owner-identity kinds `api.register_owner_identity_source` may return.

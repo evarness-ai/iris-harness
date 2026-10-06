@@ -625,6 +625,29 @@ not `read`, keyed `<run_id>:<step_id>:<tool_call_id>`; the probe is the coding a
 `TOOL_PROBE_MAP` entry, else the tool's declared `verify:`, else none (`ambiguous`)
 (`kernel/governance/plugins/post_tool_use_ledger.py`).
 
+Write-ahead row for high-risk calls (issue #73): a call whose declaration makes it wait
+for a pinned approval (`effect: destructive`, or a write declared `approval: pinned`; a
+capability method by its declared effect and confirm) gets its row *before* it runs.
+`PreToolUseLedgerHook` (`plugins/pre_tool_use_ledger.py`, priority 100, last at
+`PreToolUse`, after every hook that can deny or ask) writes it `pending`, and
+`PostToolUseLedgerHook` settles that row by key: `completed` when the tool returned (also
+when a later `PostToolUse` hook withholds the result: it ran), `error` with the exception
+class name only when it raised. The row is written with no probe for every high-risk tool,
+so a crash leaves it `pending` and `iris run resume` asks the owner; the declared probe (and
+a mapped tool's subject, `git_commit` / `git_push`) is set only once the call has returned.
+The kernel carries the row's key on the `PreToolUse` context (`side_effect_id`), so a hook
+registered after the ledger hook cannot hide it from the runner; a call a later hook refuses
+settles its row as an `error` (`NotRun`), and a capability whose result cannot be handled
+(`ResultMismatch`) settles as an error too, never `pending` for ever. A capability stream is
+settled once, at its end. If the row cannot be written, or the kernel has no
+ledger, the call is denied and nothing runs; the runner also refuses a high-risk call the
+kernel allowed without confirming the row. Reads and other writes are unchanged
+(post-only, a failed write warns). The ledger is on by default;
+`IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0` opts out, which also turns high-risk calls off.
+Limits: a call through the MCP bridge declares no effect, so it gets no pre-execution row
+(only reads and undeclared tools are unaffected by the opt-out above; declared destructive
+tools and pinned writes are denied when the ledger is off).
+
 On resume, the kernel runs verification probes for each pending side effect:
 
 - **Probe succeeds** → side effect already happened, skip tool re-execution

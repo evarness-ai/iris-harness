@@ -60,9 +60,10 @@ def test_default_kernel_registers_pre_tool_use_policy(tmp_path) -> None:
     # (12.gov-4.2): PersonaSurface. 12.gov-4.3: CommandSandbox.
     # 12.gov-4.4: FSJail. 12.gov-4.5: NetworkEgress.
     # 12.gov-4.6: MCPAllowlistHook. ADR-0118: DestructiveApprovalHook.
-    # Plugin-capabilities §4: CallerPolicyHook (the permission contract). Update this
-    # count when adding new PreToolUse plugins in build_default_kernel.
-    assert kernel.hook_count(HookPoint.PRE_TOOL_USE) == 9
+    # Plugin-capabilities §4: CallerPolicyHook (the permission contract). Issue #73:
+    # PreToolUseLedgerHook. Update this count when adding new PreToolUse plugins in
+    # build_default_kernel.
+    assert kernel.hook_count(HookPoint.PRE_TOOL_USE) == 10
     assert "caller_policy" in kernel.hook_names(HookPoint.PRE_TOOL_USE)
 
 

@@ -21,6 +21,8 @@ from iris_harness.kernel.governance import GovernanceKernel, HookContext, HookDe
 from iris_harness.kernel.governance.approvals import ApprovalItem, ApprovalQueue
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.plugins import DestructiveApprovalHook, ToolPolicyHook
+from iris_harness.kernel.governance.side_effects import SideEffectLedger
+from iris_harness.kernel.governance.wiring import register_side_effect_ledger
 from iris_harness.memory.state import CheckpointStore
 
 _TRASH = 'Thought: trash them\nAction: trash_email\nAction Input: {"ids": ["m1", "m2"]}'
@@ -78,6 +80,9 @@ class _World:
         self.kernel.register(_AllowHook("allow_llm", HookPoint.PRE_LLM_CALL))
         self.kernel.register(ToolPolicyHook())
         self.kernel.register(DestructiveApprovalHook(approval_queue=self.queue))
+        # A destructive call runs only once its row is in the side-effect ledger (#73).
+        self.ledger = SideEffectLedger(tmp_path / "side_effects.db")
+        register_side_effect_ledger(self.kernel, self.ledger)
         self.kernel.init_lock()
         self.mailbox = _Mailbox()
 
@@ -147,9 +152,37 @@ def test_approving_runs_exactly_the_pinned_call_once(tmp_path: Path) -> None:
     assert world.mailbox.trashed == [["m1", "m2"]]
     assert resumed.effects_executed == ["destructive"]
     assert resumed.final_answer == "Done."
+    # The call left its row before it ran, settled once it returned (#73).
+    rows = world.ledger.list_by_run(halted.run_id)
+    assert [(r.tool, r.status, r.error) for r in rows] == [("trash_email", "completed", None)]
+    assert rows[0].probe_metadata["pre_recorded"] is True
     # The model continued from what really happened.
     assert "The owner approved. Results:" in llm.prompts[0]
     assert "trashed 2" in llm.prompts[0]
+
+
+def test_an_approved_call_with_no_ledger_row_runs_nothing(tmp_path: Path) -> None:
+    """Fail closed (#73): the resumed, approved call is denied when its row cannot be
+    written before it runs -- here, a kernel with no side-effect ledger."""
+    world = _World(tmp_path)
+    halted = _halt(world)
+    world.queue.respond(halted.pending_approval_id, status="approved", actor="owner")
+    world.kernel = GovernanceKernel(audit_log=AuditLog(db_path=tmp_path / "audit2.db"))
+    world.kernel.register(_AllowHook("allow_classify", HookPoint.PRE_CLASSIFY))
+    world.kernel.register(_AllowHook("allow_llm", HookPoint.PRE_LLM_CALL))
+    world.kernel.register(ToolPolicyHook())
+    world.kernel.register(DestructiveApprovalHook(approval_queue=world.queue))
+    register_side_effect_ledger(world.kernel, None)
+    world.kernel.init_lock()
+
+    llm = _ScriptedLLM(["Thought: ok\nFinal Answer: I could not do it."])
+    core = world.core([])
+    core._llm = llm
+    resumed = core.run_from_seed(world.resume_seed(halted.run_id))
+
+    assert world.mailbox.trashed == []
+    assert resumed.effects_executed == []
+    assert "needs a durable record before it runs" in llm.prompts[0]
 
 
 def test_rejecting_runs_nothing_and_the_model_is_told(tmp_path: Path) -> None:
@@ -448,6 +481,9 @@ class _LabelledWorld(_World):
         self.kernel.register(self.egress)
         self.kernel.register(ToolPolicyHook())
         self.kernel.register(DestructiveApprovalHook(approval_queue=self.queue))
+        # A destructive call runs only once its row is in the side-effect ledger (#73).
+        self.ledger = SideEffectLedger(tmp_path / "side_effects.db")
+        register_side_effect_ledger(self.kernel, self.ledger)
         self.kernel.init_lock()
         self.mailbox = _Mailbox()
 

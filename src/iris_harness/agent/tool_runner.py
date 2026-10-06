@@ -28,6 +28,17 @@ Every governed call is audited by keyed digest (``kernel/governance/audit/digest
 kernel bound and no audit key, no call runs: ``execute`` refuses before ``PRE_TOOL_USE`` and
 the tool is never invoked; a capability call raises ``CapabilityDenied`` the same way.
 
+A high-risk call -- one its declaration approves per call (``approved_per_call``): a
+destructive tool, or a write declared ``approval: pinned`` -- is recorded in the side-effect
+ledger *before* it runs (``kernel/governance/plugins/pre_tool_use_ledger.py``), keyed by a
+call id minted before ``PRE_TOOL_USE``, and ``POST_TOOL_USE`` settles that row under the same
+id: ``completed`` when the tool returned, ``error`` (the exception's class, never its
+message) when it raised. The hook confirms the record in its ``PRE_TOOL_USE`` decision; a
+high-risk call allowed without it is denied and never runs (``NO_PRE_RECORD``), so a kernel
+without the hook, with no ledger, or whose write failed cannot run one. A capability call
+follows its declared effect and confirm the same way: one whose provider raises is settled
+as an error before the exception goes on, and a stream is settled once, at its end.
+
 A ``POST_TOOL_USE`` that raises the label lifts the turn's label too
 (``kernel/governance/turn_label.py``): never lowers it, and a no-op outside a turn.
 """
@@ -60,14 +71,18 @@ from iris_harness.kernel.governance.audit.digest import (
     audit_digester,
 )
 from iris_harness.kernel.governance.hooks.tool_payload import (
+    TOOL_CALL_ID,
     TOOL_SENDS_TO,
+    TOOL_VERIFY,
     ToolContent,
     args_of,
     post_tool_payload,
     pre_tool_payload,
     result_of,
+    side_effect_id_of,
     tool_post_metadata,
 )
+from iris_harness.kernel.governance.plugins.destructive_approval import pinned_by_declaration
 from iris_harness.kernel.governance.plugins.output_classifier import more_restrictive
 from iris_harness.kernel.governance.turn_label import lift_turn_label
 
@@ -91,11 +106,39 @@ _PINNED_WRITE_REFUSED = (
 )
 
 
+# The denial of a high-risk call the kernel allowed without confirming its pre-execution
+# record: the side-effect ledger hook is not registered (or something after it allowed).
+NO_PRE_RECORD = (
+    "no durable pre-execution record was made for this irreversible call "
+    "(the side-effect ledger's pre-execution hook did not confirm one); nothing was run"
+)
+
+
+#: The ``error`` of a row written before a call that was then refused and never ran.
+NOT_RUN = "NotRun"
+
+
+def _recorded_row(decision: HookDecision, final_ctx: HookContext) -> str | None:
+    """The pre-execution row's key: the final decision's, else the sticky one the kernel
+    carries on the final context (a hook after the ledger hook hides the decision's)."""
+    return side_effect_id_of(decision.audit_metadata) or side_effect_id_of(final_ctx.metadata)
+
+
+def _no_pre_record() -> HookDecision:
+    return HookDecision(
+        outcome="deny",
+        reason=NO_PRE_RECORD,
+        severity="error",
+        decided_by="tool_runner",
+    )
+
+
 def approved_per_call(tool: ToolSpec) -> bool:
     """Whether every call of ``tool`` waits for the owner's approval on a pinned card
     (ADR-0118): a destructive tool, or a write declared ``approval: pinned`` (the
-    gate ``"approval"``). One predicate, so the two share one path end to end."""
-    return tool.effect == "destructive" or tool.confirm == "approval"
+    gate ``"approval"``). One predicate, so the two share one path end to end; it is also
+    the high-risk class whose calls get a side-effect ledger row before they run."""
+    return pinned_by_declaration(tool.effect, tool.confirm)
 
 
 def approved_per_call_for(tool: ToolSpec, call: ToolCall) -> bool:
@@ -307,8 +350,16 @@ class GovernedToolRunner:
             if per_call and not call.approved_by and can_queue
             else None
         )
+        # Minted before PRE_TOOL_USE: the row a high-risk call leaves in the side-effect
+        # ledger before it runs is keyed by it, and POST_TOOL_USE settles that same row.
+        tool_call_id = uuid.uuid4().hex[:12]
         decision, tool_args = self.pre(
-            tool, args, call, approval_card=approval_card, per_call=per_call
+            tool,
+            args,
+            call,
+            approval_card=approval_card,
+            per_call=per_call,
+            tool_call_id=tool_call_id,
         )
         if decision is not None and decision.outcome in ("deny", "require_approval"):
             return ToolOutcome(
@@ -330,7 +381,6 @@ class GovernedToolRunner:
         # never break execution.
         from iris_harness.foundation.observability.session_log import log_timeline_event
 
-        tool_call_id = uuid.uuid4().hex[:12]
         log_timeline_event(
             "tool.invoke.start",
             phase="tool.invoke.start",
@@ -344,6 +394,7 @@ class GovernedToolRunner:
         if effects is not None and tool.effect != "read":
             effects.append(tool.effect)
         ok = True
+        error: str | None = None
         try:
             result = str(tool.call(tool_args))
         except ToolUnavailable as exc:
@@ -352,7 +403,9 @@ class GovernedToolRunner:
         except Exception as exc:  # noqa: BLE001
             result = f"Tool error: {exc}"
             ok = False
-        post = self.post(tool, result, call, tool_call_id=tool_call_id)
+            # The class only, for the side-effect ledger: the message can carry the call's text.
+            error = type(exc).__name__
+        post = self.post(tool, result, call, tool_call_id=tool_call_id, error=error)
         log_timeline_event(
             "tool.invoke.end",
             phase="tool.invoke.end",
@@ -381,6 +434,7 @@ class GovernedToolRunner:
         *,
         approval_card: dict[str, Any] | None = None,
         per_call: bool | None = None,
+        tool_call_id: str | None = None,
     ) -> tuple[HookDecision | None, dict[str, Any]]:
         """Run ``PRE_TOOL_USE`` before invoking a registered tool.
 
@@ -388,6 +442,11 @@ class GovernedToolRunner:
         proposing this write. The tool policy's confirm-once rule reads it: a write tool
         that asks first may proceed, one that has not is turned back with the instruction
         to ask (multi-step loop plan, decision 8).
+
+        ``tool_call_id`` is this call's id; the side-effect ledger keys the row it writes
+        before a high-risk call runs by it, and ``post`` settles that row under the same id.
+        An approved high-risk call (``approved_per_call``) the kernel allows comes back
+        denied unless the kernel confirmed that row (``NO_PRE_RECORD``).
         """
         if self._kernel is None:
             return None, args
@@ -411,6 +470,8 @@ class GovernedToolRunner:
                 # ToolSpec). The tool policy's confirm-once rule reads it.
                 "tool_effect": tool.effect,
                 "tool_confirm": tool.confirm,
+                TOOL_CALL_ID: tool_call_id,
+                TOOL_VERIFY: tool.verify,
                 # ADR-0125: where the arguments go, when the tool declares a destination
                 # the owner-PII guards treat on its own (a web search provider).
                 TOOL_SENDS_TO: tool.sends_to,
@@ -435,8 +496,37 @@ class GovernedToolRunner:
             },
         )
         decision, final_ctx = self._kernel.fire_sync(HookPoint.PRE_TOOL_USE, tool_ctx)
+        if (
+            approved_per_call(tool)
+            and call.approved_by
+            and decision.outcome not in ("deny", "require_approval")
+            and _recorded_row(decision, final_ctx) is None
+        ):
+            # High-risk, approved and about to run, with no durable record of it: it does
+            # not run. (Unapproved, ``execute`` refuses it anyway.)
+            logger.error("tool %r (high-risk) has no pre-execution record; not run", name)
+            return _no_pre_record(), args
+        if decision.outcome in ("deny", "require_approval"):
+            # A hook after the ledger hook refused the call: its row was written and the
+            # call will never run, so the row must not stay ``pending``.
+            self._settle_unrun_tool(tool, call, tool_call_id, final_ctx)
         transformed_args = args_of(final_ctx.payload)
         return decision, transformed_args if transformed_args is not None else args
+
+    def _settle_unrun_tool(
+        self,
+        tool: ToolSpec,
+        call: ToolCall,
+        tool_call_id: str | None,
+        final_ctx: HookContext,
+    ) -> None:
+        """Settle as an error the row of a call that was recorded and then not run."""
+        if side_effect_id_of(final_ctx.metadata) is None or self._kernel is None:
+            return
+        try:
+            self.post(tool, "", call, tool_call_id=tool_call_id, error=NOT_RUN)
+        except Exception:
+            logger.exception("tool %s: could not settle its unrun call", tool.name)
 
     def post(
         self,
@@ -445,6 +535,7 @@ class GovernedToolRunner:
         call: ToolCall,
         *,
         tool_call_id: str | None = None,
+        error: str | None = None,
     ) -> PostOutcome:
         """Run ``POST_TOOL_USE`` over a tool result; what the caller may hand on.
 
@@ -462,7 +553,8 @@ class GovernedToolRunner:
 
         The tool's declaration rides on the metadata (``tool_payload.tool_post_metadata``):
         the side-effect ledger reads ``tool_effect`` / ``tool_verify`` / ``tool_call_id``,
-        the injection guard ``tool_content``.
+        the injection guard ``tool_content``. ``error`` is the exception class name when the
+        tool raised (never its message): the ledger settles the call's row as an error.
         """
         if self._kernel is None:
             return PostOutcome(classification=call.classification, text=observation)
@@ -485,6 +577,7 @@ class GovernedToolRunner:
                     content=tool.content,
                     verify=tool.verify,
                     tool_call_id=tool_call_id,
+                    error=error,
                 ),
             },
         )
@@ -530,7 +623,11 @@ class GovernedToolRunner:
         """
         run_id = str(uuid.uuid4())
         args = self.capability_pre(call, args, run_id)
-        result = provider_call(**args)
+        try:
+            result = provider_call(**args)
+        except Exception as exc:
+            self._capability_failed(call, run_id, exc)
+            raise
         if call.shape == "stream":
             return self._governed_stream(call, iter(result), run_id)
         return self.capability_post(call, result, run_id)
@@ -541,7 +638,11 @@ class GovernedToolRunner:
         """Govern and run an ``async def`` capability method, through ``kernel.fire``."""
         run_id = str(uuid.uuid4())
         args = await self.capability_apre(call, args, run_id)
-        result = await provider_call(**args)
+        try:
+            result = await provider_call(**args)
+        except Exception as exc:
+            await self._capability_afailed(call, run_id, exc)
+            raise
         return await self.capability_apost(call, result, run_id)
 
     async def aexecute_stream(
@@ -550,21 +651,36 @@ class GovernedToolRunner:
         """Govern an async stream: ``PRE`` before it starts, ``POST`` per item and at the end."""
         run_id = str(uuid.uuid4())
         args = await self.capability_apre(call, args, run_id)
-        stream = provider_call(**args)
+        try:
+            stream = provider_call(**args)
+        except Exception as exc:
+            await self._capability_afailed(call, run_id, exc)
+            raise
         digester = _capability_digester(call)
         digests: list[str] = []
         finished = False
+        stopped_by: str | None = None
         try:
             async for item in stream:
                 digests.append(digester.digest(item))
                 yield await self.capability_apost(call, item, run_id, stream_item=len(digests) - 1)
             finished = True
+        except BaseException as exc:
+            # The class only (the consumer's ``GeneratorExit``, a cancellation, what the
+            # provider raised): the side-effect ledger settles a partial stream with it.
+            stopped_by = type(exc).__name__
+            raise
         finally:
             # Also when the consumer stops early or the provider raises: the stream's end is
             # audited either way, marked partial when it did not run to the end.
             try:
                 await self.capability_apost(
-                    call, None, run_id, stream_end=digests, partial=not finished
+                    call,
+                    None,
+                    run_id,
+                    stream_end=digests,
+                    partial=not finished,
+                    error=None if finished else stopped_by,
                 )
             except CapabilityDenied:
                 if finished:
@@ -577,21 +693,38 @@ class GovernedToolRunner:
         digester = _capability_digester(call)
         digests: list[str] = []
         finished = False
+        stopped_by: str | None = None
         try:
             for item in stream:
                 digests.append(digester.digest(item))
                 yield self.capability_post(call, item, run_id, stream_item=len(digests) - 1)
             finished = True
+        except BaseException as exc:
+            stopped_by = type(exc).__name__  # the class only, as in ``aexecute_stream``
+            raise
         finally:
             try:
-                self.capability_post(call, None, run_id, stream_end=digests, partial=not finished)
+                self.capability_post(
+                    call,
+                    None,
+                    run_id,
+                    stream_end=digests,
+                    partial=not finished,
+                    error=None if finished else stopped_by,
+                )
             except CapabilityDenied:
                 if finished:
                     raise
                 logger.info("capability stream %s: partial end denied", call.tool_name)
 
     def _capability_ctx(
-        self, point: HookPoint, call: CapabilityCall, run_id: str, payload: dict[str, Any]
+        self,
+        point: HookPoint,
+        call: CapabilityCall,
+        run_id: str,
+        payload: dict[str, Any],
+        *,
+        error: str | None = None,
     ) -> HookContext:
         """The context a capability call carries on the tool hooks.
 
@@ -627,7 +760,11 @@ class GovernedToolRunner:
                 # A code caller is not a run that can pause and be resumed by an answer.
                 "resumable": False,
                 **tool_post_metadata(
-                    effect=call.effect, content=call.content, verify=None, tool_call_id=run_id
+                    effect=call.effect,
+                    content=call.content,
+                    verify=None,
+                    tool_call_id=run_id,
+                    error=error,
                 ),
             },
         )
@@ -646,10 +783,16 @@ class GovernedToolRunner:
 
     @staticmethod
     def _allowed_args(
-        decision: HookDecision, final_ctx: HookContext, args: dict[str, Any]
+        call: CapabilityCall,
+        decision: HookDecision,
+        final_ctx: HookContext,
+        args: dict[str, Any],
     ) -> dict[str, Any]:
         if decision.outcome in ("deny", "require_approval"):
             raise CapabilityDenied(governance_block_message(decision), outcome=decision.outcome)
+        if _capability_is_high_risk(call) and _recorded_row(decision, final_ctx) is None:
+            # About to run, with no durable record of it: it does not run.
+            raise CapabilityDenied(governance_block_message(_no_pre_record()), outcome="deny")
         new_args = args_of(final_ctx.payload)
         return new_args if new_args is not None else args
 
@@ -661,7 +804,12 @@ class GovernedToolRunner:
         _refuse_inside_a_loop()
         assert self._kernel is not None
         decision, final_ctx = self._kernel.fire_sync(HookPoint.PRE_TOOL_USE, ctx)
-        return self._allowed_args(decision, final_ctx, args)
+        try:
+            return self._allowed_args(call, decision, final_ctx, args)
+        except CapabilityDenied:
+            if side_effect_id_of(final_ctx.metadata) is not None:
+                self._capability_failed(call, run_id, CapabilityDenied(NOT_RUN), error=NOT_RUN)
+            raise
 
     async def capability_apre(
         self, call: CapabilityCall, args: dict[str, Any], run_id: str
@@ -670,7 +818,61 @@ class GovernedToolRunner:
         ctx = self._pre_ctx(call, args, run_id)
         assert self._kernel is not None
         decision, final_ctx = await self._kernel.fire(HookPoint.PRE_TOOL_USE, ctx)
-        return self._allowed_args(decision, final_ctx, args)
+        try:
+            return self._allowed_args(call, decision, final_ctx, args)
+        except CapabilityDenied:
+            if side_effect_id_of(final_ctx.metadata) is not None:
+                await self._capability_afailed(
+                    call, run_id, CapabilityDenied(NOT_RUN), error=NOT_RUN
+                )
+            raise
+
+    def _failed_ctx(
+        self, call: CapabilityCall, run_id: str, exc: Exception, error: str | None = None
+    ) -> HookContext | None:
+        """The ``POST_TOOL_USE`` context of a high-risk capability call whose provider raised.
+
+        Its row was written before it ran; this lets the side-effect ledger settle it as an
+        error, with the exception's class and never its message. None for any other call,
+        which has no row to settle and gets no extra audit row.
+        """
+        if not _capability_is_high_risk(call) or self._kernel is None:
+            return None
+        try:
+            digests = _capability_digester(call).result_fields("")
+        except Exception:  # noqa: BLE001
+            # The audit key is gone (the very thing that may have failed the call): the row
+            # is still settled, the audit row just carries no digest.
+            digests = {}
+        payload = post_tool_payload(call.tool_name, "", fields={}, **digests, call_failed=True)
+        return self._capability_ctx(
+            HookPoint.POST_TOOL_USE, call, run_id, payload, error=error or type(exc).__name__
+        )
+
+    def _capability_failed(
+        self, call: CapabilityCall, run_id: str, exc: Exception, error: str | None = None
+    ) -> None:
+        """Settle the row of a high-risk call whose provider raised; never masks ``exc``."""
+        try:
+            ctx = self._failed_ctx(call, run_id, exc, error)
+            if ctx is not None:
+                _refuse_inside_a_loop()
+                assert self._kernel is not None
+                self._kernel.fire_sync(HookPoint.POST_TOOL_USE, ctx)
+        except Exception:
+            logger.exception("capability %s: could not settle its failed call", call.tool_name)
+
+    async def _capability_afailed(
+        self, call: CapabilityCall, run_id: str, exc: Exception, error: str | None = None
+    ) -> None:
+        """The async twin of :meth:`_capability_failed`."""
+        try:
+            ctx = self._failed_ctx(call, run_id, exc, error)
+            if ctx is not None:
+                assert self._kernel is not None
+                await self._kernel.fire(HookPoint.POST_TOOL_USE, ctx)
+        except Exception:
+            logger.exception("capability %s: could not settle its failed call", call.tool_name)
 
     def _post_ctx(
         self,
@@ -680,6 +882,7 @@ class GovernedToolRunner:
         stream_item: int | None,
         stream_end: list[str] | None,
         partial: bool,
+        error: str | None = None,
     ) -> tuple[HookContext, dict[str, str]]:
         if self._kernel is None:
             raise CapabilityDenied(_NO_KERNEL)
@@ -694,7 +897,8 @@ class GovernedToolRunner:
                 stream_end=True,
                 stream_partial=partial,
             )
-            return self._capability_ctx(HookPoint.POST_TOOL_USE, call, run_id, payload), {}
+            ctx = self._capability_ctx(HookPoint.POST_TOOL_USE, call, run_id, payload, error=error)
+            return ctx, {}
         try:
             fields = extract_fields(value, call.value_type, call.fields)
         except ResultMismatch as exc:
@@ -762,9 +966,23 @@ class GovernedToolRunner:
         stream_item: int | None = None,
         stream_end: list[str] | None = None,
         partial: bool = False,
+        error: str | None = None,
     ) -> Any:
-        """``POST_TOOL_USE`` over a capability result; the redacted copy, or a denial."""
-        ctx, fields = self._post_ctx(call, value, run_id, stream_item, stream_end, partial)
+        """``POST_TOOL_USE`` over a capability result; the redacted copy, or a denial.
+
+        ``error`` is, at the end of a stream that stopped part-way, the class of what
+        stopped it (never a message), for the side-effect ledger.
+        """
+        try:
+            ctx, fields = self._post_ctx(
+                call, value, run_id, stream_item, stream_end, partial, error
+            )
+        except Exception as exc:
+            if stream_item is None:
+                # The value never reached the hooks (a type mismatch, no audit key): the
+                # call ran, so its row is settled here, not left ``pending`` for ever.
+                self._capability_failed(call, run_id, _cause(exc))
+            raise
         _refuse_inside_a_loop()
         assert self._kernel is not None
         decision, final_ctx = self._kernel.fire_sync(HookPoint.POST_TOOL_USE, ctx)
@@ -780,13 +998,34 @@ class GovernedToolRunner:
         stream_item: int | None = None,
         stream_end: list[str] | None = None,
         partial: bool = False,
+        error: str | None = None,
     ) -> Any:
         """The async twin of :meth:`capability_post`, through ``kernel.fire``."""
-        ctx, fields = self._post_ctx(call, value, run_id, stream_item, stream_end, partial)
+        try:
+            ctx, fields = self._post_ctx(
+                call, value, run_id, stream_item, stream_end, partial, error
+            )
+        except Exception as exc:
+            if stream_item is None:
+                await self._capability_afailed(call, run_id, _cause(exc))
+            raise
         assert self._kernel is not None
         decision, final_ctx = await self._kernel.fire(HookPoint.POST_TOOL_USE, ctx)
         lift_turn_label(more_restrictive(call.classification, final_ctx.classification))
         return self._redacted(call, decision, final_ctx, value, fields, end=stream_end is not None)
+
+
+def _capability_is_high_risk(call: CapabilityCall) -> bool:
+    """Whether a capability call is high-risk by its declaration, as a tool is
+    (``approved_per_call``): effect ``destructive``, or confirm ``approval``."""
+    return pinned_by_declaration(call.effect, call.confirm)
+
+
+def _cause(exc: Exception) -> Exception:
+    """What really went wrong: a ``CapabilityDenied`` raised from ``ResultMismatch`` /
+    ``AuditKeyUnavailable`` is settled under that class, not the wrapper's."""
+    cause = exc.__cause__
+    return cause if isinstance(cause, Exception) else exc
 
 
 def _capability_digester(call: CapabilityCall) -> AuditDigester:

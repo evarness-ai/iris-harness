@@ -55,13 +55,24 @@ SIGNAL = "destructive_tool"
 DESTRUCTIVE_TIMEOUT_MINUTES = 60
 
 
+def pinned_by_declaration(effect: object, confirm: object) -> bool:
+    """Whether a tool's own declaration makes every call of it wait for a pinned approval:
+    ``effect: destructive``, or a write whose gate is ``approval`` (``approval: pinned``).
+
+    The high-risk class: these calls also get a durable side-effect ledger row before they
+    run (``pre_tool_use_ledger``). A code caller's ``confirm: once`` write is approved per
+    call too (``approved_per_call``), but by who calls it, not by what it is: it stays a
+    plain write everywhere else.
+    """
+    return effect == "destructive" or confirm == "approval"
+
+
 def approved_per_call(metadata: dict[str, Any]) -> bool:
     """Whether the call in this PreToolUse context waits for a pinned approval: a
     destructive tool, a write whose declared gate is ``approval``, or a call the runner
     says is approved per call (a code caller's ``confirm: once`` write)."""
     return (
-        metadata.get("tool_effect") == "destructive"
-        or metadata.get("tool_confirm") == "approval"
+        pinned_by_declaration(metadata.get("tool_effect"), metadata.get("tool_confirm"))
         or metadata.get("per_call_approval") is True
     )
 

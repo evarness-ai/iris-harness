@@ -25,6 +25,8 @@ from iris_harness.kernel.governance import GovernanceKernel, HookContext, HookDe
 from iris_harness.kernel.governance.approvals import ApprovalQueue
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.plugins import DestructiveApprovalHook, ToolPolicyHook
+from iris_harness.kernel.governance.side_effects import SideEffectLedger
+from iris_harness.kernel.governance.wiring import register_side_effect_ledger
 from iris_harness.memory.state import CheckpointStore
 from iris_harness.runtime.plugin_host.manifest import load_manifest
 from iris_personal.email.contracts import EmailMessage
@@ -123,6 +125,8 @@ def world(tmp_path: Path) -> Any:
     kernel.register(_Allow("llm", HookPoint.PRE_LLM_CALL))
     kernel.register(ToolPolicyHook())
     kernel.register(DestructiveApprovalHook(approval_queue=queue))
+    # The approved call runs only once its row is in the side-effect ledger (#73).
+    register_side_effect_ledger(kernel, SideEffectLedger(tmp_path / "side_effects.db"))
     kernel.init_lock()
 
     def read(approval_id: str) -> Any:

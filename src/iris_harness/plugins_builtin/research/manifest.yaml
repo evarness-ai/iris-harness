@@ -11,6 +11,7 @@ description: >-
 entrypoint: plugin:setup
 flavor: python
 trust: in-process
+party: first-party
 provides:
   - tool
   - intent_handler

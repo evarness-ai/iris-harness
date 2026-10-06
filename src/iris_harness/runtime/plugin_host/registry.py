@@ -121,6 +121,7 @@ class PluginRecord:
             "status": self.status.value,
             "version": self.manifest.version if self.manifest else None,
             "trust": self.trust,
+            "party": self.manifest.party if self.manifest else None,
             "registrations": [
                 {"kind": r.kind.value, "name": r.name, "detail": r.detail}
                 for r in self.registrations

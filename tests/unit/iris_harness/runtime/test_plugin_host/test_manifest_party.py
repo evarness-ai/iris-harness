@@ -15,8 +15,16 @@ def _write(tmp_path: Path, extra: str = "") -> Path:
     return path
 
 
-def test_party_defaults_to_first_party(tmp_path: Path) -> None:
-    assert load_manifest(_write(tmp_path)).party == "first-party"
+def test_party_defaults_to_untrusted(tmp_path: Path) -> None:
+    """Fail closed (ADR-0134): a manifest that says nothing is not first-party."""
+    assert load_manifest(_write(tmp_path)).party == "untrusted"
+    assert PluginManifest(name="anon").party == "untrusted"
+
+
+def test_an_explicit_first_party_round_trips(tmp_path: Path) -> None:
+    manifest = load_manifest(_write(tmp_path, "party: first-party\n"))
+    assert manifest.party == "first-party"
+    assert PluginManifest.model_validate(manifest.model_dump()).party == "first-party"
 
 
 @pytest.mark.parametrize("party", ["first-party", "trusted-third-party", "untrusted"])
@@ -34,5 +42,33 @@ def test_party_is_independent_of_trust(tmp_path: Path) -> None:
     assert (manifest.party, manifest.trust) == ("untrusted", "in-process")
 
 
-def test_no_bundled_manifest_needs_a_party() -> None:
-    assert PluginManifest(name="bundled").party == "first-party"
+_ROOT = Path(__file__).resolve().parents[5]
+_SHIPPED = sorted(
+    [
+        *(_ROOT / "src/iris_harness/plugins_builtin").glob("*/manifest.yaml"),
+        *(_ROOT / "src/iris_personal/plugins").glob("*/manifest.yaml"),
+    ]
+)
+_OUTSIDE_AUTHORS = sorted(
+    [
+        *(_ROOT / "examples").glob("*/manifest.yaml"),
+        *(_ROOT / "src/iris_harness/cli/templates/plugin").glob("*/src/*/manifest.yaml"),
+    ]
+)
+
+
+def test_the_shipped_manifests_are_found() -> None:
+    assert len(_SHIPPED) >= 10 and len(_OUTSIDE_AUTHORS) >= 5
+
+
+@pytest.mark.parametrize("path", _SHIPPED, ids=lambda p: p.parent.name)
+def test_a_bundled_plugin_declares_first_party_explicitly(path: Path) -> None:
+    assert "party: first-party" in path.read_text(encoding="utf-8")
+    assert load_manifest(path).party == "first-party"
+
+
+@pytest.mark.parametrize("path", _OUTSIDE_AUTHORS, ids=lambda p: str(p.relative_to(_ROOT)))
+def test_examples_and_scaffolds_do_not_claim_first_party(path: Path) -> None:
+    """What an outside author copies must not hand them the project's provenance."""
+    manifest_text = path.read_text(encoding="utf-8")
+    assert "party: first-party" not in manifest_text

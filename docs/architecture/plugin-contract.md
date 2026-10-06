@@ -21,7 +21,7 @@ description: One line.
 summary: What it lets IRIS do, for the owner (optional; the first-chat welcome lists it)
 entrypoint: plugin:setup   # module:function (default)
 trust: in-process          # in-process (default) | mcp (out-of-process, M2+)
-party: first-party         # first-party (default) | trusted-third-party | untrusted
+party: untrusted           # untrusted (default) | trusted-third-party | first-party
 provides: [intercept, tool]   # advisory; feeds --dump-config and the drift panel
 requires:                  # checked before setup(); unmet → plugin not loaded
   packages: []
@@ -35,6 +35,13 @@ from iris_harness.sdk import PluginAPI
 def setup(api: PluginAPI) -> None:
     api.register_tool("my_tool", "What the model reads to decide to call it.", my_tool)
 ```
+
+`party` says who wrote the plugin and how far the operator trusts them; `trust` says how it
+runs. A manifest that omits `party` is `untrusted` (fail-closed), so a plugin from outside
+this repository never reads as first-party by default. The plugins this project ships
+declare `party: first-party`; one an operator has reviewed declares `trusted-third-party`.
+`party` is a declaration only: nothing enforces it yet, and it shows beside `trust` in
+`--dump-config`, the plugin inventory (`GET /plugins`) and the web Plugins screens.
 
 A plugin imports only `iris_harness.sdk` (and whatever public library code it needs),
 never another core package: a name outside the SDK carries no stability promise. An

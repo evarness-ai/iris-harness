@@ -217,6 +217,14 @@ First public release of the IRIS harness.
   building a second handle of its own, and opens it before it lists pending rows, so an
   unusable ledger database stops the command there (issue #102).
 
+- Raw mail no longer reaches a model unmarked (issue #148). The email judge's user message
+  (sender, subject, body), the inbox digest narration prompt and the triage picker's email
+  envelope each go in one untrusted-content envelope with instruction-like spans redacted,
+  through `wrap_external_content`; the owner's own instructions stay outside it, and the plain
+  digest list the owner reads is unchanged. The offline demo's scripted model rule that matched
+  the end of the prompt now allows for the closing tag. Nothing is scanned at ingest: stored
+  text is not rewritten, and retrieval is marked where it is read.
+
 - A document index made under a different embedding model can be repaired (issue #144).
   Chroma refuses to reopen the persisted collection under a new embedder, so the index was
   unavailable, retrieval fell back to keyword search and `iris docs reindex` could not

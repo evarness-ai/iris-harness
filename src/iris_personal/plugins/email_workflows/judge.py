@@ -36,6 +36,7 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from email.utils import parseaddr
 from typing import TYPE_CHECKING, Any
 
+from iris_harness.sdk.content import wrap_external_content
 from iris_harness.sdk.llm import (
     CodingLLMClient,
     CodingLLMConfig,
@@ -202,10 +203,16 @@ def build_prompt(
 
 
 def build_email_message(config: JudgeConfig, message: EmailMessage, body: str) -> str:
+    """The user message: the sender, subject and body, all text a third party wrote, so the
+    whole of it goes in one untrusted-content envelope with instruction-like spans redacted
+    (issue #148). The model reads it as data; its reply is the schema-constrained verdict."""
     values = {"sender": message.from_address, "subject": message.subject, "body": body}
-    if not config.email_message:
-        return "\n\n".join(values.values())
-    return _fill(config.email_message, values)
+    text = (
+        "\n\n".join(values.values())
+        if not config.email_message
+        else _fill(config.email_message, values)
+    )
+    return wrap_external_content(text, source="email", tool="judge")
 
 
 # -- one email ----------------------------------------------------------------------

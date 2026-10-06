@@ -82,6 +82,7 @@ from iris_harness.kernel.governance.side_effects import (
     SideEffectLedger,
     shared_side_effect_ledger,
 )
+from iris_harness.kernel.governance.threat.config import RemovedConfigKeyError
 from iris_harness.kernel.governance.vault import VaultStore
 
 if TYPE_CHECKING:
@@ -838,6 +839,10 @@ def _prompt_guards_from_env() -> tuple[Hook | None, Hook | None]:
                 shadow=shadow,
             )
         return inbound, retrieved
+    except RemovedConfigKeyError:
+        # The operator asked for the guards and their config carries a key a release
+        # removed: fail startup naming the key, never run on with both guards off.
+        raise
     except Exception as exc:  # opt-in guard; never break kernel construction
         # The operator asked for the guards, so losing them is not a detail: an override
         # config that no longer loads (a key a release removed, like ``scan_tools``) must
@@ -917,6 +922,8 @@ def _input_safety_from_env() -> Hook | None:
             log_only=log_only,
             shadow=config.mode == "shadow",
         )
+    except RemovedConfigKeyError:
+        raise
     except Exception:  # opt-in guard; never break kernel construction
         logger.warning(
             "governance: input safety screen requested but failed to build; it is OFF",

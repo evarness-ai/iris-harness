@@ -33,9 +33,11 @@ First public release of the IRIS harness.
 - **Behavior change:** `config/governance/threat-detection.yaml` no longer has a `fail_mode` key. It was
   parsed and read by nothing, so `closed` promised what never happened; a guard that
   cannot run still lets the text through and writes a `guard unavailable` row. A config
-  override that still sets `fail_mode` now fails to load (loudly, like any unknown key)
-  and the model guards stay off with a startup warning that names the key and says to delete
-  the line (there is no deprecation shim).
+  override that still sets `fail_mode` now stops startup: when a guard that reads the file is
+  requested (`IRIS_GOVERNANCE_PROMPT_GUARD`, `IRIS_GOVERNANCE_INPUT_SAFETY` or
+  `IRIS_CURATOR_OUTPUT_SAFETY`) the build raises an error that names the file and the key and
+  says to delete the line, instead of running on with the guards silently off (there is no
+  deprecation shim). Other config errors still turn the guards off with a warning, as before.
 - New stable name: `iris_harness.sdk.content.wrap_external_content(text, *, source, tool=None)`
   applies the floor's tripwire and envelope (the kernel's own implementation) to external text
   that plugin code puts into a prompt of its own. Idempotent and offline.

@@ -27,6 +27,7 @@ from iris_harness.kernel.governance.threat.config import (
     InboundConfig,
     LatencyBudget,
     OutputConfig,
+    RemovedConfigKeyError,
     RetrievedConfig,
     ThreatDetectionConfig,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "PromptGuardClassifier",
     "RetrievedConfig",
     "ThreatClassifier",
+    "RemovedConfigKeyError",
     "ThreatDetectionConfig",
     "ThreatDetector",
     "ThreatLabel",

@@ -156,7 +156,10 @@ cannot write a blank for a bool, so only `.env` or the shell can.) `GET /governa
 model guard (`IRIS_GOVERNANCE_PROMPT_GUARD`) is separate: still opt-in, still shadow.
 `config/governance/threat-detection.yaml` no longer has a `fail_mode` key: it was parsed
 and read by nothing. A guard that cannot run lets the text through and writes a
-`guard unavailable` row; the floor does not depend on that file.
+`guard unavailable` row; the floor does not depend on that file. An override file that still
+carries `fail_mode` stops startup when a guard that reads it is requested, with an error that
+names the file and the key (delete the line); other config errors still turn the guards off
+with a warning.
 
 ## The audit ledger
 

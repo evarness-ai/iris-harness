@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from iris_harness.kernel.governance.threat.config import ThreatDetectionConfig
+from iris_harness.kernel.governance.threat.config import (
+    RemovedConfigKeyError,
+    ThreatDetectionConfig,
+)
 
 
 def _repo_config() -> Path:
@@ -83,6 +86,8 @@ def test_fail_mode_is_not_a_config_key(tmp_path: Path) -> None:
     assert "fail_mode" not in packaged
     p = tmp_path / "old.yaml"
     p.write_text("version: 1\nfail_mode: closed\n", encoding="utf-8")
-    with pytest.raises(ValueError, match=r"`fail_mode` key was removed.*delete that line") as err:
+    with pytest.raises(
+        RemovedConfigKeyError, match=r"`fail_mode` key was removed.*delete that line"
+    ) as err:
         ThreatDetectionConfig.from_yaml(p)
     assert str(p) in str(err.value)  # names the file as well as the key

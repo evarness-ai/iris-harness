@@ -38,6 +38,7 @@ from iris_harness.agent.response_curator import (
     OutputSafetyJudgeClient,
     OutputSafetyVerdict,
 )
+from iris_harness.kernel.governance.threat.config import RemovedConfigKeyError
 from iris_harness.llm.tier_router import TierRouter
 
 logger = logging.getLogger(__name__)
@@ -406,6 +407,8 @@ def build_curator_output_safety_client(
             frozenset(config.output.enforce),
             frozenset(config.output.log_only),
         )
+    except RemovedConfigKeyError:
+        raise
     except Exception:  # guard build is best-effort; skip on any failure
         logger.debug("output-safety guard disabled: build failed", exc_info=True)
         return None, frozenset(), frozenset()

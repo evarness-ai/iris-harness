@@ -89,7 +89,9 @@ Three mechanisms, one rule for which to use:
   capability shows in the drift report, as tools do today).
 - **Mount rules:** a missing `requires` stops the plugin loading, with the reason in
   System Health (as a missing package does); a missing `uses` leaves the plugin running,
-  and `api.capability()` returns `None` so the consumer takes its degraded path.
+  and `api.capability()` returns `None` so the consumer takes its degraded path. System Health shows that plugin
+  yellow, naming the capability (`optional capability X unavailable (degraded)`), until a
+  provider mounts (derived live, so a late mount or an unmount flips it).
   Providers mount before consumers.
 - **Visible:** `--dump-config` and `iris plugins show` print who provides and who uses
   what; provider calls go through the registry guard, so a failure is attributed to the

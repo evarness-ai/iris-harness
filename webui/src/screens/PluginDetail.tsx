@@ -33,6 +33,7 @@ function Overview({ plugin }: { plugin: PluginDetail }) {
         <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Fact label="source">{plugin.source}</Fact>
           <Fact label="trust">{plugin.trust}</Fact>
+          <Fact label="party">{plugin.party ?? "—"}</Fact>
           <Fact label="flavor">{plugin.flavor ?? "—"}</Fact>
           <Fact label="entrypoint">{m?.entrypoint ?? "—"}</Fact>
           <Fact label="cli">{m?.cli ?? "—"}</Fact>
@@ -57,6 +58,9 @@ function Overview({ plugin }: { plugin: PluginDetail }) {
               </Tag>
             ))}
           </div>
+        )}
+        {plugin.degraded_reason && (
+          <CopyBlock label="degraded" text={plugin.degraded_reason} tone="text-warning" />
         )}
         {plugin.load_error && (
           <CopyBlock label="load error" text={plugin.load_error} tone="text-danger" />

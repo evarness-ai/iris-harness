@@ -95,3 +95,27 @@ def test_load_heartbeats_rejects_bad_platforms(tmp_path: Path) -> None:
     )
     with pytest.raises(HeartbeatConfigError, match="platforms"):
         load_heartbeats(path)
+
+
+def test_load_heartbeats_reads_the_owning_plugin(tmp_path: Path) -> None:
+    cfg = tmp_path / "heartbeats.yaml"
+    cfg.write_text(
+        """
+heartbeats:
+  - {name: a, handler: a, schedule: "interval:60", plugin: " owner "}
+  - {name: b, handler: b, schedule: "interval:60"}
+""",
+        encoding="utf-8",
+    )
+    a, b = load_heartbeats(cfg)
+    assert (a.plugin, b.plugin) == ("owner", "")
+
+
+def test_load_heartbeats_rejects_a_non_string_plugin(tmp_path: Path) -> None:
+    cfg = tmp_path / "heartbeats.yaml"
+    cfg.write_text(
+        'heartbeats:\n  - {name: a, handler: a, schedule: "interval:60", plugin: [x]}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(HeartbeatConfigError, match="'plugin'"):
+        load_heartbeats(cfg)

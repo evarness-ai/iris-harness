@@ -37,7 +37,14 @@ tools:
         max: 1000
 requires:
   python: ">=3.12"
-  packages: []
+  # tools.py imports the Gmail fetcher and its OAuth module, which need the Google
+  # client packages (the `email` extra). Every one the import chain touches is declared,
+  # so a core-only install lists the skill as blocked instead of importing it and failing.
+  packages:
+    - google-api-python-client
+    - google-auth
+    - google-auth-oauthlib
+  extra: email
   env_vars: []
   config_files: []
   agents: []

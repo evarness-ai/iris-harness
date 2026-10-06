@@ -75,6 +75,32 @@ def test_list_plugins() -> None:
     assert body["profile"] is None
 
 
+def _degraded_registry() -> PluginRegistry:
+    registry = _registry()
+    registry.add_plugin(
+        PluginRecord(
+            name="cons",
+            source="entry_point:y",
+            status=PluginStatus.LOADED,
+            manifest=PluginManifest.model_validate(
+                {"name": "cons", "capabilities": {"uses": ["test.ping"]}}
+            ),
+        )
+    )
+    return registry
+
+
+def test_plugin_routes_carry_degraded_reason_none_when_healthy_else_the_reason() -> None:
+    client = _client(registry=_degraded_registry())
+    rows = {p["name"]: p for p in client.get("/plugins").json()["plugins"]}
+    assert rows["finance_workflows"]["degraded_reason"] is None
+    assert rows["cons"]["status"] == "loaded"
+    assert "optional capability test.ping unavailable" in rows["cons"]["degraded_reason"]
+    assert client.get("/plugins/finance_workflows").json()["degraded_reason"] is None
+    detail = client.get("/plugins/cons").json()
+    assert detail["degraded_reason"] == rows["cons"]["degraded_reason"]
+
+
 def test_list_plugins_without_a_registry_is_empty() -> None:
     body = _client().get("/plugins").json()
     assert body["count"] == 0 and body["plugins"] == []

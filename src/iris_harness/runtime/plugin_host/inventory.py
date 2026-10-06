@@ -161,6 +161,7 @@ def _summary(
         "version": manifest.version if manifest else None,
         "description": manifest.description.strip() if manifest else "",
         "trust": rec.trust,
+        "party": manifest.party if manifest else None,
         "flavor": manifest.flavor if manifest else None,
         "provides": [k.value for k in manifest.provides] if manifest else [],
         "enabled": enabled,
@@ -176,6 +177,10 @@ def _summary(
         "failure_count": rec.failure_count,
         "last_error": rec.last_error,
         "load_error": rec.load_error,
+        # Why a MOUNTED plugin is answering in a degraded way (a failed guarded call, or an
+        # optional capability nothing provides); None when healthy. The registry's one
+        # source -- the same string the System Health line carries -- so surfaces agree.
+        "degraded_reason": registry.degraded_reason(rec.name) if registry is not None else None,
     }
 
 

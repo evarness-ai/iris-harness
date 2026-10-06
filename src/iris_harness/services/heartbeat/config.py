@@ -70,6 +70,9 @@ def _parse_entry(entry: Any, path: Path) -> HeartbeatDefinition:
             f"{path}: heartbeat {name!r} 'retry_skipped_after_minutes' must be a whole "
             "number of minutes (1 or more)"
         )
+    plugin = entry.get("plugin", "")
+    if not isinstance(plugin, str):
+        raise HeartbeatConfigError(f"{path}: heartbeat {name!r} 'plugin' must be a plugin name")
     return HeartbeatDefinition(
         name=name,
         handler=handler,
@@ -80,4 +83,5 @@ def _parse_entry(entry: Any, path: Path) -> HeartbeatDefinition:
         platforms=tuple(platforms_raw),
         record_runs=record_runs,
         retry_skipped_after_minutes=retry_after,
+        plugin=plugin.strip(),
     )

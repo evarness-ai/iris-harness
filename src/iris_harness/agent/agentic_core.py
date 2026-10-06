@@ -190,6 +190,10 @@ class ToolSpec(NamedTuple):
     sends_to: ToolSendsTo | None = None
     # Whether a call runs code the model wrote (the manifest's ``executes_code``).
     executes_code: bool = False
+    # Who owns the tool, stamped on its PRE/POST_TOOL_USE rows (``tool_plugin``): the
+    # plugin that registered it, ``skill:<name>`` for a skill package's tool, or the
+    # default ``system`` for a tool the core itself provides.
+    plugin: str = "system"
 
 
 class _ToolStep(NamedTuple):
@@ -1284,8 +1288,13 @@ class AgenticCore:
         budget_observer: Callable[[int, int], None] | None = None,
         reserve_tools: list[ToolSpec] | None = None,
         review_route: str | None = None,
+        llm_identity: tuple[str, str] | None = None,
     ) -> None:
         self.config = config or AgenticCoreConfig()
+        # ``(model, provider)`` of the model ``llm_call`` runs, stamped on every step's
+        # PRE_LLM_CALL row so it names what it governs, as every other model call's row
+        # does. ``llm_call`` is opaque to the loop, so its owner says what it calls.
+        self._llm_identity = llm_identity
         # The routing intent whose model this loop's LLM uses. A run that ends is handed
         # to the process's run reviewer (the governance judge, §9.2) with it, so the
         # review runs on the same route as the run; None opts the loop out.
@@ -2273,6 +2282,8 @@ class AgenticCore:
             llm_payload["context_tokens"] = context_tokens
         if evicted_tokens:
             llm_payload["evicted_tokens"] = evicted_tokens
+        if self._llm_identity is not None:
+            llm_payload["model"], llm_payload["provider"] = self._llm_identity
         llm_ctx = HookContext(
             hook_point=HookPoint.PRE_LLM_CALL,
             run_id=run_id,

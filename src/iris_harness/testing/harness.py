@@ -132,6 +132,10 @@ class TurnAuditRow:
     row is about one. ``session_id`` is the chat session the row belongs to, ``tool`` the
     tool a tool-use row is about, and ``deterministic`` / ``handler`` mark an answer a
     deterministic handler gave (``register_intercept``), with that handler's name.
+    ``caller`` is who invoked a tool or capability call (``"model:system"``,
+    ``"plugin:<consumer>"``, ``"mcp:<client>"``) and ``tool_plugin`` who owns the tool a
+    tool-use row is about (a plugin's name, ``"skill:<name>"``, ``"mcp:<server>"``, or
+    ``"system"`` for a tool the core provides); each is None on a row it does not describe.
     """
 
     id: int
@@ -148,6 +152,8 @@ class TurnAuditRow:
     tool: str | None
     deterministic: bool
     handler: str | None
+    caller: str | None = None
+    tool_plugin: str | None = None
 
 
 def _payload(row: AuditRow) -> dict[str, Any]:
@@ -179,6 +185,8 @@ def _turn_audit_row(row: AuditRow) -> TurnAuditRow:
         tool=_optional_str(payload.get("tool_name")),
         deterministic=payload.get("deterministic") is True,
         handler=_optional_str(payload.get("handler")),
+        caller=_optional_str(payload.get("caller")),
+        tool_plugin=_optional_str(payload.get("tool_plugin")),
     )
 
 
@@ -231,6 +239,23 @@ def _turn_result(
         audit_refs=audit_refs,
         events=events,
     )
+
+
+@dataclass(frozen=True)
+class PluginState:
+    """One plugin as the harness mounted it (:meth:`Harness.plugin_states`).
+
+    ``status`` is the registry's (``loaded``, ``degraded``, ``failed``, ...) and
+    ``load_error`` why a plugin did not mount. ``degraded_reason`` is set for a *mounted*
+    plugin that is giving degraded answers, whatever the cause: guarded calls that failed,
+    or an optional ``capabilities: uses`` that nothing provides (the same text Health
+    shows, yellow). ``failure_count`` counts the guarded-call failures.
+    """
+
+    status: str
+    load_error: str | None
+    degraded_reason: str | None
+    failure_count: int
 
 
 class Harness:
@@ -335,6 +360,23 @@ class Harness:
         return {
             record.name: (record.status.value, record.load_error)
             for record in self._runtime.plugin_registry.plugins()
+        }
+
+    def plugin_states(self) -> dict[str, PluginState]:
+        """Every plugin the harness tried to mount: ``name -> PluginState``.
+
+        :meth:`plugins` keeps its ``(status, load error)`` tuple; this adds why a mounted
+        plugin is degraded, so a test needs nothing from ``_runtime``.
+        """
+        registry = self._runtime.plugin_registry
+        return {
+            record.name: PluginState(
+                status=record.status.value,
+                load_error=record.load_error,
+                degraded_reason=registry.degraded_reason(record.name),
+                failure_count=record.failure_count,
+            )
+            for record in registry.plugins()
         }
 
     def plugin_loaded(self, name: str) -> bool:
@@ -503,6 +545,7 @@ __all__ = [
     "ANSWER_HOOK",
     "LLM_CALL_HOOK",
     "Harness",
+    "PluginState",
     "TurnAuditRow",
     "TurnEvent",
     "TurnRecord",

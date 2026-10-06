@@ -121,6 +121,7 @@ class PluginRecord:
             "status": self.status.value,
             "version": self.manifest.version if self.manifest else None,
             "trust": self.trust,
+            "party": self.manifest.party if self.manifest else None,
             "registrations": [
                 {"kind": r.kind.value, "name": r.name, "detail": r.detail}
                 for r in self.registrations
@@ -322,6 +323,20 @@ class PluginRegistry:
     def plugins(self) -> list[PluginRecord]:
         return list(self._plugins.values())
 
+    def unmounted_reason(self, name: str) -> str | None:
+        """Why plugin ``name`` is not serving here, or ``None`` when it is mounted.
+
+        A plugin the profile never listed (or listed as optional and not installed) has no
+        record; one that did not mount carries its own reason, e.g. a required package
+        that is not installed.
+        """
+        record = self._plugins.get(name)
+        if record is None:
+            return "not in this profile, or not installed"
+        if record.status in MOUNTED:
+            return None
+        return record.load_error or record.status.value
+
     def _record(self, plugin: str, kind: RegistrationKind, name: str, detail: str = "") -> None:
         record = self._plugins.get(plugin)
         if record is None:
@@ -465,7 +480,7 @@ class PluginRegistry:
         )
         # `_replace`, not a field-by-field copy: a copy silently drops every field
         # added to ToolSpec later (ADR-0118's describe/undo would have been lost here).
-        self._tools.append(tool._replace(call=guarded))
+        self._tools.append(tool._replace(call=guarded, plugin=plugin))
         self._record(plugin, RegistrationKind.TOOL, tool.name)
 
     def tools(self) -> list[ToolSpec]:
@@ -859,19 +874,53 @@ class PluginRegistry:
         """``(plugin, seam, key)`` for every core seam filled through the API."""
         return list(self._seams)
 
+    def unavailable_optional_capabilities(self, plugin: str) -> tuple[str, ...]:
+        """The ``capabilities: uses`` of a mounted ``plugin`` that no mounted plugin provides.
+
+        Derived from the live providers on every call, so a provider that mounts late (or
+        stops being mounted) changes the answer. ``requires`` is not here: an unmet one
+        refuses the mount (the plugin is FAILED, with the reason). Empty for a plugin that
+        is not mounted.
+        """
+        record = self._plugins.get(plugin)
+        if record is None or record.manifest is None or record.status not in MOUNTED:
+            return ()
+        return tuple(
+            cap for cap in record.manifest.capabilities.uses if not self._mounted_providers(cap)
+        )
+
+    def degraded_reason(self, plugin: str) -> str | None:
+        """Why a mounted ``plugin`` is giving degraded answers, or None when it is not.
+
+        Two causes, both named: guarded calls that failed (``failure_count`` /
+        ``last_error``) and optional capabilities nothing provides. ONE source for the
+        Health line and the stable accessor, so they cannot disagree.
+        """
+        record = self._plugins.get(plugin)
+        if record is None or record.status not in MOUNTED:
+            return None
+        reasons: list[str] = []
+        if record.status is PluginStatus.DEGRADED:
+            reasons.append(f"{record.failure_count} failure(s); last: {record.last_error}")
+        reasons.extend(
+            f"optional capability {cap} unavailable (degraded)"
+            for cap in self.unavailable_optional_capabilities(plugin)
+        )
+        return "; ".join(reasons) or None
+
     # ------------------------------------------------------------------ health
     def health_checks(self) -> list[HealthCheck]:
         """One check per plugin (kind ``plugin``) for the System Health snapshot."""
         checks: list[HealthCheck] = []
         for rec in self._plugins.values():
             target = f"plugin:{rec.name}"
-            if rec.status is PluginStatus.LOADED:
+            degraded = self.degraded_reason(rec.name)
+            if degraded is not None:
+                state, detail = HealthState.YELLOW, degraded
+            elif rec.status is PluginStatus.LOADED:
                 state, detail = HealthState.GREEN, (
                     f"loaded from {rec.source}; {len(rec.registrations)} registration(s)"
                 )
-            elif rec.status is PluginStatus.DEGRADED:
-                state = HealthState.YELLOW
-                detail = f"{rec.failure_count} failure(s); last: {rec.last_error}"
             elif rec.status is PluginStatus.FAILED:
                 state, detail = HealthState.RED, rec.load_error or "failed to load"
             else:  # disabled / unsupported — informational

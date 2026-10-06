@@ -184,3 +184,78 @@ def test_scaffold_skill_proposal_creates_quarantined_package(tmp_path: Path) -> 
 
 
 # No automatic discovery should occur until the proposal is explicitly approved.
+
+
+def test_discover_isolates_a_skill_whose_import_fails(tmp_path: Path, caplog) -> None:  # type: ignore[no-untyped-def]
+    """One undeclared-dependency skill is skipped; the skills after it still load (#110)."""
+    write_skill_package(tmp_path, skill_name="a_broken")
+    write_skill_package(tmp_path, skill_name="z_fine")
+    (tmp_path / "config" / "skills" / "a_broken" / "tools.py").write_text(
+        "import no_such_optional_dependency_xyz\n", encoding="utf-8"
+    )
+
+    registry = SkillRegistry(tmp_path)
+    with caplog.at_level("DEBUG"):
+        packages = registry.discover()
+        registry.discover()  # per-turn re-discovery must not repeat the warning
+
+    assert [p.manifest.name for p in packages] == ["z_fine"]
+    ((failed_dir, reason),) = registry.load_failures.items()
+    assert failed_dir.name == "a_broken"
+    assert reason == "ModuleNotFoundError: No module named 'no_such_optional_dependency_xyz'"
+    skipped = [r for r in caplog.records if "failed to load" in r.getMessage()]
+    assert len(skipped) == 1
+    # A genuine fault keeps its traceback (#110 follow-up): the one-line reason is for the
+    # `iris skills list` status, the log carries the stack an operator needs to fix it.
+    assert skipped[0].levelname == "ERROR"
+    assert skipped[0].exc_info is not None
+
+
+def test_missing_declared_package_blocks_the_skill_without_importing_it(tmp_path: Path) -> None:
+    skill_dir = write_skill_package(
+        tmp_path, skill_name="needs_extra", packages=("no-such-dist-xyz>=1",)
+    )
+    (skill_dir / "tools.py").write_text("raise RuntimeError('imported')\n", encoding="utf-8")
+
+    registry = SkillRegistry(tmp_path)
+    (package,) = registry.discover()
+
+    assert package.is_loadable is False
+    assert package.missing_prerequisites == ("package:no-such-dist-xyz",)
+    assert registry.load_failures == {}
+
+
+def test_shipped_gmail_inbox_declares_its_google_dependency() -> None:
+    manifest = load_skill_manifest(
+        Path(__file__).resolve().parents[5] / "config" / "skills" / "email" / "gmail-inbox"
+    )
+    # Every distribution its import chain (gmail_fetch -> gmail_oauth) needs, not one of them.
+    assert set(manifest.requires.packages) >= {
+        "google-api-python-client",
+        "google-auth",
+        "google-auth-oauthlib",
+    }
+    assert manifest.requires.extra == "email"
+
+
+def test_shipped_skills_on_a_core_only_install(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """No Google client installed: gmail-inbox is blocked, nothing fails, the rest load (#110)."""
+    import importlib.metadata as metadata
+    import sys
+
+    real_version = metadata.version
+
+    def fake_version(name: str) -> str:
+        if name == "google-api-python-client":
+            raise metadata.PackageNotFoundError(name)
+        return real_version(name)
+
+    monkeypatch.setattr(metadata, "version", fake_version)
+    monkeypatch.setitem(sys.modules, "googleapiclient", None)  # import raises ImportError
+
+    registry = SkillRegistry(Path(__file__).resolve().parents[5])
+    by_name = {p.manifest.name: p for p in registry.discover()}
+
+    assert registry.load_failures == {}
+    assert by_name["gmail-inbox"].missing_prerequisites == ("package:google-api-python-client",)
+    assert by_name["system-status"].is_loadable

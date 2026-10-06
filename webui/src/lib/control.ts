@@ -1447,6 +1447,8 @@ export interface PluginSummary {
   version: string | null;
   description: string;
   trust: string;
+  /* Provenance (ADR-0136); null when the plugin has no manifest. */
+  party: string | null;
   flavor: string | null;
   provides: string[];
   enabled: boolean | null;
@@ -1459,6 +1461,7 @@ export interface PluginSummary {
   failure_count: number;
   last_error: string | null;
   load_error: string | null;
+  degraded_reason: string | null;
 }
 
 export interface PluginProfile {

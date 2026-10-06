@@ -17,6 +17,11 @@ First public release of the IRIS harness.
   `approved_by`, an approved queue row that pinned exactly that call, and it leaves a pending
   write-ahead ledger row before it runs. A tool not listed behaves as before.
 
+- A capability method can declare `sends_to` (`MethodSpec.sends_to`, as a tool does), and
+  `CapabilityCall` carries it: every governed call of the method stamps where its arguments go
+  at `PRE_TOOL_USE`, so the owner-PII guards read them. `weather.forecast` declares
+  `external_service` for its `location` (issue #100).
+
 - `search_docs`: the core can search its own shipped documentation (architecture, concepts,
   guides, reference, usage-guides) by keyword at section level, as an internal read tool of
   the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot

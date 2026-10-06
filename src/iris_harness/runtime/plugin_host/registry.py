@@ -217,6 +217,7 @@ class _ProviderGuard:
             shape=shape,
             value_type=self.spec.value_types[attr],
             content=declared.content,
+            sends_to=declared.sends_to,
             # The turn's label, read now, when the consumer makes the call (an async one
             # runs later): the harness stamps it; the consumer has no way to pass one.
             classification=current_turn_label(),

@@ -77,6 +77,20 @@ def approved_per_call(metadata: dict[str, Any]) -> bool:
     )
 
 
+def card_title(tool: str, raw: Any) -> str:
+    """The one-line headline for a call: the plugin's ``describe`` title, else a fallback
+    worded by the tool's effect (a write acts for the owner; only a destructive tool
+    deletes or overwrites). The queue card and the chat halt message both use this, so
+    the two cannot word the same approval differently."""
+    d = raw if isinstance(raw, dict) else {}
+    title = str(d.get("title") or "").strip()
+    if title:
+        return title
+    if d.get("effect") == "write":
+        return f"{tool} wants to act on your behalf"
+    return f"{tool} wants to delete or overwrite your data"
+
+
 def build_card(item: ApprovalItem, raw: Any) -> ApprovalCard:
     """The owner-facing card for one call, from what the loop passed (ADR-0118 step 4).
 
@@ -87,12 +101,7 @@ def build_card(item: ApprovalItem, raw: Any) -> ApprovalCard:
     """
     d = raw if isinstance(raw, dict) else {}
     effect = "write" if d.get("effect") == "write" else "destructive"
-    fallback = (
-        f"{item.tool} wants to act on your behalf"
-        if effect == "write"
-        else f"{item.tool} wants to delete or overwrite your data"
-    )
-    title = str(d.get("title") or "").strip() or fallback
+    title = card_title(item.tool, raw)
     lines = tuple(str(line) for line in (d.get("lines") or ()) if str(line).strip())
     days = d.get("undo_window_days")
     return ApprovalCard(

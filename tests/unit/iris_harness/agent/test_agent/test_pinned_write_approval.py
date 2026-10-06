@@ -105,7 +105,7 @@ class _Outbox:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
 
-    def tool(self, *, validate: Any = None) -> ToolSpec:
+    def tool(self, *, validate: Any = None, titled: bool = True) -> ToolSpec:
         def _send(args: dict[str, Any]) -> str:
             self.sent.append(dict(args))
             return "sent"
@@ -116,8 +116,14 @@ class _Outbox:
             call=_send,
             effect="write",
             confirm="approval",
-            describe=lambda a: ToolDescription(
-                title=f"Send email to {a['to'][0]} — {a['subject']}", lines=(a["body"],)
+            describe=(
+                (
+                    lambda a: ToolDescription(
+                        title=f"Send email to {a['to'][0]} — {a['subject']}", lines=(a["body"],)
+                    )
+                )
+                if titled
+                else None
             ),
             validate=validate,
         )
@@ -144,12 +150,17 @@ class _World:
         return None if row is None else (row.status, [(i.tool, i.args) for i in row.items or ()])
 
     def core(
-        self, responses: list[str], *, kernel: bool = True, validate: Any = None
+        self,
+        responses: list[str],
+        *,
+        kernel: bool = True,
+        validate: Any = None,
+        titled: bool = True,
     ) -> AgenticCore:
         return AgenticCore(
             config=AgenticCoreConfig(max_iterations=6),
             llm_call=_ScriptedLLM(responses),
-            tools=[self.outbox.tool(validate=validate)],
+            tools=[self.outbox.tool(validate=validate, titled=titled)],
             kernel=self.kernel if kernel else None,
             checkpoint_store=self.store,
             session_id="web-s1",
@@ -188,6 +199,23 @@ def test_a_pinned_write_halts_on_a_card_that_does_not_say_it_deletes(tmp_path: P
     assert row.card.undo_sentence() == "This cannot be undone."
     assert "delete" not in row.context_summary.lower()
     assert "Send email to bob@example.com — Lunch: this needs your approval" in trace.final_answer
+
+
+def test_a_pinned_write_without_a_describe_title_does_not_say_it_deletes(tmp_path: Path) -> None:
+    """The halt message words the fallback by effect, like the queue card (#109)."""
+    world = _World(tmp_path)
+    core = world.core([_SEND], titled=False)
+    trace = core.run("email Bob about lunch")
+
+    assert trace.halted_by == "approval"
+    row = world.queue.get(trace.pending_approval_id)
+    assert row is not None and row.card is not None
+    assert row.card.title == "send_email wants to act on your behalf"
+    assert trace.final_answer.startswith(
+        "send_email wants to act on your behalf: this needs your approval"
+    )
+    assert "delete" not in trace.final_answer.lower()
+    assert "overwrite" not in trace.final_answer.lower()
 
 
 def test_approving_sends_exactly_the_pinned_call_once(tmp_path: Path) -> None:

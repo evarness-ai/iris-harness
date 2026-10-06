@@ -46,6 +46,7 @@ from iris_harness.kernel.governance.disclosure import (
     is_architecture_disclosure,
 )
 from iris_harness.kernel.governance.hooks.tool_payload import ToolContent, ToolSendsTo
+from iris_harness.kernel.governance.plugins.destructive_approval import card_title
 from iris_harness.kernel.governance.plugins.output_classifier import more_restrictive
 from iris_harness.kernel.governance.turn_label import apply_turn_floor
 from iris_harness.llm.budget import estimate_tokens
@@ -2042,7 +2043,7 @@ class AgenticCore:
         logger.info(
             "loop paused for approval %s at step %s (run %s)", approval_id, iteration, trace.run_id
         )
-        what = self._pending_title or "That would delete or overwrite your data"
+        what = self._pending_title or "That needs your approval"
         return (
             f"{what}: this needs your approval, so nothing has changed yet. "
             f"[Review it in Activity](/actions), or answer with `iris approvals` or on "
@@ -2162,7 +2163,7 @@ class AgenticCore:
             # An approval that exists in the queue is something to wait on, not advice:
             # the loop halts on it (ADR-0118). Confirm-once decisions carry no id.
             halts.append(governance_decision)
-            self._pending_title = str((outcome.approval_card or {}).get("title") or "") or None
+            self._pending_title = card_title(tool.name, outcome.approval_card)
             return _ToolStep(
                 f"{_APPROVAL_WAITING} ({governance_decision.approval_request_id}).", unchanged
             )

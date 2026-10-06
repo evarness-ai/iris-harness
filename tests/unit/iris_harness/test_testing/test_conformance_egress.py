@@ -122,3 +122,20 @@ def test_a_capability_provider_with_no_declared_host_fails_conformance() -> None
     assert [(v.check, v.subject) for v in violations] == [
         ("egress", "capability:weather.forecast.forecast")
     ]
+
+
+def test_the_conformance_check_names_are_frozen() -> None:
+    """``ConformanceCheck`` is a stable name: adding a check is additive, removing is not."""
+    from typing import get_args
+
+    from iris_harness.testing.conformance import ConformanceCheck
+
+    assert set(get_args(ConformanceCheck)) == {
+        "mount",
+        "coverage",
+        "audit",
+        "caller",
+        "approval",
+        "example",
+        "egress",
+    }

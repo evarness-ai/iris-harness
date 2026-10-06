@@ -179,7 +179,7 @@ def cmd_show(
             console.print(f"    {line}")
         if not lines:
             empty = (
-                "none declared (the governed client contacts no host)"
+                "none declared (raw network calls by this plugin are not governed)"
                 if title == "egress"
                 else "none"
             )

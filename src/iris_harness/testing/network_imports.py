@@ -11,10 +11,15 @@ way it fails on ``check_stable_imports``::
         assert check_network_imports([Path("src")]) == []
 
 What this proves, and what it does not. It proves the files it read import none of those
-modules by name, in a statement an AST shows. It does not see ``importlib.import_module``
-with a computed name, a dependency that opens its own connection, ``subprocess``, or a
-module this list does not name; and an in-process plugin can always open a socket some other
-way. It is a tripwire on the honest path, not a sandbox.
+modules by name, in a statement an AST shows, and that no file uses one through an
+attribute of an imported package (``import urllib`` then ``urllib.request.urlopen``) or
+calls ``asyncio.open_connection`` / ``start_server``. It does not see
+``importlib.import_module`` with a computed name, a name passed around as a value, an event
+loop's own ``create_connection``, a dependency that opens its own connection,
+``subprocess``, or any library this list does not name (``paramiko``, ``aiosmtplib``,
+``boto3``, ``openai``, ``pymongo``, ``redis`` and many more); and an in-process plugin can
+always open a socket some other way. A file that does not parse is reported as such rather
+than skipped. It is a tripwire on the honest path, not a sandbox.
 """
 
 from __future__ import annotations
@@ -27,10 +32,17 @@ from pathlib import Path
 #: Modules (and dotted submodules) that open network connections without the harness.
 NETWORK_MODULES: tuple[str, ...] = (
     "aiohttp",
+    "asyncio.open_connection",
+    "asyncio.open_unix_connection",
+    "asyncio.start_server",
+    "asyncio.start_unix_server",
     "ftplib",
     "googleapiclient",
     "grpc",
+    "h11",
     "http.client",
+    "http.server",
+    "httpcore",
     "httplib2",
     "httpx",
     "imaplib",
@@ -49,6 +61,10 @@ NETWORK_MODULES: tuple[str, ...] = (
 )
 
 
+#: The ``module`` of a finding for a file that could not be read or parsed.
+UNPARSABLE = "<unparsable"
+
+
 @dataclass(frozen=True)
 class NetworkImportViolation:
     """One import of a library that opens connections on its own."""
@@ -58,6 +74,8 @@ class NetworkImportViolation:
     module: str
 
     def __str__(self) -> str:
+        if self.module.startswith(UNPARSABLE):
+            return f"{self.path}:{self.line}: {self.module}: the file was not checked"
         return (
             f"{self.path}:{self.line}: imports {self.module}: use `api.http` "
             "(iris_harness.sdk.http), which checks the manifest's egress and records the call"
@@ -84,15 +102,56 @@ def _imported(tree: ast.AST) -> Iterator[tuple[int, str]]:
                 yield node.lineno, f"{node.module}.{alias.name}"
 
 
+def _aliases(tree: ast.AST) -> dict[str, str]:
+    """What each imported name stands for: ``import a.b`` binds ``a``; ``import a.b as c``
+    binds ``c`` to ``a.b``; ``from a import b as c`` binds ``c`` to ``a.b``."""
+    names: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.asname:
+                    names[alias.asname] = alias.name
+                else:
+                    names[alias.name.split(".", 1)[0]] = alias.name.split(".", 1)[0]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            for alias in node.names:
+                names[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+    return names
+
+
+def _used(tree: ast.AST) -> Iterator[tuple[int, str]]:
+    """``(line, dotted name)`` of each attribute chain rooted at an imported name, resolved
+    (``import urllib`` ... ``urllib.request.urlopen`` -> ``urllib.request.urlopen``)."""
+    names = _aliases(tree)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Attribute):
+            continue
+        parts = [node.attr]
+        base = node.value
+        while isinstance(base, ast.Attribute):
+            parts.append(base.attr)
+            base = base.value
+        if isinstance(base, ast.Name) and base.id in names:
+            yield node.lineno, ".".join([names[base.id], *reversed(parts)])
+
+
 def check_network_imports(paths: Iterable[Path]) -> list[NetworkImportViolation]:
-    """Every raw network import under ``paths`` (files, or directories searched for ``.py``)."""
+    """Every raw network import or use under ``paths`` (files, or directories searched for
+    ``.py``); a file that cannot be parsed is a finding of its own."""
     found: list[NetworkImportViolation] = []
     for root in paths:
         files = [root] if root.is_file() else sorted(root.rglob("*.py"))
         for file in files:
-            tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+            try:
+                tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+            except (SyntaxError, UnicodeDecodeError, ValueError, OSError) as exc:
+                line = getattr(exc, "lineno", None) or 0
+                found.append(
+                    NetworkImportViolation(file, int(line), f"{UNPARSABLE}: {type(exc).__name__}>")
+                )
+                continue
             seen: set[tuple[int, str]] = set()
-            for line, module in _imported(tree):
+            for line, module in [*_imported(tree), *_used(tree)]:
                 banned = _matches(module)
                 if banned is not None and (line, banned) not in seen:
                     seen.add((line, banned))

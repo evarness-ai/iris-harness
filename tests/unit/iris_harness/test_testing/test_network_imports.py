@@ -74,33 +74,83 @@ def test_the_list_names_what_it_checks() -> None:
 # involved (research: open_web; gmail: Google's hosts); imap is a raw TCP socket (imaplib),
 # which no HTTP host list describes.
 _FIRST_PARTY_DEBT = {
-    "src/iris_harness/plugins_builtin/research/extract.py",
-    "src/iris_harness/plugins_builtin/research/providers/brave.py",
-    "src/iris_harness/plugins_builtin/research/providers/exa.py",
-    "src/iris_harness/plugins_builtin/research/providers/searxng.py",
-    "src/iris_harness/plugins_builtin/research/providers/tavily.py",
-    "src/iris_personal/plugins/email_workflows/demo/run.py",
-    "src/iris_personal/plugins/email_workflows/discovery.py",
-    "src/iris_personal/plugins/email_workflows/job_watch.py",
-    "src/iris_personal/plugins/gmail/gmail_attachments.py",
-    "src/iris_personal/plugins/gmail/gmail_fetch.py",
-    "src/iris_personal/plugins/gmail/gmail_oauth.py",
-    "src/iris_personal/plugins/imap/connection.py",
+    ("src/iris_harness/plugins_builtin/research/extract.py", "socket"),
+    ("src/iris_harness/plugins_builtin/research/extract.py", "urllib.request"),
+    ("src/iris_harness/plugins_builtin/research/providers/brave.py", "urllib.request"),
+    ("src/iris_harness/plugins_builtin/research/providers/exa.py", "urllib.request"),
+    ("src/iris_harness/plugins_builtin/research/providers/searxng.py", "urllib.request"),
+    ("src/iris_harness/plugins_builtin/research/providers/tavily.py", "urllib.request"),
+    ("src/iris_personal/plugins/email_workflows/demo/run.py", "socket"),
+    ("src/iris_personal/plugins/email_workflows/discovery.py", "requests"),
+    ("src/iris_personal/plugins/email_workflows/job_watch.py", "httpx"),
+    ("src/iris_personal/plugins/gmail/gmail_attachments.py", "googleapiclient"),
+    ("src/iris_personal/plugins/gmail/gmail_fetch.py", "googleapiclient"),
+    ("src/iris_personal/plugins/gmail/gmail_oauth.py", "googleapiclient"),
+    ("src/iris_personal/plugins/imap/connection.py", "imaplib"),
+    ("src/iris_personal/plugins/imap/connection.py", "ssl"),
 }
 
 
+def _pairs(paths: list[Path]) -> set[tuple[str, str]]:
+    return {(str(v.path.relative_to(_ROOT)), v.module) for v in check_network_imports(paths)}
+
+
 def test_first_party_plugins_import_raw_network_libraries_only_where_listed() -> None:
-    found = {
-        str(v.path.relative_to(_ROOT))
-        for v in check_network_imports(
-            [_ROOT / "src/iris_harness/plugins_builtin", _ROOT / "src/iris_personal/plugins"]
-        )
-    }
+    """Pinned by (file, library), so a new library in an already-listed file fails too."""
+    found = _pairs(
+        [_ROOT / "src/iris_harness/plugins_builtin", _ROOT / "src/iris_personal/plugins"]
+    )
     assert found == _FIRST_PARTY_DEBT
 
 
+def test_a_new_library_in_a_pinned_file_is_not_in_the_pin(tmp_path: Path) -> None:
+    pinned = _ROOT / "src/iris_harness/plugins_builtin/research/extract.py"
+    copy = tmp_path / "extract.py"
+    copy.write_text(pinned.read_text(encoding="utf-8") + "\nimport requests\n", encoding="utf-8")
+    modules = {v.module for v in check_network_imports([copy])}
+    assert "requests" in modules
+    assert ("src/iris_harness/plugins_builtin/research/extract.py", "requests") not in (
+        _FIRST_PARTY_DEBT
+    )
+
+
+@pytest.mark.parametrize(
+    "source, module",
+    [
+        ("import urllib\nurllib.request.urlopen('x')\n", "urllib.request"),
+        ("import urllib as u\nu.request.urlopen('x')\n", "urllib.request"),
+        ("import http\nhttp.client.HTTPConnection('x')\n", "http.client"),
+        ("import http\nhttp.server.HTTPServer\n", "http.server"),
+        ("import asyncio\nasyncio.open_connection('x', 1)\n", "asyncio.open_connection"),
+        ("import asyncio\nasyncio.start_server(f, 'x')\n", "asyncio.start_server"),
+        ("from asyncio import open_connection\n", "asyncio.open_connection"),
+        ("import httpcore\n", "httpcore"),
+        ("import h11\n", "h11"),
+        ("from http.server import HTTPServer\n", "http.server"),
+    ],
+)
+def test_attribute_use_and_the_cheap_extra_libraries_are_reported(
+    tmp_path: Path, source: str, module: str
+) -> None:
+    assert module in {m for _, m in _scan(tmp_path, source)}
+
+
+def test_asyncio_without_a_network_call_is_not_reported(tmp_path: Path) -> None:
+    assert _scan(tmp_path, "import asyncio\nasyncio.sleep(1)\nasyncio.run(f())\n") == []
+
+
+@pytest.mark.parametrize("content", [b"def broken(:\n", b"\xff\xfe not utf-8 \x80\n"])
+def test_an_unparsable_file_is_a_finding_not_a_crash(tmp_path: Path, content: bytes) -> None:
+    (tmp_path / "bad.py").write_bytes(content)
+    (tmp_path / "good.py").write_text("import requests\n", encoding="utf-8")
+    found = check_network_imports([tmp_path])
+    assert {v.path.name for v in found} == {"bad.py", "good.py"}
+    [bad] = [v for v in found if v.path.name == "bad.py"]
+    assert bad.module.startswith("<unparsable") and "not checked" in str(bad)
+
+
 def test_what_the_project_hands_an_outside_author_imports_no_raw_network_library() -> None:
-    """The scaffold and the examples are what a third party copies: they show ``api.http``."""
+    """The scaffold and the examples are what a third party copies: they import no raw library."""
     sources = [
         path
         for root in (_ROOT / "examples", _ROOT / "src/iris_harness/cli/templates")

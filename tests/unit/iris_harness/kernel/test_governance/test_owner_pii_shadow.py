@@ -369,6 +369,27 @@ async def test_a_declared_external_service_is_checked_as_egress(tmp_path: Path) 
     assert {(o["kind"], o["guard"]) for o in report["observations"]} == {("email", "egress")}
 
 
+async def test_a_governed_request_is_observed_at_pre_egress(tmp_path: Path) -> None:
+    """Issue #103: what a plugin's request carries out (the strings in its address and
+    parameters) is read by the egress column, the destination being the host."""
+    kernel, audit = _kernel(tmp_path, "shadow")
+    ctx = HookContext(
+        hook_point=HookPoint.PRE_EGRESS,
+        run_id="r",
+        agent_type="chat",
+        payload={
+            "egress": {"plugin": "weather", "scheme": "https", "host": "api.open-meteo.com"},
+            "egress_content": ["forecast", PII["email"]],
+        },
+    )
+    await _fire(kernel, ctx)
+    report = _report(audit)
+    assert report["checked"] == ["egress"]
+    assert {(o["kind"], o["guard"]) for o in report["observations"]} == {("email", "egress")}
+    # What the request carried is never copied into the row.
+    assert all(PII["email"] not in r.payload_json for r in AuditLog(db_path=audit.db_path).query())
+
+
 async def test_an_undeclared_plugin_tool_is_not_an_egress_call(tmp_path: Path) -> None:
     kernel, audit = _kernel(tmp_path, "shadow")
     await _fire(kernel, _tool_ctx("weather_forecast", {"place": PII["email"]}))

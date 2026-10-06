@@ -2,16 +2,16 @@
 
 A plugin's manifest says which hosts its code talks to (``egress:``). The plugin host, which
 sits above the kernel and is what knows the manifests, compiles every mounted manifest into
-one :class:`PluginEgressPolicy` and registers it once plugins have mounted. The same seam as
-``caller_policy.py``.
+one :class:`PluginEgressPolicy` and registers it once plugins have mounted; the kernel's
+``plugin_egress`` hook reads it on every ``PRE_EGRESS`` (a call a plugin makes through the
+SDK's governed HTTP client). The same seam as ``caller_policy.py``.
 
-Declared only, NOT ENFORCED until #103b: nothing in the kernel reads the registered policy
-yet, so it changes no plugin's behaviour.
+Fail closed, and say so: with no policy registered, or for a plugin the policy does not
+know, every host is denied with a reason naming what is missing -- never allowed because
+nobody was asked. An empty declaration is a closed door.
 
-The policy itself fails closed, and says so: asked about a host with no policy registered,
-or for a plugin it does not know, it denies with a reason naming what is missing. Once the
-governed client (#103b) consults it, an empty declaration will be a closed door; today it is
-not one.
+What a decision proves is bounded by what asks: it covers calls made through the governed
+client. An in-process plugin can still open its own socket (docs/architecture/plugin-egress.md).
 """
 
 from __future__ import annotations
@@ -19,9 +19,11 @@ from __future__ import annotations
 import ipaddress
 import re
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
 from iris_harness.foundation.process_state import track_globals
 
@@ -38,21 +40,6 @@ SCHEMES: Final[tuple[str, ...]] = ("http", "https")
 _LABEL = re.compile(r"^[a-z0-9]([a-z0-9-]*[a-z0-9])?$")
 
 
-def normalize_host(value: str) -> str:
-    """A host as compared: lower-case, no trailing dot. Raises ``ValueError`` if it is not one.
-
-    A host is a DNS name or an IP literal, with no scheme, port, path, userinfo or
-    whitespace: those are separate declarations (``schemes``, ``ports``).
-    """
-    host = value.strip().lower().rstrip(".")
-    if not host or any(c in host for c in "/:@?#[] \t"):
-        raise ValueError(
-            f"{value!r} is not a host (no scheme, port, path or userinfo; use `ports` and "
-            "`schemes` to say those)"
-        )
-    return host
-
-
 MAX_LABEL_LENGTH: Final = 63
 MAX_HOST_LENGTH: Final = 253
 MAX_HOSTS_PER_PLUGIN: Final = 256
@@ -66,6 +53,50 @@ def _refuse(value: str, why: str) -> ValueError:
     return ValueError(f"{value!r}: {why}")
 
 
+def normalize_host(value: str) -> str:
+    """A request's host as compared: the same rules as a declared host, minus the wildcard.
+
+    ASCII only, no whitespace or control character, lower-case, at most one trailing dot
+    (dropped), no empty label (so no repeated dots), labels and name within the DNS limits.
+    Raises ``ValueError`` for anything else, including an IPv6 literal (it has no DNS-label
+    form). An IPv4 literal passes here; :meth:`PluginEgressPolicy.decide` refuses it.
+    """
+    if not value or not value.isascii() or any(c.isspace() or not c.isprintable() for c in value):
+        raise _refuse(value, "is not a host (ASCII only, no whitespace or control characters)")
+    host = value.lower()
+    if host.endswith("."):
+        host = host[:-1]
+    if not host or len(host) > MAX_HOST_LENGTH:
+        raise _refuse(value, f"is empty or longer than {MAX_HOST_LENGTH} characters")
+    for label in host.split("."):
+        if len(label) > MAX_LABEL_LENGTH or not _DECLARED_LABEL.fullmatch(label):
+            raise _refuse(value, "is not a host name (letters, digits and hyphens per label)")
+    return host
+
+
+def is_ip_literal(host: str) -> bool:
+    """Is ``host`` an address in any spelling a resolver or client might read as one?"""
+    last = host.rsplit(".", 1)[-1]
+    if _HEX_OR_OCTAL_NUMBER.fullmatch(last):
+        return True
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return False
+    return True
+
+
+#: Names that mean "this machine or this network" by convention (RFC 6761, RFC 6762, common
+#: resolver defaults), never a public service. Refused as a request's target even under
+#: ``open_web``, and as a declared host.
+INTERNAL_NAME_SUFFIXES: Final[tuple[str, ...]] = ("localhost", "local", "internal", "localdomain")
+
+
+def is_internal_name(host: str) -> bool:
+    """Is ``host`` (already normalised: lower-case, no trailing dot) a local-by-convention name?"""
+    return any(host == s or host.endswith("." + s) for s in INTERNAL_NAME_SUFFIXES)
+
+
 def normalize_host_pattern(value: str) -> str:
     """A declared host: an exact DNS name, or ``*.suffix`` for any subdomain of ``suffix``.
 
@@ -74,9 +105,9 @@ def normalize_host_pattern(value: str) -> str:
     must decode), at most one trailing dot (dropped), labels of at most 63 and a name of at
     most 253 characters. A bare ``*`` is refused: "any host" is ``open_web: true``, which says
     so out loud. Refused outright, fail closed: IP literals in any spelling (dotted, short,
-    hex, octal, IPv6), ``localhost``, and numeric last labels, which a resolver may read as an
-    address; and a wildcard whose base is a single label (``*.com``). A wildcard over a
-    multi-label public suffix (``*.co.uk``) is not caught: the repo ships no public-suffix
+    hex, octal, IPv6), ``localhost`` and the local-network suffixes, and numeric last
+    labels, which a resolver may read as an address; and a wildcard whose base is a single
+    label (``*.com``). A wildcard over a multi-label public suffix (``*.co.uk``) is not caught: the repo ships no public-suffix
     list (docs/architecture/plugin-egress.md).
     """
     if not value or not value.isascii() or any(c.isspace() or not c.isprintable() for c in value):
@@ -105,8 +136,12 @@ def normalize_host_pattern(value: str) -> str:
                 label.encode("ascii").decode("idna")
             except UnicodeError:
                 raise _refuse(value, f"label {label!r} is not valid punycode") from None
-    if body == "localhost" or body.endswith(".localhost"):
-        raise _refuse(value, "localhost is not a host a plugin may declare")
+    if is_internal_name(body):
+        raise _refuse(
+            value,
+            "localhost and the local-network names (.local, .internal, .localdomain) are not "
+            "hosts a plugin may declare",
+        )
     if _HEX_OR_OCTAL_NUMBER.fullmatch(labels[-1]):
         raise _refuse(value, "an IP address (in any spelling) is not a declarable host")
     try:
@@ -180,6 +215,20 @@ class PluginEgressPolicy:
     ) -> EgressVerdict:
         """May ``plugin`` send ``classification`` data to ``scheme://host:port``?"""
         scheme = scheme.lower()
+        try:
+            host = normalize_host(host)
+        except ValueError:
+            return EgressVerdict(False, f"{host!r} is not a valid host name")
+        if is_ip_literal(host):
+            return EgressVerdict(
+                False, f"{host} is an IP address; a plugin may contact only a declared host name"
+            )
+        if is_internal_name(host):
+            # Even under open_web: these name this machine or the local network, whatever
+            # the declaration says (a name an attacker can aim at a service on the host).
+            return EgressVerdict(
+                False, f"{host} is a local-network name; a plugin may not contact it"
+            )
         declaration = self.plugins.get(plugin)
         if declaration is None:
             return EgressVerdict(False, f"plugin {plugin!r} has no mounted manifest")
@@ -238,20 +287,91 @@ def egress_policy() -> PluginEgressPolicy | None:
         return _policy
 
 
+_kernel_getter: Callable[[], Any] | None = None
+
+
+def bind_egress_kernel(getter: Callable[[], Any] | None) -> None:
+    """Govern governed-client requests by ``getter()``'s kernel (read per call)."""
+    global _kernel_getter
+    with _lock:
+        _kernel_getter = getter
+
+
+def egress_kernel() -> Any:
+    """The kernel the governed client fires ``PRE/POST_EGRESS`` on, or ``None`` (fail closed)."""
+    with _lock:
+        getter = _kernel_getter
+    return getter() if getter is not None else None
+
+
+# -- the call in progress ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class EgressScope:
+    """The governed call a plugin's HTTP request is made inside, stamped by the harness.
+
+    Set around the tool (or capability provider) invocation by the tool runner, so the
+    egress rows carry the turn's run id, step, tool, caller and data class. Never the
+    plugin's claim: the plugin never constructs one.
+    """
+
+    run_id: str
+    agent_type: str
+    tool: str
+    #: The plugin that owns the tool being run (the client is authorised by its OWN plugin,
+    #: bound by the harness, not by this).
+    tool_plugin: str | None = None
+    caller: str | None = None
+    step_id: int | None = None
+    classification: str | None = None
+    #: The governed call's own id (the runner's ``call_id``, a ULID, #134): the parent of
+    #: every request made inside it, for a tool call and a capability call alike.
+    tool_call_id: str | None = None
+    #: Requests seen inside this call, by (method, host, port), for ``attempt`` / ``replay_of``.
+    attempts: dict[Any, list[Any]] = field(default_factory=dict, compare=False, repr=False)
+
+
+_scope: ContextVar[EgressScope | None] = ContextVar("iris_egress_scope", default=None)
+
+
+@contextmanager
+def egress_scope(scope: EgressScope) -> Iterator[None]:
+    """Mark the code run inside the block as part of ``scope``'s governed call."""
+    token = _scope.set(scope)
+    try:
+        yield
+    finally:
+        _scope.reset(token)
+
+
+def current_egress_scope() -> EgressScope | None:
+    """The governed call in progress on this thread/task, or ``None`` outside one."""
+    return _scope.get()
+
+
 __all__ = [
     "DEFAULT_DATA_CLASS",
     "DEFAULT_SCHEMES",
     "EGRESS_DATA_CLASSES",
     "SCHEMES",
+    "EgressScope",
     "EgressVerdict",
     "HostRule",
     "PluginEgress",
     "PluginEgressPolicy",
+    "current_egress_scope",
     "egress_policy",
+    "egress_scope",
+    "INTERNAL_NAME_SUFFIXES",
+    "is_internal_name",
+    "is_ip_literal",
     "normalize_host",
     "normalize_host_pattern",
     "register_egress_policy",
+    "bind_egress_kernel",
+    "egress_kernel",
 ]
 
 # Process-wide state: put back when a harness run ends (foundation/process_state.py).
-track_globals(__name__, "_policy")
+track_globals(__name__, "_policy", "_kernel_getter")

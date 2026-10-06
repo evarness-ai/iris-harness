@@ -22,7 +22,8 @@ from typing import Any, Literal
 #: (``deterministic`` + ``handler``, OSS plan R15), what was called, the digest key, the
 #: session the row belongs to, who reads the answer (``audience``, ADR-0125), which plugin
 #: owns the tool (``tool_plugin``), which call the row is about (``call_id``, a ULID; ``held_call_id``
-#: on the approved re-execution of a held call, #134) and which model (``model``, ``provider``) a model call
+#: on the approved re-execution of a held call, #134; ``parent_call_id`` on an egress
+#: request's row: the tool call it was made inside, #103) and which model (``model``, ``provider``) a model call
 #: was bound for -- names and identifiers, never what was said to them.
 PUBLIC_PAYLOAD_FIELDS: dict[str, tuple[type, ...]] = {
     "caller": (str,),
@@ -40,6 +41,7 @@ PUBLIC_PAYLOAD_FIELDS: dict[str, tuple[type, ...]] = {
     "audience": (str,),
     "call_id": (str,),
     "held_call_id": (str,),
+    "parent_call_id": (str,),
 }
 
 #: The tier a governed call leaves the owner's machines on. The egress gate reads

@@ -77,6 +77,10 @@ from iris_harness.kernel.governance.plugins.owner_pii_shadow import (
     OwnerPiiShadowHook,
     owner_pii_mode_from_env,
 )
+from iris_harness.kernel.governance.plugins.plugin_egress import (
+    PluginEgressHook,
+    PluginEgressOutcomeHook,
+)
 from iris_harness.kernel.governance.plugins.response_safety import ResponseSafetyHook
 from iris_harness.kernel.governance.reentry import audit_recorder, set_reentry_recorder
 from iris_harness.kernel.governance.side_effects import (
@@ -252,6 +256,12 @@ def build_default_kernel(
     # and the ones its manifest's `uses: tools` lists. Always registered; the policy is
     # config the runtime compiles once plugins mount, and plugin calls fail closed without.
     kernel.register(CallerPolicyHook())
+    # PluginEgressHook (PRE_EGRESS) and its outcome row (POST_EGRESS): a request a plugin
+    # makes through the SDK's governed HTTP client goes only to a host its manifest
+    # declares (issue #103). Always registered, like the caller policy: a deny is the
+    # default for a plugin that declared nothing, and the policy is supplied from above.
+    kernel.register(PluginEgressHook())
+    kernel.register(PluginEgressOutcomeHook())
     kernel.register(
         ToolPolicyHook(
             allowed_tools=allowed_tools,

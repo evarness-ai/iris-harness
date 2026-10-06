@@ -75,7 +75,7 @@ EgressScheme = Literal["http", "https"]
 
 
 class EgressHostDecl(BaseModel):
-    """One host a plugin's code may contact (issue #103).
+    """One host a plugin's code may contact through the governed HTTP client (issue #103).
 
     A bare string is the shorthand for ``{host: <it>}``: HTTPS on 443, receiving ``internal``
     data. ``host`` is an exact host or ``*.<domain>`` (subdomains, never the apex). ``ports``
@@ -120,9 +120,10 @@ class EgressHostDecl(BaseModel):
 class PluginEgressDecl(BaseModel):
     """The hosts this plugin's code may contact (``egress:``), compiled into kernel policy.
 
-    Declared only, NOT ENFORCED until #103b: nothing reads this yet. Once the governed client
-    lands, absent or empty will mean a plugin may contact no host
-    (docs/architecture/plugin-egress.md). ``open_web: true`` is the explicit form of
+    Read by the kernel's ``plugin_egress`` hook on every call made through the SDK's governed
+    HTTP client: absent or empty means that client contacts no host for this plugin. A plugin
+    that opens its own socket is not stopped (docs/architecture/plugin-egress.md).
+    ``open_web: true`` is the explicit form of
     "any host", for a tool whose job is to fetch pages the owner or the model choose; every
     call is still recorded.
     """
@@ -625,9 +626,9 @@ class PluginManifest(BaseModel):
     provides: tuple[RegistrationKind, ...] = Field(default_factory=tuple)
     requires: PluginRequirements = Field(default_factory=PluginRequirements)
     uses: PluginUses = Field(default_factory=PluginUses)
-    # Issue #103: the hosts this plugin's code may contact, compiled into the kernel's
-    # egress policy when the plugin mounts. Declared only, NOT ENFORCED until #103b (absent will
-    # then mean no host); see docs/architecture/plugin-egress.md.
+    # Issue #103: the hosts this plugin's code may contact through the SDK's governed HTTP
+    # client, compiled into the kernel's egress policy when the plugin mounts. Absent: no
+    # host. See docs/architecture/plugin-egress.md for what it does and does not prove.
     egress: PluginEgressDecl = Field(default_factory=PluginEgressDecl)
     capabilities: PluginCapabilities = Field(default_factory=PluginCapabilities)
     # ADR-0125: the owner-identity kinds `api.register_owner_identity_source` may return.

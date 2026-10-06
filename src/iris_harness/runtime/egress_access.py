@@ -2,10 +2,10 @@
 
 The permission contract for a plugin's network use (docs/architecture/plugin-egress.md,
 issue #103). Every mounted plugin's manifest declares its hosts; ``compile_egress_policy``
-joins them into the one :class:`PluginEgressPolicy`, and ``build_runtime`` registers it once
-plugins have mounted -- the same seam as ``tool_access.compile_caller_policy``. A plugin
-that is not mounted, failed to mount or is disabled has no entry, so it may contact nothing.
-Declared, not yet enforced: nothing reads the registered policy yet.
+joins them into the one :class:`PluginEgressPolicy` the kernel's ``plugin_egress`` hook
+enforces, and ``build_runtime`` registers it once plugins have mounted -- the same seam as
+``tool_access.compile_caller_policy``. A plugin that is not mounted, failed to mount or is
+disabled has no entry, so it may contact nothing.
 """
 
 from __future__ import annotations

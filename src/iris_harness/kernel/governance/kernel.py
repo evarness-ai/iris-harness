@@ -30,6 +30,7 @@ from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.hooks.tool_payload import (
     CALL_ID,
     HELD_CALL_ID,
+    PARENT_CALL_ID,
     SIDE_EFFECT_ID,
     call_id_of,
 )
@@ -67,6 +68,10 @@ _AUDITED_PAYLOAD_KEYS: tuple[str, ...] = (
     "capability_provider",
     "args_digest",
     "result_digest",
+    # PRE/POST_EGRESS (issue #103): host, port, scheme, method, the declared data class,
+    # and on the outcome status, byte counts, duration and the error class. Built by the
+    # governed HTTP client from the request's address -- never a path, query, header or body.
+    "egress",
     # Which keyed digest the two above are (``hmac-sha256/v1/<key-id>``): every governed
     # tool, capability and MCP call carries them (``kernel/governance/audit/digest.py``).
     "digest_alg",
@@ -189,6 +194,7 @@ class GovernanceKernel:
 
         decision = HookDecision(outcome="allow", reason="no hooks registered")
         current_ctx = ctx
+        audited = True
 
         for hook in self._hooks[hook_point]:
             try:
@@ -205,7 +211,7 @@ class GovernanceKernel:
                 self._audit(hook_point, hook.name, exc_decision, current_ctx)
                 return exc_decision, current_ctx
 
-            self._audit(hook_point, hook.name, decision, current_ctx)
+            audited = self._audit(hook_point, hook.name, decision, current_ctx) and audited
 
             updates: dict[str, Any] = {}
             if decision.set_classification is not None:
@@ -233,6 +239,19 @@ class GovernanceKernel:
             if decision.outcome in ("deny", "require_approval"):
                 return decision.model_copy(update={"decided_by": hook.name}), current_ctx
 
+        if not audited and hook_point is HookPoint.PRE_EGRESS and decision.outcome == "allow":
+            # A request is sent only with its pre_egress row on the ledger (#103): when the
+            # write failed, the allow is withdrawn. This is the one point where a failed
+            # audit write changes a decision; every other hook point keeps "never raises".
+            return (
+                HookDecision(
+                    outcome="deny",
+                    reason="the ledger write for this request failed, so it is not sent",
+                    severity="error",
+                    decided_by="kernel",
+                ),
+                current_ctx,
+            )
         return decision, current_ctx
 
     def _audit(
@@ -241,10 +260,10 @@ class GovernanceKernel:
         plugin: str,
         decision: HookDecision,
         ctx: HookContext,
-    ) -> None:
-        """Persist one row per hook firing. Never raises."""
+    ) -> bool:
+        """Persist one row per hook firing. Never raises; ``False`` when the write failed."""
         if self._audit_log is None:
-            return
+            return True  # no ledger configured: nothing was lost
         try:
             payload: dict[str, Any] = dict(decision.audit_metadata)
             for key in _AUDITED_PAYLOAD_KEYS:
@@ -272,6 +291,13 @@ class GovernanceKernel:
                 payload[HELD_CALL_ID] = held
             else:
                 payload.pop(HELD_CALL_ID, None)  # only the kernel's metadata names the held call
+            # An egress request's row names the governed call it was made inside, the same
+            # way: from the metadata the governed client stamped, never from the payload.
+            parent = ctx.metadata.get(PARENT_CALL_ID)
+            if isinstance(parent, str) and parent:
+                payload[PARENT_CALL_ID] = parent
+            else:
+                payload.pop(PARENT_CALL_ID, None)
             trace_id = _current_trace_id_hex()
             if trace_id is not None:
                 payload.setdefault("trace_id", trace_id)
@@ -297,6 +323,7 @@ class GovernanceKernel:
                 tier=ctx.tier,
                 payload=payload,
             )
+            return True
         except Exception as exc:  # noqa: BLE001 - audit failure must not break enforcement
             logger.warning(
                 "audit_log: write failed for %s/%s: %s",
@@ -304,6 +331,7 @@ class GovernanceKernel:
                 plugin,
                 exc,
             )
+            return False
 
     def fire_sync(
         self, hook_point: HookPoint, ctx: HookContext

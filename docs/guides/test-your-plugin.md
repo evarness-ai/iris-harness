@@ -82,16 +82,42 @@ call runs, governed again. The
 [governed-tool example](https://github.com/evarness-ai/iris-harness/tree/main/examples/02-governed-tool)
 approves one call and rejects another.
 
+## Outbound HTTP: `api.http` and `fake_http`
+
+A plugin makes its web requests with `api.http` (or `current_http()` in a declarative
+plugin), after declaring the hosts under `egress:` in its manifest. In a test, wrap the call in
+`fake_http`: it answers from a script and replaces only the transport, so the declaration, the
+hooks and the ledger rows run as in production. An undeclared host raises `EgressDenied` (not an
+`OSError`) and nothing is sent.
+
+```python
+from iris_harness.testing import fake_http
+
+
+def test_forecast(h) -> None:  # h: your harness
+    with fake_http({"https://api.open-meteo.com/v1/forecast": {"json": {"days": 3}}}) as sent:
+        h.chat("What is the forecast?")
+    assert [r.url.host for r in sent] == ["api.open-meteo.com"]
+```
+
+Make the request on the tool's own thread: one from a thread you start has no governed call and
+is denied. `check_network_imports` (below) fails a plugin whose source imports a raw network
+library, so every call goes through the client.
+
 ## No network, stable imports only
 
 ```python
 from pathlib import Path
 
-from iris_harness.testing import check_stable_imports, no_network
+from iris_harness.testing import check_network_imports, check_stable_imports, no_network
 
 
 def test_my_plugin_uses_only_the_stable_api() -> None:
     assert check_stable_imports([Path("src/my_plugin")]) == []
+
+
+def test_my_plugin_makes_no_raw_network_call() -> None:
+    assert check_network_imports([Path("src/my_plugin")]) == []
 
 
 def test_offline() -> None:

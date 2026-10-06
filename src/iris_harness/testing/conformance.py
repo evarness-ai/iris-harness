@@ -13,6 +13,11 @@ each example from code, as your plugin's own caller, and reads the audit ledger:
   ``effect: destructive`` tool, a write that confirms) is held for the owner, never run
   unasked. Approved, it runs exactly once with the arguments it was queued with (the
   ``args_digest`` of the run matches the held call's). Rejected, it never runs;
+* **egress** -- a call that reached a host through ``api.http`` that the manifest's
+  ``egress`` does not declare was denied by governance; the example is a violation, with
+  the host named. (Wrap the call in ``fake_http`` so the declared hosts need no network.
+  A plugin that makes its requests some other way is not seen here: see
+  :func:`~iris_harness.testing.check_network_imports`.)
 * **coverage** -- every declared tool and every method of a provided capability has an
   example. One without is reported, not passed: an unexercised tool is unproven.
 
@@ -75,7 +80,9 @@ APPROVAL_HOOK = "approval_queue"
 # The plugin the suite mounts to call a provided capability as a consumer would.
 CONSUMER = "conformance-consumer"
 
-ConformanceCheck = Literal["mount", "coverage", "audit", "caller", "approval", "example"]
+ConformanceCheck = Literal["mount", "coverage", "audit", "caller", "approval", "example", "egress"]
+# The rows the governed HTTP client writes (issue #103).
+PRE_EGRESS = "pre_egress"
 
 
 @dataclass(frozen=True)
@@ -84,7 +91,8 @@ class Violation:
 
     ``check`` is the rule broken (``mount``, ``coverage``, ``audit``, ``caller``,
     ``approval``, or ``example`` -- the example call itself failed, so nothing was
-    proven), ``subject`` the tool or ``capability:<name>.<method>`` it is about, and
+    proven; ``egress`` -- the call was refused a host the manifest does not declare),
+    ``subject`` the tool or ``capability:<name>.<method>`` it is about, and
     ``detail`` what was seen.
     """
 
@@ -257,6 +265,7 @@ def _tool_call(
     result = tools.call(name, dict(args))
     rows = _tool_rows(h, name, after=mark)
     out = _audited(name, rows, caller, ran=not result.held)
+    out += _egress_denials(rows, name)
 
     if expects_hold and not result.held:
         out.append(Violation("approval", name, "ran from code without the owner's approval"))
@@ -291,6 +300,7 @@ def _tool_call(
     elif closed not in (None, "ran"):
         out.append(Violation("approval", name, f"approved, but it did not run ({closed})"))
     out += _audited(name, after, caller, ran=True)
+    out += _egress_denials(after, name)
     if runs != 1:
         out.append(Violation("approval", name, f"approved, it ran {runs} time(s), not once"))
     ran_with = {d for d in (_digest(r) for r in after if r.hook_point == PRE) if d is not None}
@@ -349,6 +359,7 @@ def _capability_calls(
                 out.append(Violation("example", subject, f"the example call failed: {exc!r}"))
             rows = _tool_rows(h, subject, after=mark)
             out += _audited(subject, rows, caller, ran=not held)
+            out += _egress_denials(rows, subject)
             if held:
                 out += _held_capability(subject, rows)
             if held != (spec.methods[method].confirm_mode == "once"):
@@ -404,9 +415,20 @@ def _tool_rows(h: Harness, subject: str, *, after: int) -> list[AuditRow]:
         row
         for row in AuditLog(db_path=h.audit_db).query(since=h._started)
         if row.id > after
-        and row.hook_point in (PRE, POST)
+        and row.hook_point in (PRE, POST, PRE_EGRESS)
         and _payload(row).get("tool_name") == subject
     ]
+
+
+def _egress_denials(rows: list[AuditRow], subject: str) -> list[Violation]:
+    """A request the call made through ``api.http`` that the egress policy refused: the
+    plugin contacted (or tried to) a host its manifest does not declare."""
+    out: list[Violation] = []
+    for row in rows:
+        if row.hook_point == PRE_EGRESS and row.decision == "deny":
+            host = (_payload(row).get("egress") or {}).get("host", "?")
+            out.append(Violation("egress", subject, f"contacted {host}: {row.reason}"))
+    return out
 
 
 def _failures(h: Harness, caller: str) -> int:

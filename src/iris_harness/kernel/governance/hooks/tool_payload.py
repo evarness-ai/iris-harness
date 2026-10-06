@@ -82,6 +82,11 @@ TOOL_CALL_ID = "tool_call_id"
 #: On the approved attempt of a held call: the id of the attempt that was held, read by
 #: the harness from the approval row, never from a caller.
 HELD_CALL_ID = "held_call_id"
+#: On an egress request's rows (``PRE_EGRESS`` / ``POST_EGRESS``): the id of the governed
+#: call the request was made inside (the calling tool's ``CALL_ID``). The governed HTTP
+#: client reads it from the harness's call scope, never from the plugin; the request's own
+#: ``CALL_ID`` is a fresh ULID the client mints (#103, #134).
+PARENT_CALL_ID = "parent_call_id"
 TOOL_SENDS_TO = "tool_sends_to"
 TOOL_ERROR = "tool_error"
 
@@ -199,6 +204,7 @@ __all__ = [
     "CALL_ID",
     "DIGEST_ALG",
     "HELD_CALL_ID",
+    "PARENT_CALL_ID",
     "RESULT_DIGEST",
     "RESULT",
     "EXTERNAL_SERVICE",

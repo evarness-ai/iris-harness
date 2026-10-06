@@ -18,10 +18,40 @@ First public release of the IRIS harness.
   document that classifies `secret` is dropped. An install without the docs says so.
 
 - Plugin manifests can declare `egress:` (issue #103): the hosts a plugin's code may
-  contact. Declared only, not enforced until the governed client lands (#103b). The host
+  contact through the SDK's governed HTTP client (#103b; see below). The host
   grammar refuses IP literals in any spelling, `localhost`, newlines, repeated dots,
   suffix-only wildcards (`*.com`) and over-long hosts; `iris plugins show` and
-  `--dump-config` print `none declared (egress not enforced yet)` for a plugin without one.
+  `--dump-config` print `none declared (raw network calls by this plugin are not governed)` for a plugin
+  without one.
+
+- Governed outbound HTTP for plugins (issue #103, part 2): `api.http` (and
+  `iris_harness.sdk.http.current_http()` for a declarative plugin) sends a request only to a
+  host the plugin's manifest `egress:` declares, fires the new `PRE_EGRESS` / `POST_EGRESS`
+  hook points and writes a ledger row per request (host, port, method, plugin, tool, run,
+  status, bytes, duration; never a path, query, header or body). A host that is not declared,
+  an IP literal, a missing kernel or a missing `plugin_egress` hook is refused with
+  `EgressDenied`. This governs calls made through that client only: it does not stop a plugin
+  that opens its own socket, and no shipped plugin uses the client yet. Also new:
+  `testing.fake_http`, `testing.check_network_imports` and a conformance check `egress`.
+  Each request has one total time budget (default 10 s, at most 60) and a 10 MiB decoded-body
+  cap, ignores proxy and netrc environment variables, refuses `Host` and `Proxy-*` headers and
+  names such as `localhost`, `*.local` and `*.internal` (even under `open_web`), connects only
+  to a checked public address (the name is resolved once), records a malformed URL as a
+  denial, and is not sent when its `pre_egress` ledger row cannot be written. A name an
+  operator or attacker points at an internal address is refused; see
+  `docs/architecture/plugin-egress.md` for the limits. A request is made only inside a
+  governed tool or capability call and acts only for the plugin whose tool is running (a
+  tool of plugin `evil` using `GovernedHttp("weather")` is denied and recorded against
+  `evil`); one made outside any call, such as from a thread the tool started, is denied.
+  `EgressDenied` is a `RuntimeError`, not an `OSError` (a stable name whose base changed
+  before release). `check_network_imports` also reports attribute use of an imported
+  package (`urllib.request.urlopen`), `asyncio.open_connection` / `start_server`, `httpcore`,
+  `h11` and `http.server`, and an unparsable file as a finding.
+  The response body is decoded by the client with a bounded decompressor, never by httpx:
+  it asks for `identity`, accepts at most one `gzip` or `deflate` layer, and refuses any other
+  encoding (layered, `zstd`, `br`) before reading it, so a compression bomb cannot exceed the
+  10 MiB cap in memory. A `Host`, `Proxy-*`, `Connection`, `Upgrade`, `TE`, `Transfer-Encoding`
+  or `Content-Length` request header is refused in any spelling (dict, pairs, bytes keys).
 
 ### Changed
 

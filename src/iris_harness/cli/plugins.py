@@ -178,7 +178,11 @@ def cmd_show(
         for line in lines:
             console.print(f"    {line}")
         if not lines:
-            empty = "none declared (egress not enforced yet)" if title == "egress" else "none"
+            empty = (
+                "none declared (raw network calls by this plugin are not governed)"
+                if title == "egress"
+                else "none"
+            )
             console.print(f"    [dim]{empty}[/dim]")
     drift = {k: v for k, v in (data.get("drift") or {}).items() if v}
     if drift:

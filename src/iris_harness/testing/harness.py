@@ -123,7 +123,8 @@ class TurnAuditRow:
     to each governance check); this is the part a plugin's test may rely on.
 
     ``hook_point`` is where governance ran (``"pre_turn"``, ``"pre_llm_call"``,
-    ``"pre_tool_use"``, ``"post_tool_use"``, ``"pre_response"``, ...); ``plugin`` is the
+    ``"pre_tool_use"``, ``"post_tool_use"``, ``"pre_egress"``, ``"post_egress"``,
+    ``"pre_response"``, ...); ``plugin`` is the
     governance check that wrote the row (``"egress_gate"``, ``"response_safety"``, ...)
     and ``decision`` what it decided (``"allow"``, ``"deny"``, ...), with ``reason``.
     ``run_id`` and ``step_id`` identify the call: each model call of a loop run is its
@@ -136,6 +137,9 @@ class TurnAuditRow:
     ``"plugin:<consumer>"``, ``"mcp:<client>"``) and ``tool_plugin`` who owns the tool a
     tool-use row is about (a plugin's name, ``"skill:<name>"``, ``"mcp:<server>"``, or
     ``"system"`` for a tool the core provides); each is None on a row it does not describe.
+    ``egress`` is a governed HTTP request's record on a ``pre_egress`` / ``post_egress`` row
+    (scheme, host, port, method, attempt, ...), with its own ``call_id`` (a ULID) and the
+    ``parent_call_id`` of the tool call it was made inside, both stamped by the kernel.
     """
 
     id: int
@@ -154,6 +158,7 @@ class TurnAuditRow:
     handler: str | None
     caller: str | None = None
     tool_plugin: str | None = None
+    egress: Mapping[str, Any] | None = None
 
 
 def _payload(row: AuditRow) -> dict[str, Any]:
@@ -166,6 +171,19 @@ def _payload(row: AuditRow) -> dict[str, Any]:
 
 def _optional_str(value: Any) -> str | None:
     return str(value) if value is not None else None
+
+
+def _egress_view(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """The row's egress record, with the ids the kernel stamped (#134 stage 1): the
+    request's own ``call_id`` and the ``parent_call_id`` of the tool call it ran inside."""
+    egress = payload.get("egress")
+    if not isinstance(egress, dict):
+        return None
+    return {
+        **egress,
+        "call_id": _optional_str(payload.get("call_id")),
+        "parent_call_id": _optional_str(payload.get("parent_call_id")),
+    }
 
 
 def _turn_audit_row(row: AuditRow) -> TurnAuditRow:
@@ -187,6 +205,7 @@ def _turn_audit_row(row: AuditRow) -> TurnAuditRow:
         handler=_optional_str(payload.get("handler")),
         caller=_optional_str(payload.get("caller")),
         tool_plugin=_optional_str(payload.get("tool_plugin")),
+        egress=_egress_view(payload),
     )
 
 

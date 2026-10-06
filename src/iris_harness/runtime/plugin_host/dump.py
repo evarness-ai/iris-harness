@@ -73,7 +73,9 @@ def render_text(tree: dict[str, Any]) -> str:
                 hosts = ", ".join(f"{h['host']} ({h['data']})" for h in egress["hosts"])
                 lines.append(f"        egress: {hosts}")
             else:
-                lines.append("        egress: none declared (egress not enforced yet)")
+                lines.append(
+                    "        egress: none declared (raw network calls by this plugin are not governed)"
+                )
             if row.get("search_providers"):
                 lines.append(f"        search providers: {', '.join(row['search_providers'])}")
         else:

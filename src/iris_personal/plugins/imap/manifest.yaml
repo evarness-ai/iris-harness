@@ -13,5 +13,6 @@ description: >-
 entrypoint: plugin:setup
 flavor: python
 trust: in-process
+party: first-party
 cli: cli:register
 provides: []

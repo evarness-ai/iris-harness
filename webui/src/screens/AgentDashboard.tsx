@@ -333,7 +333,7 @@ function AgentPlugin({ plugin }: { plugin: string | null | undefined }) {
                 )}
                 <PluginStatusTag status={data.status} />
                 <span className="ml-auto font-mono text-[11px] text-fg-subtle">
-                  {sourceKind(data.source)} · {data.trust}
+                  {sourceKind(data.source)} · {data.trust} · {data.party ?? "—"}
                 </span>
               </div>
               {data.description && (

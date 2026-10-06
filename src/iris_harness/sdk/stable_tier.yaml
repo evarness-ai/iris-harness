@@ -76,6 +76,8 @@ manifest_fields:
   - cli
   - flavor
   - trust
+  # Provenance. The default is `untrusted` (fail-closed, ADR-0134); only the field's
+  # name and place are pinned here, and a plugin the project ships declares `first-party`.
   - party
   - provides
   - requires

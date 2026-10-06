@@ -8,6 +8,7 @@ description: >-
 entrypoint: plugin:setup
 flavor: python
 trust: in-process
+party: first-party
 provides:
   - intercept
   - tool

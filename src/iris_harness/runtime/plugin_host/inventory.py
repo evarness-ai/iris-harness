@@ -161,6 +161,7 @@ def _summary(
         "version": manifest.version if manifest else None,
         "description": manifest.description.strip() if manifest else "",
         "trust": rec.trust,
+        "party": manifest.party if manifest else None,
         "flavor": manifest.flavor if manifest else None,
         "provides": [k.value for k in manifest.provides] if manifest else [],
         "enabled": enabled,

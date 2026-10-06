@@ -506,8 +506,10 @@ class PluginManifest(BaseModel):
     # runs the plugin out of process over the signed MCP bridge (M2+).
     trust: TrustLevel = "in-process"
     # Provenance, independent of ``trust`` (how the plugin runs): who wrote it and how far
-    # the operator trusts them. Declaration only; nothing enforces it yet.
-    party: PluginParty = "first-party"
+    # the operator trusts them. Declaration only; nothing enforces it yet. Fail-closed
+    # default (ADR-0134): a manifest that says nothing is ``untrusted``; a plugin the
+    # project ships declares ``party: first-party`` explicitly.
+    party: PluginParty = "untrusted"
     provides: tuple[RegistrationKind, ...] = Field(default_factory=tuple)
     requires: PluginRequirements = Field(default_factory=PluginRequirements)
     uses: PluginUses = Field(default_factory=PluginUses)

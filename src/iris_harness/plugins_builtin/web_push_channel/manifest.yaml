@@ -9,5 +9,6 @@ description: >-
 entrypoint: plugin:setup
 flavor: python
 trust: in-process
+party: first-party
 provides:
   - channel

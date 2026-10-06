@@ -616,3 +616,169 @@ def test_an_override_can_only_narrow(tree: Path, tmp_path, monkeypatch) -> None:
 def test_an_override_with_nothing_in_common_fails_closed(tree: Path, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     _override(tmp_path, monkeypatch, roots=["docs/internal-notes"])
     assert _search(tree, query="tier").startswith("search_docs is unavailable:")
+
+
+# ------------------------------------------------------------- round 2 review findings
+def _alias_bomb(n: int) -> str:
+    lines = ["---", "a0: &a0 [x]"]
+    lines += [f"a{i}: &a{i} [" + ", ".join([f"*a{i - 1}"] * 9) + ", x]" for i in range(1, n + 1)]
+    return "\n".join(lines) + "\n---\n"
+
+
+@pytest.mark.parametrize("n", [9, 170])
+def test_a_frontmatter_alias_bomb_is_withheld_fast(tree: Path, n: int) -> None:
+    front = _alias_bomb(n)
+    assert len(front) < 8000 or n == 170
+    _write(tree / "docs/architecture/bomb.md", f"{front}# B\n\n{CANARY}\n")
+    start = time.perf_counter()
+    _no_canary(_search(tree, query=CANARY))
+    assert time.perf_counter() - start < 0.5
+    assert corpus_mod._frontmatter_withheld(f"{front}# B")
+
+
+def test_a_deeply_shared_structure_without_anchors_is_walked_bounded() -> None:
+    # No anchors, so the event stream passes; the walk is still bounded by its budget.
+    deep = "---\n" + "a: " * 1 + "[" * 400 + "]" * 400 + "\n---\n"
+    start = time.perf_counter()
+    corpus_mod._frontmatter_withheld(deep)
+    assert time.perf_counter() - start < 0.5
+
+
+@pytest.mark.parametrize(
+    "front",
+    [
+        "---\nclassification: [secret]\n---\n",
+        "---\nclassification:\n  - secret\n---\n",
+        "---\nclassification: [[secret]]\n---\n",
+        "---\nclassification: {level: secret}\n---\n",
+        "---\nclassification: !!set {secret}\n---\n",
+        "---\nclassification: [public]\n---\n",  # non-scalar: cannot be read as the loader does
+        "---\nmeta:\n  classification: [personal]\n---\n",
+        "---\nclassification:   SECRET  \n---\n",
+    ],
+    ids=["list", "block-list", "nested-list", "mapping", "set", "list-public", "nested", "padded"],
+)
+def test_non_scalar_classification_values_withhold(tree: Path, front: str) -> None:
+    _write(tree / "docs/architecture/fm.md", f"{front}# F\n\n{CANARY}\n")
+    _no_canary(_search(tree, query=CANARY))
+    assert build_corpus(load_config(), tree).dropped == 1
+
+
+def _jwt(n: int) -> str:
+    return (
+        "eyJhbGciOiJIUzI1NiJ9."
+        + "eyJzdWIiOiIx"
+        + "A" * n
+        + ".SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+    )
+
+
+@pytest.mark.parametrize("size", [300, 600, 1500, 3000])
+@pytest.mark.parametrize("offset", [3500, 3800, 4100, 4300, 7500, 7900, 8300])
+def test_a_long_line_cannot_hide_a_jwt_across_a_chunk_cut(
+    tree: Path, size: int, offset: int
+) -> None:
+    token = _jwt(size)
+    assert scan_text(token).is_secret  # the premise
+    _write(
+        tree / "docs/guides/long.md",
+        f"# L\n\n{CANARY} " + "word " * (offset // 5) + token + " tail " * 500 + "\n",
+    )
+    _no_canary(_search(tree, query=CANARY))
+    assert build_corpus(load_config(), tree).dropped == 1
+
+
+@pytest.mark.parametrize(
+    "marker",
+    ["eyJ" + "a" * 40, "sk-" + "a" * 30, "ghp_" + "a" * 30, "AKIA" + "A" * 16, "-----" + "BEGIN"],
+)
+def test_long_line_marker_precheck_withholds(tree: Path, marker: str) -> None:
+    _write(tree / "docs/guides/m.md", f"# M\n\n{CANARY} " + "x " * 3000 + marker + " end\n")
+    _no_canary(_search(tree, query=CANARY))
+
+
+def test_long_line_marker_precheck_ignores_ordinary_words(tree: Path) -> None:
+    prose = "the task-list and ask-me items " * 400  # contains "sk-" inside words
+    _write(tree / "docs/guides/prose.md", f"# P\n\n{CANARY} {prose}\n")
+    assert "docs/guides/prose.md" in _search(tree, query=CANARY)
+
+
+def test_cuts_do_not_land_inside_a_token_run() -> None:
+    token = "T" * 60
+    for pad in range(3900, 4100, 7):  # the token straddles the 4000 mark at some pad
+        line = "a " * (pad // 2) + token + " z" * 500
+        assert any(token in c for c in corpus_mod._chunks(line, 4000)), pad
+
+
+def test_every_answer_says_what_was_withheld_and_what_is_pending(tree: Path) -> None:
+    _write(tree / "docs/guides/leaky.md", f"# L\n\n{SECRET_TEXT}\n")
+    for query in ("tier routing", "nonexistentwordzzz"):
+        out = _search(tree, query=query)
+        assert "1 documents withheld (secret/personal/over scan budget), 0 not yet scanned" in out
+
+
+def test_twelve_hostile_documents_never_block_a_call_and_converge(
+    tree: Path, tmp_path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    for i in range(12):
+        _write(tree / f"docs/guides/h{i}.md", f"# H{i}\n\n" + "+1-" * 60000 + "\n")
+    _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1000, scan_chunk_chars=1000)
+    corpus_mod._CACHE.clear()
+    corpus_mod._PROGRESS.clear()
+    pending = []
+    for _ in range(40):
+        start = time.perf_counter()
+        out = _search(tree, query="tier routing")
+        assert time.perf_counter() - start < 5
+        assert " not yet scanned" in out
+        pending.append(
+            int(out.rsplit("withheld (secret/personal/over scan budget), ", 1)[1].split()[0])
+        )
+        if pending[-1] == 0:
+            break
+    assert pending[0] > 0 and pending[-1] == 0, pending
+
+
+def test_the_directory_swap_does_not_mislabel_a_document(tree: Path, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The name and cache key come from the path the descriptor names, not the listed one:
+    when a listed file's descriptor really names another file of the root, the document is
+    labelled as that file, never by the listing."""
+    _write(tree / "docs/guides/other.md", "# Other\n\n## O\n\nother body\n")
+    _write_config(tmp_path, monkeypatch, ["docs/guides"])
+    named = os.path.realpath(tree / "docs/guides/setup.md")
+    monkeypatch.setattr(corpus_mod, "_fd_path", lambda fd: named)
+    names = [d.name for d in build_corpus(load_config(), tree).docs]
+    assert names and set(names) == {"docs/guides/setup.md"}
+
+
+def test_a_document_longer_than_one_calls_scan_time_still_finishes(
+    tree: Path, tmp_path, monkeypatch
+) -> None:  # type: ignore[no-untyped-def]
+    _write(
+        tree / "docs/guides/long.md", "# Long\n\n" + "\n".join(f"line {i} body" for i in range(300))
+    )
+    _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1, scan_chunk_chars=100)
+    corpus_mod._CACHE.clear()
+    corpus_mod._PROGRESS.clear()
+    real = corpus_mod.scan_text
+
+    def slow(text: str):  # type: ignore[no-untyped-def]
+        time.sleep(0.003)  # more than the call's whole scan time: one chunk per call
+        return real(text)
+
+    monkeypatch.setattr(corpus_mod, "scan_text", slow)
+    for _ in range(400):  # one chunk of progress per call at least
+        if " 0 not yet scanned" in _search(tree, query="body"):
+            break
+    else:
+        pytest.fail("the deferred document never finished scanning")
+    assert "docs/guides/long.md" in _search(tree, query="body")
+
+
+def test_a_hard_linked_file_is_refused(tree: Path, tmp_path: Path) -> None:
+    outside = _write(tmp_path / "outside/secret.md", f"# S\n\n{CANARY}\n")
+    os.link(outside, tree / "docs/guides/hard.md")
+    _no_canary(_search(tree, query=CANARY))
+    # a file whose other name is inside the tree is refused as well: nlink > 1
+    os.link(tree / "docs/guides/setup.md", tree / "docs/guides/setup2.md")
+    assert "docs/guides/setup" not in _search(tree, query="poetry install")

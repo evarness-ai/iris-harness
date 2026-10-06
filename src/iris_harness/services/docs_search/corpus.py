@@ -54,6 +54,7 @@ CONFIG_FILE = "docs_search.yaml"
 # super-quadratically on a long line of blanks. A heading line is read to this length only.
 _MAX_HEADING_LINE = 300
 _MAX_FRONTMATTER_CHARS = 8000
+_MAX_FRONTMATTER_NODES = 500
 _FENCE = re.compile(r"^\s*(```|~~~)")
 _WITHHELD_CLASSES = frozenset({"secret", "personal"})
 
@@ -75,7 +76,7 @@ class Limits:
     max_output_chars: int = 4000
     scan_chunk_chars: int = 4000  # the content scan sees at most this much at once
     scan_budget_ms: int = 2000  # per document; exhausting it withholds the document
-    scan_total_ms: int = 10000  # per corpus build; later uncached documents wait for the next call
+    scan_total_ms: int = 3000  # per call; documents not yet scanned wait for the next call
 
 
 @dataclass(frozen=True)
@@ -102,7 +103,8 @@ class Doc:
 class Corpus:
     docs: list[Doc] = field(default_factory=list)
     roots_missing: bool = True  # no allow-listed root exists on this install
-    dropped: int = 0  # documents withheld (classified secret/personal) or unreadable
+    dropped: int = 0  # documents withheld (secret/personal, over the scan budget, unreadable)
+    pending: int = 0  # documents not scanned yet this call (scan time ran out); next call
     truncated: bool = False  # a cap stopped the walk
 
 
@@ -238,13 +240,16 @@ def _fd_path(fd: int) -> str | None:
 
 def read_contained(
     path: Path, root: Path, extensions: frozenset[str], max_bytes: int
-) -> tuple[bytes, os.stat_result] | None:
-    """The bytes of ``path`` if it is a plain allowed file inside ``root``, else None.
+) -> tuple[bytes, os.stat_result, str] | None:
+    """``(bytes, stat, real path)`` of ``path`` if a plain allowed file inside ``root``.
 
     One open descriptor carries the whole decision: ``O_NOFOLLOW`` refuses a symlink at
     the last component, ``fstat`` must say regular file within the size cap, and the path
     the descriptor names (not the one that was listed) must sit inside ``root``. The bytes
-    are read from that descriptor, so nothing swapped in after the listing is read.
+    are read from that descriptor, so nothing swapped in after the listing is read. The
+    path returned is the one the descriptor names, so a name or cache key is never the
+    listed path of a file that was swapped. A file with more than one hard link is refused:
+    its other names may sit anywhere.
     """
     if path.suffix.lower() not in extensions:
         return None
@@ -255,7 +260,7 @@ def read_contained(
         return None
     try:
         st = os.fstat(fd)
-        if not stat_mod.S_ISREG(st.st_mode) or st.st_size > max_bytes:
+        if not stat_mod.S_ISREG(st.st_mode) or st.st_nlink > 1 or st.st_size > max_bytes:
             return None
         named = _fd_path(fd)
         if named is None:
@@ -272,7 +277,7 @@ def read_contained(
             if not block:
                 break
             data += block
-        return (data, st) if len(data) <= max_bytes else None
+        return (data, st, named) if len(data) <= max_bytes else None
     except OSError:
         return None
     finally:
@@ -283,10 +288,12 @@ def _frontmatter_withheld(text: str) -> bool:
     """Whether the document opens with frontmatter that must keep it out (fail closed).
 
     Same shape as the identity loader's ``_split_frontmatter`` (``yaml.safe_load`` between
-    ``---`` lines, keys read as the loader does), but stricter: a BOM or blank lines
-    before the ``---`` do not hide it, ``...`` also closes it, keys compare
-    case-insensitively at any depth, and frontmatter that cannot be parsed, is not a
-    mapping, or never closes withholds the document.
+    ``---`` lines; the loader reads the ``classification`` key), but stricter: a BOM or
+    blank lines before the ``---`` do not hide it, ``...`` also closes it, keys compare
+    case-insensitively at any depth, a ``classification`` whose value is not a plain
+    scalar withholds, and frontmatter that cannot be parsed, is not a mapping, never closes,
+    is oversized, or uses anchors/aliases (the way to build an exponentially shared
+    structure) withholds the document.
     """
     body = text.lstrip("\ufeff").lstrip()
     lines = body.splitlines()
@@ -299,25 +306,48 @@ def _frontmatter_withheld(text: str) -> bool:
     if len(meta_text) > _MAX_FRONTMATTER_CHARS:
         return True
     try:
+        # The event stream first: an anchor or alias is refused before any tree exists,
+        # so nothing is ever walked that could be exponentially shared.
+        events = 0
+        for event in yaml.parse(meta_text, Loader=yaml.SafeLoader):
+            events += 1
+            if events > _MAX_FRONTMATTER_NODES or getattr(event, "anchor", None) is not None:
+                return True
+            if isinstance(event, yaml.AliasEvent):
+                return True
         meta = yaml.safe_load(meta_text)
     except yaml.YAMLError:
         return True
     if meta is None:
         return False
-    return not isinstance(meta, dict) or _classified(meta)
+    return not isinstance(meta, dict) or _classified(meta, [_MAX_FRONTMATTER_NODES], set())
 
 
-def _classified(node: object) -> bool:
+def _classified(node: object, budget: list[int], seen: set[int]) -> bool:
+    """Whether ``node`` carries a withheld ``classification`` (any depth), failing closed.
+
+    A visited set and a node budget bound the walk whatever the tree's shape. A
+    ``classification`` that is not a plain scalar (a list, mapping, set) is withheld: it
+    cannot be read the way the loader reads it.
+    """
+    budget[0] -= 1
+    if budget[0] < 0:
+        return True
+    if isinstance(node, dict | list | set | tuple):
+        if id(node) in seen:
+            return False
+        seen.add(id(node))
     if isinstance(node, dict):
         for key, value in node.items():
-            if str(key).strip().lower() == "classification" and (
-                str(value).strip().lower() in _WITHHELD_CLASSES
-            ):
+            if str(key).strip().lower() == "classification":
+                if isinstance(value, dict | list | set | tuple | frozenset):
+                    return True
+                if str(value).strip().lower() in _WITHHELD_CLASSES:
+                    return True
+            if _classified(value, budget, seen):
                 return True
-            if _classified(value):
-                return True
-    elif isinstance(node, list):
-        return any(_classified(v) for v in node)
+    elif isinstance(node, list | tuple | set):
+        return any(_classified(v, budget, seen) for v in node)
     return False
 
 
@@ -356,9 +386,46 @@ def split_sections(text: str) -> tuple[Section, ...]:
     return tuple(s for s in sections if any(line.strip() for line in s.lines))
 
 
+_TOKEN_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")
+# marker, whether it must start a token, and how long a token run after it looks like a secret
+_MARKERS: tuple[tuple[str, bool, int], ...] = (
+    ("eyJ", False, 30),
+    ("sk-", True, 20),
+    ("ghp_", True, 20),
+    ("AKIA", True, 16),
+)
+
+
+def _long_line_marker(line: str) -> bool:
+    """A cheap, regex-free look at a line too long to scan whole: does it carry something
+    shaped like a JWT, API key or private-key header? Substring tests only."""
+    if "-----BEGIN" in line:
+        return True
+    for marker, boundary, minimum in _MARKERS:
+        at = line.find(marker)
+        while at != -1:
+            if not (boundary and at > 0 and line[at - 1] in _TOKEN_CHARS):
+                end = at + len(marker)
+                while end < len(line) and line[end] in _TOKEN_CHARS:
+                    end += 1
+                if end - at >= minimum:
+                    return True
+            at = line.find(marker, at + 1)
+    return False
+
+
+def _cut(line: str, size: int) -> int:
+    """Where to cut ``line`` (longer than ``size``): just after a non-token character, so a
+    run of ``[A-Za-z0-9._-]`` (a JWT, a key) is not split; ``size`` when it has none."""
+    for i in range(size, size // 2, -1):
+        if line[i - 1] not in _TOKEN_CHARS:
+            return i
+    return size
+
+
 def _chunks(text: str, size: int) -> Iterator[str]:
     """Pieces of at most ``size`` chars cut at line ends, so a secret that sits on one line
-    is never split; a longer line is cut with an overlap wider than any token pattern."""
+    is never split; a longer line is cut only outside token runs (with an overlap too)."""
     overlap = min(256, size // 4)
     buf: list[str] = []
     used = 0
@@ -367,8 +434,9 @@ def _chunks(text: str, size: int) -> Iterator[str]:
             if buf:
                 yield "\n".join(buf)
                 buf, used = [], 0
-            yield line[:size]
-            line = line[size - overlap :]
+            cut = _cut(line, size)
+            yield line[:cut]
+            line = line[max(1, cut - overlap) :]
         if used + len(line) + 1 > size and buf:
             yield "\n".join(buf)
             buf, used = [], 0
@@ -378,33 +446,41 @@ def _chunks(text: str, size: int) -> Iterator[str]:
         yield "\n".join(buf)
 
 
-def _scan_withholds(text: str, limits: Limits) -> bool:
-    """True when the content scan calls any chunk ``secret`` or the time budget runs out.
+def _scan_verdict(text: str, limits: Limits, corpus_deadline: float, resume: list[int]) -> str:
+    """``"secret"`` (withhold), ``"budget"`` (this document used its time: withhold),
+    ``"defer"`` (the call's scan time ran out: decide on a later call) or ``"ok"``.
 
     The kernel's patterns are super-linear on hostile text, so they only ever see a chunk
-    (cost bounded by the chunk) and each document gets a time budget; exceeding it is
-    refused, not waved through.
+    (cost bounded by the chunk) and each document gets a time budget; exhausting it is
+    refused, not waved through. Lines longer than a chunk also get a regex-free marker test.
+    ``resume`` is ``[chunks already scanned clean]``: a deferred document picks up where the
+    last call stopped, so a document longer than one call's time still finishes.
     """
     stop = time.monotonic() + limits.scan_budget_ms / 1000
-    for chunk in _chunks(text, limits.scan_chunk_chars):
+    for line in text.splitlines():
+        if len(line) > limits.scan_chunk_chars and _long_line_marker(line):
+            return "secret"
+    for index, chunk in enumerate(_chunks(text, limits.scan_chunk_chars)):
+        if index < resume[0]:
+            continue
         if scan_text(chunk).is_secret:
-            return True
-        if time.monotonic() > stop:
-            return True
-    return False
-
-
-def _admit(text: str, limits: Limits) -> bool:
-    """The content gate: frontmatter and the kernel's secret scan both must pass."""
-    if _frontmatter_withheld(text):
-        return False
-    return not _scan_withholds(text, limits)
+            return "secret"
+        resume[0] = index + 1
+        now = time.monotonic()
+        if now > corpus_deadline:
+            return "defer"
+        if now > stop:
+            return "budget"
+    return "ok"
 
 
 # (real path) -> ((dev, ino, mtime_ns, size), Doc | None); a changed file is re-read and
 # re-scanned, and a document withheld once (secret, or scan budget exhausted) stays withheld
 # without being scanned again.
 _CACHE: dict[str, tuple[tuple[int, int, int, int], Doc | None]] = {}
+# (real path) -> (file key, chunks scanned clean so far) for a document the call's scan time
+# interrupted; dropped when the file changes or the scan finishes.
+_PROGRESS: dict[str, tuple[tuple[int, int, int, int], list[int]]] = {}
 
 
 def build_corpus(config: Config, base: Path | None = None) -> Corpus:
@@ -452,26 +528,41 @@ def build_corpus(config: Config, base: Path | None = None) -> Corpus:
                 read = read_contained(path, root, config.extensions, limits.max_file_bytes)
                 if read is None:
                     continue
-                data, st = read
+                data, st, real = read
                 if total + len(data) > limits.max_total_bytes:
                     corpus.truncated = True
                     return corpus
                 total += len(data)
-                real = os.path.realpath(path)
                 key = (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size)
                 cached = _CACHE.get(real)
                 if cached is not None and cached[0] == key:
                     doc = cached[1]
                 elif time.monotonic() > corpus_deadline:
-                    corpus.truncated = True  # out of scan time: picked up on a later call
+                    corpus.pending += 1  # out of scan time: picked up on a later call
+                    corpus.truncated = True
                     continue
                 else:
                     doc = None
                     try:
-                        text = data.decode("utf-8")
+                        text: str | None = data.decode("utf-8")
                     except UnicodeDecodeError:
                         text = None
-                    if text is not None and _admit(text, limits):
+                    verdict = "secret"
+                    if text is not None and not _frontmatter_withheld(text):
+                        progress = _PROGRESS.get(real)
+                        resume = progress[1] if progress and progress[0] == key else [0]
+                        verdict = _scan_verdict(text, limits, corpus_deadline, resume)
+                        if verdict == "defer":
+                            if len(_PROGRESS) > 2048:
+                                _PROGRESS.clear()
+                            _PROGRESS[real] = (key, resume)
+                        else:
+                            _PROGRESS.pop(real, None)
+                    if verdict == "defer":
+                        corpus.pending += 1  # out of scan time: decided on a later call
+                        corpus.truncated = True
+                        continue
+                    if verdict == "ok" and text is not None:
                         name = os.path.relpath(real, real_base).replace(os.sep, "/")
                         doc = Doc(name=name, sections=split_sections(text))
                     if len(_CACHE) > 2048:

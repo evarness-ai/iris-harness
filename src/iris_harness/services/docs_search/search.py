@@ -122,8 +122,12 @@ def render(corpus: Corpus, query: str, section: str, limit: int | None, config: 
     hits = _score_corpus(corpus, terms, section.strip()[: lim.max_query_chars])
     shown = f'"{" ".join(terms)}"'
     searched = f"{len(corpus.docs)} docs searched"
+    status = (
+        f"{corpus.dropped} documents withheld (secret/personal/over scan budget), "
+        f"{corpus.pending} not yet scanned"
+    )
     if not hits:
-        return f"search_docs: no section matches {shown} ({searched})."
+        return f"search_docs: no section matches {shown} ({searched}).\n{status}"
     out: list[str] = []
     used = 0
     for hit in hits:
@@ -139,11 +143,11 @@ def render(corpus: Corpus, query: str, section: str, limit: int | None, config: 
         used += len(entry)
         out.append(entry)
     if not out:
-        return f"search_docs: no section matches {shown} ({searched})."
+        return f"search_docs: no section matches {shown} ({searched}).\n{status}"
     notes = f"{searched}; showing {len(out)} of {len(hits)} matching sections"
     if corpus.truncated:
         notes += "; the corpus hit a size cap"
-    return f"search_docs: {shown} ({notes})\n" + "\n".join(out)
+    return f"search_docs: {shown} ({notes})\n" + "\n".join(out) + f"\n{status}"
 
 
 def search_core_docs(args: dict[str, Any]) -> str:

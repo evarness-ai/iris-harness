@@ -11,6 +11,7 @@ test_pre_execution_record.py``.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -431,6 +432,52 @@ async def test_the_default_ledger_opens_on_the_first_high_risk_call_and_records_
     assert decision.outcome == "allow" and db.exists()
     row = ledger.get(decision.audit_metadata[SIDE_EFFECT_ID])
     assert row is not None and row.status == "pending"
+
+
+def test_a_second_thread_never_sees_a_deferred_ledger_before_its_schema_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first open holds every other caller until the schema is complete.
+
+    Thread A is parked inside schema creation; thread B then records. B must wait for A, not
+    run against a database with no table (which would deny a legitimate high-risk call).
+    """
+    ledger = DeferredSideEffectLedger(tmp_path / "s.db")
+    real_init = SideEffectLedger._init_schema
+    in_schema = threading.Event()
+    release = threading.Event()
+    parked: list[bool] = []
+
+    def slow_init(self: SideEffectLedger) -> None:
+        if not parked:  # only the first opener parks
+            parked.append(True)
+            in_schema.set()
+            assert release.wait(timeout=10)
+        real_init(self)
+
+    monkeypatch.setattr(SideEffectLedger, "_init_schema", slow_init)
+    errors: list[BaseException] = []
+
+    def record(key: str) -> None:
+        try:
+            ledger.record(
+                run_id="r", step_id=1, tool="wipe", verification_probe=NO_PROBE, side_effect_id=key
+            )
+        except BaseException as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    a = threading.Thread(target=record, args=("a",))
+    b = threading.Thread(target=record, args=("b",))
+    a.start()
+    assert in_schema.wait(timeout=10)  # A is inside the schema creation
+    b.start()
+    b.join(timeout=1.0)  # unfixed: B finishes (failing) here; fixed: B is still waiting on A
+    release.set()
+    a.join(timeout=10)
+    b.join(timeout=10)
+
+    assert errors == []
+    assert ledger.get("a") is not None and ledger.get("b") is not None
 
 
 async def test_a_deferred_ledger_that_will_not_open_denies_the_high_risk_call(

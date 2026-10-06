@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -102,7 +103,9 @@ class SideEffectLedger:
 
     def _init_schema(self) -> None:
         schema = _SCHEMA_PATH.read_text(encoding="utf-8")
-        with self._connect() as conn:
+        # The base connection, never a subclass's: a lazily opening ``_connect`` must not be
+        # re-entered from the very step that makes it ready.
+        with SideEffectLedger._connect(self) as conn:
             conn.executescript(schema)
             conn.commit()
 
@@ -282,17 +285,26 @@ class DeferredSideEffectLedger(SideEffectLedger):
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or default_ledger_db_path()
         self._opened = False
+        self._open_lock = threading.Lock()
+
+    def _open(self) -> None:
+        """Create the directory and schema once; ``_opened`` is set only when both exist.
+
+        Callers are serialised: the kernel runs tool calls on several threads, and one that
+        arrived while another was still creating the schema would query a table that is not
+        there yet. A failure leaves ``_opened`` unset, so the next call tries again.
+        """
+        if self._opened:
+            return
+        with self._open_lock:
+            if self._opened:
+                return
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_schema()
+            self._opened = True
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        if not self._opened:
-            # Set first: ``_init_schema`` connects through here.
-            self._opened = True
-            try:
-                self.db_path.parent.mkdir(parents=True, exist_ok=True)
-                self._init_schema()
-            except BaseException:
-                self._opened = False
-                raise
+        self._open()
         with super()._connect() as conn:
             yield conn

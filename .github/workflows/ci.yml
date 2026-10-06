@@ -1,8 +1,13 @@
 name: ci
 
-# The required pull-request checks of OSS plan R11 that run on the tree: lint, test (3.12
-# and 3.13), playground, quickstart, licenses, docs and webui. security.yml and pr.yml
-# carry the rest. Contributors run the same steps locally with scripts/ci_local.sh.
+# The required pull-request checks of OSS plan R11 that run on the tree: lint, test (3.12),
+# playground, quickstart, licenses, docs and webui. security.yml and pr.yml carry the rest.
+# Contributors run the same steps locally with scripts/ci_local.sh.
+#
+# Test policy (owner's instruction, 2026-10): a pull request or a push to main runs the
+# CHANGED-SCOPE tests on Python 3.12 only (scripts/changed_tests.sh, which never escalates
+# to the whole suite on the hosted runner). The full suite on 3.12 AND 3.13 is kept, on
+# demand: `gh workflow run ci -f full=true` (or Actions -> ci -> Run workflow -> full).
 #
 # Security posture, for every workflow here: `pull_request` only, never
 # `pull_request_target` (a fork's code never runs with this repository's secrets or a
@@ -15,6 +20,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full:
+        description: "Run the entire test suite on Python 3.12 and 3.13 (default: changed-scope on 3.12)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -68,11 +78,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.13"]
+        # 3.12 only, except a manual run with full=true, which adds 3.13.
+        python-version: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.full && '["3.12", "3.13"]' || '["3.12"]') }}
+    env:
+      FULL_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.full }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The changed-scope selector diffs against the PR base / the previous push.
+          fetch-depth: 0
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
@@ -84,10 +99,59 @@ jobs:
           poetry config virtualenvs.in-project true
           poetry env use "python${PY}"
           poetry install --with dev --extras email --no-interaction --no-ansi
-      # The full suite: core, the email slice and every example. No model is pulled and
-      # no test reaches the network (tests/conftest.py guards both).
-      - name: Pytest (full suite)
+      # On demand (workflow_dispatch, full=true): the full suite -- core, the email slice
+      # and every example -- on each Python in the matrix. No model is pulled and no test
+      # reaches the network (tests/conftest.py guards both).
+      - name: Pytest (full suite, on demand)
+        if: env.FULL_RUN == 'true'
         run: poetry run pytest --no-cov -n auto -q
+      # Pull requests and pushes: only what the changed files can reach. NO_FULL=1 keeps
+      # the selector from escalating to the whole suite (a trigger file such as
+      # pyproject.toml or a source path with no test home): it runs `-m smoke` plus the
+      # mapped tests instead, and the summary says the full suite was skipped by policy.
+      - name: Pytest (changed scope)
+        if: env.FULL_RUN != 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          PY_VERSION: ${{ matrix.python-version }}
+          NO_FULL: "1"
+        run: |
+          case "$EVENT_NAME" in
+            pull_request) BASE="$PR_BASE_SHA" ;;
+            push) BASE="$PUSH_BEFORE_SHA" ;;
+            *) BASE="" ;;
+          esac
+          # A new branch or a force push has no usable `before`: fall back to the parent.
+          if [[ -z "$BASE" || "$BASE" =~ ^0+$ ]] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            BASE=$(git merge-base HEAD origin/main 2>/dev/null || true)
+            [[ -n "$BASE" && "$BASE" != "$(git rev-parse HEAD)" ]] || BASE=$(git rev-parse HEAD~1)
+          fi
+          export BASE
+          plan=$(bash scripts/changed_tests.sh --print)
+          {
+            echo "### Changed-scope tests (Python ${PY_VERSION})"
+            echo
+            echo "Compared against \`${BASE}\`."
+            echo
+            echo '```'
+            echo "$plan"
+            echo '```'
+            if grep -q "SKIPPED by policy" <<<"$plan"; then
+              echo
+              echo "> The full suite was skipped by policy on pull requests and pushes."
+              echo "> Run it on 3.12 and 3.13 with: \`gh workflow run ci -f full=true\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$plan"
+          # Never a green line without tests when code changed.
+          if git diff --name-only "$BASE" HEAD | grep -qE '^(src|tests|examples)/' \
+            && ! grep -qE "running:|smoke marker only" <<<"$plan"; then
+            echo "::error title=test::source files changed but the selector chose no tests"
+            exit 1
+          fi
+          bash scripts/changed_tests.sh
 
   playground:
     name: playground

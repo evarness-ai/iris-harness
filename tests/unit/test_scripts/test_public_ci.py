@@ -37,7 +37,6 @@ FILES = sorted(WORKFLOWS.glob("*.yml"))
 REQUIRED_CHECKS = {
     "lint",
     "test (3.12)",
-    "test (3.13)",
     "playground",
     "quickstart",
     "security",
@@ -77,6 +76,9 @@ def _expand(name: str, job: dict[str, Any]) -> list[str]:
     matrix = job.get("strategy", {}).get("matrix", {})
     names = [name]
     for key, values in matrix.items():
+        if isinstance(values, str):
+            # `fromJSON(... '["3.12", "3.13"]' || '["3.12"]')`: every literal list counts.
+            values = sorted({v for lit in re.findall(r"'(\[[^']*\])'", values) for v in json.loads(lit)})
         token = "${{ matrix." + key + " }}"
         if token in name:
             names = [n.replace(token, str(v)) for n in names for v in values]
@@ -155,7 +157,13 @@ def test_the_test_matrix_is_the_supported_python_range() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert pyproject["tool"]["poetry"]["dependencies"]["python"] == ">=3.12,<3.14"
     test = _load(WORKFLOWS / "ci.yml")["jobs"]["test"]
-    assert test["strategy"]["matrix"]["python-version"] == ["3.12", "3.13"]
+    # Pull requests and pushes run 3.12 only; 3.13 joins on a manual full=true run.
+    expr = test["strategy"]["matrix"]["python-version"]
+    assert re.findall(r"'(\[[^']*\])'", expr) == ['["3.12", "3.13"]', '["3.12"]']
+    assert "workflow_dispatch" in expr and "inputs.full" in expr
+    triggers = _triggers(_load(WORKFLOWS / "ci.yml"))
+    assert triggers["workflow_dispatch"]["inputs"]["full"]["default"] is False
+    assert "schedule" not in triggers
 
 
 def test_pypi_publishing_is_trusted_publishing() -> None:

@@ -302,6 +302,10 @@ def _mount_plugins(runtime: IrisRuntime, in_process: Sequence[InProcessPlugin] =
         in_process=in_process,
     )
     _reassert_loop_intents(runtime)
+    # A heartbeat whose handler a plugin registers is only a fault when that plugin is
+    # mounted and still did not register it (or no plugin owns it); if the plugin is
+    # absent from this install it is not.
+    runtime.heartbeats.bind_plugin_gap(runtime.plugin_registry.unmounted_reason)
     # The permission contract (plugin-capabilities §4): compiled from the mounted
     # manifests' `uses: tools` and the operator's tool-access.yaml, now that every plugin
     # and its tools are known. The kernel's CallerPolicyHook enforces it.

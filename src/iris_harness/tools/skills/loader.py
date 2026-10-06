@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import json
+import os
 import re
 import sys
 from collections.abc import Mapping
@@ -81,7 +82,9 @@ def validate_skill_prerequisites(
         except importlib.metadata.PackageNotFoundError:
             missing.append(f"package:{package_name}")
 
-    source = dict(environment or {})
+    # No mapping given means the process environment: ``{}`` would call every declared
+    # variable missing, however it is set.
+    source = os.environ if environment is None else environment
     for env_var in manifest.requires.env_vars:
         if not source.get(env_var):
             missing.append(f"env:{env_var}")

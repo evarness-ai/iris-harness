@@ -42,6 +42,12 @@ class HeartbeatDefinition:
     # whose "skipped" means "could not reach what it needs" (email_judge: the Mac asleep
     # or restarting) should not wait a whole slot, with its mail hidden meanwhile.
     retry_skipped_after_minutes: int | None = None
+    # The plugin that registers this heartbeat's handler, when it is not the core's. A
+    # definition whose handler is missing is then "its plugin is not mounted here" (a
+    # profile that leaves it out, an optional package it needs not installed), not a
+    # typo: the scheduler skips it quietly and the app shows the reason. Empty means the
+    # core owns the handler, so a missing one is a real fault and warns.
+    plugin: str = ""
 
 
 @dataclass

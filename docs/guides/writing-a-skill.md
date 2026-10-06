@@ -19,8 +19,13 @@ my-skill/
   pick the lightest route that is honest about what the tool does.
 - **`args[].type`** is one of `string`, `int`, `number`, `enum`, `bool`. `enum` args
   take `options`. Optional args take `required: false` + `default`.
-- **`requires`** is checked before loading: missing packages or env vars skip the skill
-  (reported by the registry) rather than crashing the runtime.
+- **`requires`** is checked before loading: a missing package (`packages`), environment
+  variable (`env_vars`), file (`config_files`), vault credential or Python version leaves
+  the skill blocked rather than crashing the runtime. Each block is reported the same way:
+  one INFO line, said once, naming what is missing (`missing env FOO_KEY`, never its
+  value), and `blocked: env:FOO_KEY` (or `package:`, `config:`, `credential:`) in
+  `iris skills list`. `env_vars` are read from the process environment; `extra` names the
+  `iris-harness[...]` extra to install when a package is what is missing.
 
 ## The tools
 

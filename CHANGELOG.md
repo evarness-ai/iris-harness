@@ -24,3 +24,23 @@ First public release of the IRIS harness.
 - memris (`memris`), the memory graph of claims the harness remembers with.
 - The IRIS API and Governor services, the `iris` CLI, a React web console, and a
   Docker Compose stack with a bundled Ollama.
+
+### Fixed
+
+- A core-only start (no `email` extra, no domain plugins) stays quiet without going
+  blind. A skill whose tools module genuinely fails to load is logged once with its
+  traceback (as before #118's one-line warning), while a skill blocked by a declared
+  missing package gets one INFO line naming the extra to install; `gmail-inbox` now
+  declares all three Google packages its import chain needs and `requires.extra: email`.
+  A `heartbeats.yaml` entry names its owning plugin with `plugin:`: an unmounted owner is
+  skipped quietly (one INFO summary, "plugin not mounted"), but a mounted plugin that
+  registered no handler, a mistyped handler with no `plugin:`, or no plugin lookup bound
+  still warns. Refs #110.
+- A typo in a heartbeat's `plugin:` no longer reads as "plugin not installed":
+  `config/heartbeats.yaml` declares every owner it may name (`plugins_in_tree`,
+  `plugins_external`), a test checks each `plugin:` against them (and the in-tree names
+  against the shipped manifests), and an undeclared owner with a missing handler warns.
+  A skill blocked by a missing env var, config file or credential, not only a package,
+  now logs the same one INFO line and shows `blocked: env:NAME` in `iris skills list`;
+  `requires.env_vars` is now read from the process environment (it was checked against
+  an empty mapping, so a declared variable always counted as missing). Refs #110.

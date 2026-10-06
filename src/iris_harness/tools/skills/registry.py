@@ -24,10 +24,13 @@ class SkillRegistry:
         environment: Mapping[str, str] | None = None,
     ) -> None:
         self.repo_root = Path(repo_root).resolve()
-        self.environment = dict(environment or {})
+        # None = the process environment, read at each discover() (a hot reload sees a
+        # variable set since startup); a mapping is what the caller says the environment is.
+        self.environment = None if environment is None else dict(environment)
         self._packages: tuple[SkillPackage, ...] = ()
         self._load_failures: dict[Path, str] = {}
         self._reported_failures: set[tuple[Path, str]] = set()
+        self._reported_unavailable: set[tuple[str, tuple[str, ...]]] = set()
 
     @property
     def load_failures(self) -> dict[Path, str]:
@@ -50,16 +53,49 @@ class SkillRegistry:
                 packages.append(
                     load_skill_package(self.repo_root, skill_dir, environment=self.environment)
                 )
-            except Exception as exc:  # noqa: BLE001 - isolate one skill's fault from the rest
+            except Exception as exc:  # isolate one skill's fault from the rest
                 reason = _one_line_reason(exc)
                 failures[skill_dir] = reason
-                # discover() also runs per chat turn and on hot reload: say it once.
+                # discover() also runs per chat turn and on hot reload: say it once. A
+                # skill that is genuinely broken (a tools.py that raises, a bad manifest,
+                # an import its manifest does not declare) is a fault, so it is logged
+                # with its traceback; ``load_failures`` carries only the one-line reason.
                 if (skill_dir, reason) not in self._reported_failures:
                     self._reported_failures.add((skill_dir, reason))
-                    logger.warning("skill %s skipped: %s", skill_dir.name, reason)
+                    logger.exception("skill %s failed to load; skipping it", skill_dir.name)
+            else:
+                self._note_unavailable(packages[-1])
         self._packages = tuple(packages)
         self._load_failures = failures
         return self._packages
+
+    def _note_unavailable(self, package: SkillPackage) -> None:
+        """One INFO line for a skill that a missing declared prerequisite leaves blocked.
+
+        Not a fault: the skill declared what it needs (a package, an env var, a config
+        file, a credential, a Python version) and this install lacks it. Said once
+        (``discover()`` re-runs per turn), naming what is missing, never a value; a missing
+        package also names the extra that installs it. The same items, spelled the same,
+        fill ``blocked:`` in ``iris skills list``.
+        """
+        missing = package.missing_prerequisites
+        key = (package.manifest.name, missing)
+        if not missing or key in self._reported_unavailable:
+            return
+        self._reported_unavailable.add(key)
+        extra = package.manifest.requires.extra
+        has_package = any(item.startswith("package:") for item in missing)
+        fix = (
+            f"; install it with: pip install 'iris-harness[{extra}]'"
+            if extra and has_package
+            else ""
+        )
+        logger.info(
+            "skill %s unavailable: missing %s%s",
+            package.manifest.name,
+            ", ".join(_describe_missing(item) for item in missing),
+            fix,
+        )
 
     def list_packages(
         self,
@@ -94,6 +130,12 @@ class SkillRegistry:
             ):
                 indexed[tool_manifest.name] = tool_class
         return indexed
+
+
+def _describe_missing(item: str) -> str:
+    """``package:foo`` -> ``package foo``: the prerequisite kind, then its name."""
+    kind, _, name = item.partition(":")
+    return f"{kind} {name}"
 
 
 def _one_line_reason(exc: BaseException) -> str:

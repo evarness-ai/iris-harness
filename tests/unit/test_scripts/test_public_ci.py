@@ -78,7 +78,9 @@ def _expand(name: str, job: dict[str, Any]) -> list[str]:
     for key, values in matrix.items():
         if isinstance(values, str):
             # `fromJSON(... '["3.12", "3.13"]' || '["3.12"]')`: every literal list counts.
-            values = sorted({v for lit in re.findall(r"'(\[[^']*\])'", values) for v in json.loads(lit)})
+            values = sorted(
+                {v for lit in re.findall(r"'(\[[^']*\])'", values) for v in json.loads(lit)}
+            )
         token = "${{ matrix." + key + " }}"
         if token in name:
             names = [n.replace(token, str(v)) for n in names for v in values]

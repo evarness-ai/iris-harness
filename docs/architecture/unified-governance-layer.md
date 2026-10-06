@@ -335,6 +335,20 @@ floors its own label on it before each `PreLLMCall` (`agent/agentic_core.py:2245
 result a plugin pulled into the turn governs the model calls after it. Outside a turn
 nothing is stamped and a lift is a no-op.
 
+**Identity on every row (G10).** Every `pre_llm_call` row names the `model` and `provider`
+it governs: the shared client and the loop's step (`AgenticCore(llm_identity=...)`, set from
+the tier the step runs on in `runtime/handlers/react.py`); a caller that fires the hook
+around an opaque callable (`TaskPlanner`, `IntentRouter`, `ConversationCompactor`,
+`EntityExtractor`) cannot know the model behind it and says `unknown`. Every
+`pre_tool_use` / `post_tool_use` row names its owner as `tool_plugin` (not `plugin`, which
+on a row is the governance check that wrote it): the plugin that registered the tool
+(stamped on `ToolSpec.plugin` by `PluginAPI.declare_tool` / `PluginRegistry.add_tool`),
+`skill:<name>` for a skill package's tool, `mcp:<server>` for a bridged server's tool
+(`tools/mcp_bridge.py`), the capability's provider for a capability call, and `system` for
+a core tool. Both are in the audit whitelist (`kernel._AUDITED_PAYLOAD_KEYS`) and the
+public fields (`audit_view.PUBLIC_PAYLOAD_FIELDS`); the stable `TurnAuditRow` exposes
+`caller` and `tool_plugin`.
+
 **Every model call in the turn, not only the loop's (2026-09-30).** One rule,
 `apply_turn_floor` (`kernel/governance/turn_label.py`), sets the label of every
 `PreLLMCall` in the turn: the loop, the shared client (`llm/client.py:901` -- curator

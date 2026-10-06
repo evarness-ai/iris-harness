@@ -163,7 +163,17 @@ def _refused_for_its_label(decision: HookDecision) -> bool:
     return decision.decided_by == EgressGate.name
 
 
-def _audit_synthesis_fallback(decision: HookDecision, *, local_tier: str | None) -> None:
+def _llm_identity(config: object) -> tuple[str, str]:
+    """``(model, provider)`` of a tier's ``CodingLLMConfig`` (the router hands it as ``object``)."""
+    from iris_harness.llm.client import CodingLLMConfig
+
+    assert isinstance(config, CodingLLMConfig)
+    return config.model, config.provider
+
+
+def _audit_synthesis_fallback(
+    decision: HookDecision, *, local_tier: str | None, local_llm: tuple[str, str]
+) -> None:
     """One ledger row saying the step left the cloud client for the local tier."""
     import uuid
 
@@ -176,6 +186,9 @@ def _audit_synthesis_fallback(decision: HookDecision, *, local_tier: str | None)
         "refused_by": decision.decided_by,
         "refusal": decision.outcome,
         "local_tier": local_tier,
+        # The model the step actually ran on: the row is a model call's, so it names it.
+        "model": local_llm[0],
+        "provider": local_llm[1],
     }
     session_id = current_session_id()
     if session_id is not None:
@@ -376,6 +389,7 @@ def _skills_to_react_tools(
                     name=name,
                     description=tool_manifest.description,
                     call=_make_call(tool_class),
+                    plugin=f"skill:{package.manifest.name}",
                 )
             )
         if package.manifest.kind == "brief" and package.manifest.brief is not None:
@@ -400,6 +414,7 @@ def _skills_to_react_tools(
                     name=brief_tool_name,
                     description=brief_description,
                     call=_make_brief_call(runner),
+                    plugin=f"skill:{package.manifest.name}",
                 )
             )
     return specs
@@ -665,7 +680,11 @@ def _make_react_handler(
                         "the step runs on the local tier (%s)",
                         local_tier,
                     )
-                    _audit_synthesis_fallback(blocked.decision, local_tier=local_tier)
+                    _audit_synthesis_fallback(
+                        blocked.decision,
+                        local_tier=local_tier,
+                        local_llm=_llm_identity(tier_router.get_llm_config(routing_intent)),
+                    )
         # Tier follows the turn's routing intent (search / multi-step escalate to
         # tier-2) instead of being pinned to "general" — a small tier-1 model on a
         # tool-heavy ReAct loop fails to call tools and just refuses.
@@ -881,8 +900,12 @@ def _make_react_handler(
         )
         if read_first:
             core_config = replace(core_config, read_first=True)
+        # The model this loop's step runs on: the tier's, whose tier the PRE_LLM_CALL row is
+        # governed at (``_llm_call`` may route a search step to the cloud synthesis client,
+        # which governs itself and names its own model on its own row).
         return AgenticCore(
             config=core_config,
+            llm_identity=_llm_identity(tier_router.get_llm_config(effective_intent)),
             llm_call=lambda prompt: _llm_call(prompt, effective_intent),
             tools=tools,
             reserve_tools=reserve,

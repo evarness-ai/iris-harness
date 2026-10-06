@@ -132,6 +132,10 @@ class TurnAuditRow:
     row is about one. ``session_id`` is the chat session the row belongs to, ``tool`` the
     tool a tool-use row is about, and ``deterministic`` / ``handler`` mark an answer a
     deterministic handler gave (``register_intercept``), with that handler's name.
+    ``caller`` is who invoked a tool or capability call (``"model:system"``,
+    ``"plugin:<consumer>"``, ``"mcp:<client>"``) and ``tool_plugin`` who owns the tool a
+    tool-use row is about (a plugin's name, ``"skill:<name>"``, ``"mcp:<server>"``, or
+    ``"system"`` for a tool the core provides); each is None on a row it does not describe.
     """
 
     id: int
@@ -148,6 +152,8 @@ class TurnAuditRow:
     tool: str | None
     deterministic: bool
     handler: str | None
+    caller: str | None = None
+    tool_plugin: str | None = None
 
 
 def _payload(row: AuditRow) -> dict[str, Any]:
@@ -179,6 +185,8 @@ def _turn_audit_row(row: AuditRow) -> TurnAuditRow:
         tool=_optional_str(payload.get("tool_name")),
         deterministic=payload.get("deterministic") is True,
         handler=_optional_str(payload.get("handler")),
+        caller=_optional_str(payload.get("caller")),
+        tool_plugin=_optional_str(payload.get("tool_plugin")),
     )
 
 

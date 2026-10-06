@@ -111,6 +111,36 @@ def test_the_manifest_flavors_and_declarative_keys_are_the_declared_ones() -> No
     assert tuple(ToolArg.model_fields) == tier.declarative_arg_fields
 
 
+def test_the_turn_audit_row_fields_are_the_declared_ones() -> None:
+    """``TurnAuditRow`` is frozen (docs/reference/stable-api.md): a field is a promise.
+
+    Adding one is deliberate (append it here and in the doc); removing or renaming one
+    needs a deprecation cycle first.
+    """
+    from dataclasses import fields
+
+    from iris_harness.testing import TurnAuditRow
+
+    assert tuple(f.name for f in fields(TurnAuditRow)) == (
+        "id",
+        "created_at",
+        "hook_point",
+        "plugin",
+        "decision",
+        "reason",
+        "run_id",
+        "step_id",
+        "classification",
+        "tier",
+        "session_id",
+        "tool",
+        "deterministic",
+        "handler",
+        "caller",
+        "tool_plugin",
+    )
+
+
 def _stable_names() -> set[str]:
     names: set[str] = set()
     for package in stable_tier().packages:

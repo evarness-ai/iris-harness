@@ -342,6 +342,7 @@ def test_audit_rows_hold_metadata_and_digests_never_text(tmp_path: Path) -> None
     payloads = [json.loads(r.payload_json) for r in rows]
     assert all(p["caller"] == "plugin:fin" for p in payloads)
     assert all(p["capability_provider"] == "mail" for p in payloads)
+    assert all(p["tool_plugin"] == "mail" for p in payloads)
     assert all(p["capability"] == "test.inbox" and p["method"] == "search" for p in payloads)
     assert any("args_digest" in p for p in payloads)
     assert any("result_digest" in p for p in payloads)

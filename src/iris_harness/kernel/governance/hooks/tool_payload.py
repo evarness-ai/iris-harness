@@ -60,6 +60,12 @@ ARGS_DIGEST = "args_digest"
 RESULT_DIGEST = "result_digest"
 DIGEST_ALG = "digest_alg"
 
+#: Audit identity key (both tool hooks): who owns the tool called -- the plugin that
+#: registered it, ``skill:<name>``, ``mcp:<server>`` for a bridged server's tool, or
+#: ``system`` for a tool the core provides. Not ``plugin``: an audit row's ``plugin`` column
+#: is the governance check that wrote the row.
+TOOL_PLUGIN = "tool_plugin"
+
 #: Metadata keys (the tool's declaration, stamped by the runner).
 TOOL_EFFECT = "tool_effect"
 TOOL_CONTENT = "tool_content"

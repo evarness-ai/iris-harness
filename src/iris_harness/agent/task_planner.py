@@ -149,7 +149,10 @@ class TaskPlanner:
             # An opaque callable: where it sends the prompt is unknown, so the call is
             # governed as leaving the machine (fail closed), not guessed to be local.
             tier="tier_3",
-            payload={"prompt": prompt},
+            # The callable is opaque: the model behind it is not known here, and the row
+            # says so rather than leaving the identity off. (A ``GovernedPromptCall``
+            # governs itself and names its model.)
+            payload={"prompt": prompt, "model": "unknown", "provider": "unknown"},
         )
         decision, _ = self._kernel.fire_sync(HookPoint.PRE_LLM_CALL, llm_ctx)
         if decision.outcome in ("deny", "require_approval"):

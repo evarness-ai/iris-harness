@@ -167,6 +167,8 @@ def test_a_served_call_is_governed_and_audited_as_the_operators_client(
     pre_payload = json.loads(pre[0].payload_json)
     assert pre_payload.get("args_digest") and "x" not in json.dumps(pre_payload)
     assert json.loads(post[0].payload_json).get("result_digest")
+    # Whose tool it is, stamped from the registry's record (a test tool: the core's).
+    assert {json.loads(r.payload_json)["tool_plugin"] for r in pre + post} == {"system"}
 
 
 @pytest.mark.parametrize("name", ["wipe", "send_it"])
@@ -320,6 +322,8 @@ def test_a_skill_read_is_governed_like_any_tool(tmp_path: Path) -> None:
 
     assert json.loads(stdout.getvalue())["result"]["isError"] is False
     assert {r.agent_type for r in world.rows("pre_tool_use")} == {"mcp:desk"}
+    pre_plugins = {json.loads(r.payload_json)["tool_plugin"] for r in world.rows("pre_tool_use")}
+    assert pre_plugins == {"skill:a-skill"}
 
 
 def test_a_plugin_tool_is_served_with_its_manifest_declaration(tmp_path: Path) -> None:
@@ -363,6 +367,9 @@ def test_a_plugin_tool_is_served_with_its_manifest_declaration(tmp_path: Path) -
     served: list[ServedTool] = list(named.served)
     serve(world.service, served, client="desk", stdin=io.StringIO(json.dumps(call)), stdout=stdout)
     assert json.loads(stdout.getvalue())["result"]["isError"] is True
+    # The registry stamped the owner at registration; the served call's row names it.
+    owners = {json.loads(r.payload_json)["tool_plugin"] for r in world.rows("pre_tool_use")}
+    assert owners == {"notes"}
 
 
 def test_a_plugin_tool_that_raises_is_an_error_to_the_client(tmp_path: Path) -> None:

@@ -880,3 +880,30 @@ def test_mcp_call_is_refused_without_an_audit_key(tmp_path: Path) -> None:
         )
     assert NO_AUDIT_KEY_MESSAGE in str(err.value)
     assert reached == [] and kernel.fire_sync.call_args_list == []
+
+
+def test_a_bridged_tools_rows_name_the_server_that_owns_it(tmp_path: Path) -> None:
+    import json
+
+    from iris_harness.kernel.governance import build_default_kernel
+    from iris_harness.kernel.governance.audit import AuditLog
+
+    audit = AuditLog(db_path=tmp_path / "audit.db")
+    write_governor_policy(tmp_path)
+    write_mcp_config(tmp_path, enabled=True)
+    bridge = MCPBridge(
+        tmp_path,
+        governor_service=build_governor_service(tmp_path),
+        governance_kernel=build_default_kernel(audit_log=audit),
+    )
+    bridge.invoke_external_tool(
+        "filesystem",
+        "read_file",
+        {"path": "README.md"},
+        approval_granted=True,
+        executor=lambda server, tool_name, arguments: {"content": "x"},
+        run_id="run-owner-1",
+    )
+    rows = [r for r in audit.query() if r.hook_point in ("pre_tool_use", "post_tool_use")]
+    assert {r.hook_point for r in rows} == {"pre_tool_use", "post_tool_use"}
+    assert {json.loads(r.payload_json)["tool_plugin"] for r in rows} == {"mcp:filesystem"}

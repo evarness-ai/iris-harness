@@ -204,7 +204,14 @@ def _skill_spec(tool: SkillTool) -> ToolSpec:
         return result if isinstance(result, str) else str(result)
 
     # Served only when its route declares a read (``select_tools``).
-    return ToolSpec(tool.name, tool.description, call, effect="read", confirm="never")
+    return ToolSpec(
+        tool.name,
+        tool.description,
+        call,
+        effect="read",
+        confirm="never",
+        plugin=f"skill:{tool.skill}",
+    )
 
 
 def select_tools(

@@ -44,6 +44,8 @@ _AUDITED_PAYLOAD_KEYS: tuple[str, ...] = (
     "model",
     "provider",
     "tool_name",
+    # Who owns the tool a PRE/POST_TOOL_USE row is about (``hooks/tool_payload.TOOL_PLUGIN``).
+    "tool_plugin",
     "target_tier",
     "context_tokens",
     "evicted_tokens",

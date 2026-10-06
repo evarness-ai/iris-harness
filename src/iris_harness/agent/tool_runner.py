@@ -462,7 +462,12 @@ class GovernedToolRunner:
             classification=call.classification,
             # ``args`` as the caller wrote them: this context is built before any hook's
             # transform, so a secret the credential broker resolves is never digested.
-            payload=pre_tool_payload(name, args, **audit_digester().args_fields(args)),
+            payload=pre_tool_payload(
+                name,
+                args,
+                tool_plugin=tool.plugin,
+                **audit_digester().args_fields(args),
+            ),
             metadata={
                 "caller": call.caller or f"model:{self._agent_type}",
                 "asked_user": call.asked_user,
@@ -567,7 +572,10 @@ class GovernedToolRunner:
             route=f"tool/{name}",
             classification=call.classification,
             payload=post_tool_payload(
-                name, observation, **audit_digester().result_fields(observation)
+                name,
+                observation,
+                tool_plugin=tool.plugin,
+                **audit_digester().result_fields(observation),
             ),
             metadata={
                 "caller": call.caller or f"model:{self._agent_type}",
@@ -748,6 +756,7 @@ class GovernedToolRunner:
                 "capability": call.capability,
                 "method": call.method,
                 "capability_provider": call.provider,
+                "tool_plugin": call.provider,
             },
             metadata={
                 "caller": call.caller,

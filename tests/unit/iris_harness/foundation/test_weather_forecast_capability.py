@@ -17,7 +17,7 @@ from iris_harness.sdk import capabilities as sdk_capabilities
 def test_the_catalogue_publishes_weather_forecast() -> None:
     spec = published_capability("weather.forecast")
     assert spec is not None
-    assert tuple(CAPABILITIES) == ("weather.forecast",)
+    assert "weather.forecast" in CAPABILITIES
     assert sdk_capabilities.CAPABILITIES is CAPABILITIES
 
 

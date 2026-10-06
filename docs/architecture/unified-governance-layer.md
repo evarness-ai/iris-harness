@@ -655,12 +655,15 @@ settles its row as an `error` (`NotRun`), and a capability whose result cannot b
 (`ResultMismatch`) settles as an error too, never `pending` for ever. A capability stream is
 settled once, at its end. If the row cannot be written, or the kernel has no
 ledger, the call is denied and nothing runs; the runner also refuses a high-risk call the
-kernel allowed without confirming the row. Reads and other writes are unchanged
-(post-only, a failed write warns). The ledger is on by default;
-`IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0` opts out, which also turns high-risk calls off.
-Limits: a call through the MCP bridge declares no effect, so it gets no pre-execution row
-(only reads and undeclared tools are unaffected by the opt-out above; declared destructive
-tools and pinned writes are denied when the ledger is off).
+kernel allowed without confirming the row. Reads and other writes are unchanged. The flag
+has three states. Unset (the default): the high-risk class only is recorded, in a ledger
+that is created when such a call first runs (`DeferredSideEffectLedger`); a plain write or
+a read leaves no row, no commit and no file, exactly as before. `=1`: as before, every
+non-read call is recorded after it runs (a failed write warns). `=0`: the ledger is off,
+which also turns high-risk calls off. Limits: a call through the MCP bridge declares no
+effect, so it gets no pre-execution row (only reads and undeclared tools are unaffected by
+the opt-out above; declared destructive tools and pinned writes are denied when the ledger
+is off).
 
 On resume, the kernel runs verification probes for each pending side effect:
 

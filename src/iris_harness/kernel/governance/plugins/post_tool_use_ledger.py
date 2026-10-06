@@ -39,6 +39,10 @@ stopped it). This hook runs before every ``POST_TOOL_USE`` hook that can withhol
 so a call whose result is then denied is still settled: it ran. The row stays ``pending``
 only if the process never got here.
 
+By default every non-read call is recorded (``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1``). With
+``high_risk_only`` (the default when the flag is unset) only the high-risk class is: a plain
+write is not recorded and the ledger is not touched.
+
 The hook always returns ``allow`` — it is an observer, not a gatekeeper. The call has run by
 now, so a failed write is a warning, never a refusal.
 """
@@ -58,6 +62,7 @@ from iris_harness.kernel.governance.hooks.tool_payload import (
     tool_name_of,
 )
 from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
+from iris_harness.kernel.governance.plugins.destructive_approval import pinned_by_declaration
 from iris_harness.kernel.governance.side_effects.probes import NO_PROBE
 
 if TYPE_CHECKING:
@@ -144,8 +149,12 @@ class PostToolUseLedgerHook:
     hook_point: HookPoint = HookPoint.POST_TOOL_USE
     priority: int = 40
 
-    def __init__(self, ledger: SideEffectLedger) -> None:
+    def __init__(self, ledger: SideEffectLedger, *, high_risk_only: bool = False) -> None:
         self._ledger = ledger
+        # ``True``: only the high-risk class (``pinned_by_declaration``) is recorded -- the
+        # rows ``PreToolUseLedgerHook`` wrote before the call, settled here. A plain write
+        # leaves no row and does not touch the ledger. The default records every non-read.
+        self._high_risk_only = high_risk_only
 
     async def __call__(self, ctx: HookContext) -> HookDecision:
         tool = tool_name_of(ctx.payload)
@@ -154,6 +163,13 @@ class PostToolUseLedgerHook:
             # Undeclared (no effect stamped) is not a write anyone declared: a producer
             # that runs non-read tools stamps the declaration (``tool_post_metadata``).
             return HookDecision(outcome="allow", reason="post_tool_use_ledger: not a side effect")
+
+        if self._high_risk_only and not pinned_by_declaration(
+            effect, ctx.metadata.get("tool_confirm")
+        ):
+            return HookDecision(
+                outcome="allow", reason="post_tool_use_ledger: not recorded (high-risk only)"
+            )
 
         step_id: int = ctx.step_id or 0
         tool_call_id = ctx.metadata.get(TOOL_CALL_ID)

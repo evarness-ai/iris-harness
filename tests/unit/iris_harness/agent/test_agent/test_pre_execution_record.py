@@ -29,11 +29,16 @@ from iris_harness.agent.tool_runner import (
     CapabilityCall,
     GovernedToolRunner,
     ToolCall,
+    ToolUnavailable,
 )
 from iris_harness.foundation.capabilities import CapabilityDenied, CapabilitySpec, MethodSpec
 from iris_harness.kernel.governance import GovernanceKernel, HookContext, HookDecision, HookPoint
 from iris_harness.kernel.governance.audit import AuditLog
-from iris_harness.kernel.governance.side_effects import SideEffectLedger, SideEffectRow
+from iris_harness.kernel.governance.side_effects import (
+    DeferredSideEffectLedger,
+    SideEffectLedger,
+    SideEffectRow,
+)
 from iris_harness.kernel.governance.side_effects.probes import NO_PROBE
 from iris_harness.kernel.governance.wiring import register_side_effect_ledger
 
@@ -63,13 +68,17 @@ class _BrokenLedger(SideEffectLedger):
 
 
 def _kernel(
-    tmp_path: Path, ledger: SideEffectLedger | None, *hooks: Any, ledger_hooks: bool = True
+    tmp_path: Path,
+    ledger: SideEffectLedger | None,
+    *hooks: Any,
+    ledger_hooks: bool = True,
+    high_risk_only: bool = False,
 ) -> GovernanceKernel:
     kernel = GovernanceKernel(audit_log=AuditLog(db_path=tmp_path / "audit.db"))
     for hook in hooks:
         kernel.register(hook)
     if ledger_hooks:
-        register_side_effect_ledger(kernel, ledger)
+        register_side_effect_ledger(kernel, ledger, high_risk_only=high_risk_only)
     kernel.init_lock()
     return kernel
 
@@ -154,6 +163,169 @@ def test_a_high_risk_call_that_raises_is_settled_as_an_error_by_class_only(
     (row,) = _all_rows(ledger)
     assert (row.status, row.error, row.completed_at) == ("error", "RuntimeError", None)
     assert SECRET_TEXT not in json.dumps(dataclasses.asdict(row))
+
+
+def _unavailable_tool(name: str, *, cause: bool = True) -> ToolSpec:
+    """A tool as the plugin fault boundary hands it on: its own code raised, and the
+    boundary re-raised ``ToolUnavailable`` (message: text from the call) from the cause."""
+
+    def call(args: dict[str, Any]) -> str:
+        if not cause:
+            raise ToolUnavailable(f"{name} is unavailable. {SECRET_TEXT}")
+        try:
+            raise ValueError(SECRET_TEXT)
+        except ValueError as exc:
+            raise ToolUnavailable(f"{name} is unavailable ({SECRET_TEXT}).") from exc
+
+    return ToolSpec(name, name, call, effect="destructive", confirm="approval")
+
+
+def test_a_high_risk_call_whose_tool_was_unavailable_is_settled_as_an_error(
+    tmp_path: Path,
+) -> None:
+    ledger = SideEffectLedger(tmp_path / "side_effects.db")
+    runner = GovernedToolRunner(kernel=_kernel(tmp_path, ledger), agent_type="chat")
+    outcome = runner.execute(_unavailable_tool("wipe"), {}, _approved())
+
+    assert outcome.status == "ran" and not outcome.ok
+    (row,) = _all_rows(ledger)
+    # The class of what the tool's code raised (the cause), never the message; and not
+    # ``completed`` with its probe attached: the call did not run.
+    assert (row.status, row.error, row.completed_at) == ("error", "ValueError", None)
+    assert SECRET_TEXT not in json.dumps(dataclasses.asdict(row))
+
+
+def test_an_unavailable_tool_with_no_cause_is_settled_under_its_own_class(
+    tmp_path: Path,
+) -> None:
+    ledger = SideEffectLedger(tmp_path / "side_effects.db")
+    runner = GovernedToolRunner(kernel=_kernel(tmp_path, ledger), agent_type="chat")
+    outcome = runner.execute(_unavailable_tool("wipe", cause=False), {}, _approved())
+
+    assert not outcome.ok
+    (row,) = _all_rows(ledger)
+    assert (row.status, row.error) == ("error", "ToolUnavailable")
+    assert SECRET_TEXT not in json.dumps(dataclasses.asdict(row))
+
+
+# ---------------------------------------------------- the default scope: high-risk only
+def test_by_default_a_plain_write_leaves_no_row_and_never_opens_the_ledger(
+    tmp_path: Path,
+) -> None:
+    db = tmp_path / "side_effects.db"
+    ledger = DeferredSideEffectLedger(db)
+    tools = _Tools()
+    runner = GovernedToolRunner(
+        kernel=_kernel(tmp_path, ledger, high_risk_only=True), agent_type="chat"
+    )
+    for effect, confirm in [("write", "once"), ("write", "never"), ("read", "never")]:
+        outcome = runner.execute(
+            tools.spec(f"w-{effect}-{confirm}", effect, confirm),
+            {},
+            ToolCall(run_id="run-1", step_id=2, caller="model:chat", asked_user=True),
+        )
+        assert outcome.status == "ran" and outcome.ok
+    assert len(tools.ran) == 3
+    assert not db.exists()  # no row, no commit, no file
+
+
+@pytest.mark.parametrize(
+    ("effect", "confirm"), [("destructive", "approval"), ("write", "approval")]
+)
+def test_by_default_a_high_risk_call_is_pre_recorded_and_settles(
+    tmp_path: Path, effect: str, confirm: str
+) -> None:
+    db = tmp_path / "side_effects.db"
+    ledger = DeferredSideEffectLedger(db)
+    tools = _Tools()
+    seen_before: list[SideEffectRow] = []
+    base = tools.spec("wipe", effect, confirm)
+
+    def call(args: dict[str, Any]) -> str:
+        seen_before.extend(_all_rows(ledger))
+        return base.call(args)
+
+    runner = GovernedToolRunner(
+        kernel=_kernel(tmp_path, ledger, high_risk_only=True), agent_type="chat"
+    )
+    outcome = runner.execute(base._replace(call=call), {}, _approved())
+
+    assert outcome.status == "ran" and outcome.ok
+    (before,) = seen_before
+    assert before.status == "pending"
+    (after,) = _all_rows(ledger)
+    assert (after.side_effect_id, after.status) == (before.side_effect_id, "completed")
+
+
+def test_by_default_a_high_risk_call_that_raises_settles_as_an_error(tmp_path: Path) -> None:
+    ledger = DeferredSideEffectLedger(tmp_path / "side_effects.db")
+    tools = _Tools()
+    runner = GovernedToolRunner(
+        kernel=_kernel(tmp_path, ledger, high_risk_only=True), agent_type="chat"
+    )
+    runner.execute(tools.spec("wipe", fail=True), {}, _approved())
+    (row,) = _all_rows(ledger)
+    assert (row.status, row.error) == ("error", "RuntimeError")
+
+
+def test_by_default_a_confirm_only_pinned_write_is_pre_recorded_and_settled(
+    tmp_path: Path,
+) -> None:
+    """``effect=write, confirm=approval`` is high-risk by its confirm alone.
+
+    Under the default scope the post hook tells it from a plain write by the ``tool_confirm``
+    the runner stamps on the POST metadata; without it the row would stay ``pending``.
+    """
+    ledger = DeferredSideEffectLedger(tmp_path / "side_effects.db")
+    tools = _Tools()
+    seen: list[str] = []
+    base = tools.spec("send", "write", "approval")
+
+    def call(args: dict[str, Any]) -> str:
+        seen.extend(r.status for r in _all_rows(ledger))
+        return base.call(args)
+
+    runner = GovernedToolRunner(
+        kernel=_kernel(tmp_path, ledger, high_risk_only=True), agent_type="chat"
+    )
+    outcome = runner.execute(base._replace(call=call), {}, _approved())
+
+    assert outcome.status == "ran" and outcome.ok
+    assert seen == ["pending"]
+    (row,) = _all_rows(ledger)
+    assert (row.status, row.error) == ("completed", None)
+
+
+def test_a_plain_write_with_the_flag_on_is_still_recorded_after_the_call(
+    tmp_path: Path,
+) -> None:
+    """``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1``: every non-read call, as before."""
+    ledger = SideEffectLedger(tmp_path / "side_effects.db")
+    tools = _Tools()
+    runner = GovernedToolRunner(kernel=_kernel(tmp_path, ledger), agent_type="chat")
+    runner.execute(
+        tools.spec("note", "write", "once"),
+        {},
+        ToolCall(run_id="run-1", step_id=2, caller="model:chat", asked_user=True),
+    )
+    (row,) = _all_rows(ledger)
+    assert (row.tool, row.status) == ("note", "pending")
+
+
+def test_with_the_flag_off_a_destructive_call_is_denied_and_a_plain_write_runs(
+    tmp_path: Path,
+) -> None:
+    """``IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0``: no ledger, high-risk calls denied (D3)."""
+    tools = _Tools()
+    runner = GovernedToolRunner(kernel=_kernel(tmp_path, None), agent_type="chat")
+    held = runner.execute(tools.spec("wipe"), {}, _approved())
+    plain = runner.execute(
+        tools.spec("note", "write", "once"),
+        {},
+        ToolCall(run_id="run-1", step_id=2, caller="model:chat", asked_user=True),
+    )
+    assert held.status == "held" and plain.status == "ran"
+    assert tools.ran == ["note"]
 
 
 def test_a_high_risk_call_whose_row_cannot_be_written_never_runs(tmp_path: Path) -> None:
@@ -535,6 +707,24 @@ async def test_an_async_high_risk_capability_call_with_no_ledger_never_runs(
         ):
             pass
     assert provider.calls == []
+
+
+@pytest.mark.parametrize(
+    ("effect", "confirm"), [("destructive", "approval"), ("write", "approval")]
+)
+def test_by_default_a_pinned_capability_call_is_pre_recorded_and_settled(
+    tmp_path: Path, effect: str, confirm: str
+) -> None:
+    ledger = DeferredSideEffectLedger(tmp_path / "side_effects.db")
+    provider = _Provider(ledger)
+    _runner(_kernel(tmp_path, ledger, high_risk_only=True)).execute_call(
+        _cap("shred", effect=effect, confirm=confirm), provider.shred, {"id": 1}
+    )
+
+    (before,) = provider.rows_while_running
+    assert before.status == "pending"
+    row = _one_row(ledger)
+    assert (row.side_effect_id, row.status) == (before.side_effect_id, "completed")
 
 
 def test_a_plain_capability_write_keeps_its_post_only_row(tmp_path: Path) -> None:

@@ -54,10 +54,11 @@ Approvals are durable rows in an approval queue. The owner answers in the CLI
 (`iris approvals`), in chat, or in the web console's Actions screen, and the halted run
 resumes from a checkpoint with the approved call, governed again. Mailbox writes are a
 standing approval per account (`iris email writes approve`). Every side effect a tool
-reports lands in the side-effect ledger, which is on by default. A destructive call or a
-pinned write gets its ledger row before it runs, so a crash mid-call still leaves a
-record for `iris run resume` to check; if that row cannot be written, the call is denied
-and nothing runs.
+reports lands in the side-effect ledger when `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1`. A
+destructive call or a pinned write gets its ledger row before it runs whether or not that
+flag is set, so a crash mid-call still leaves a record for `iris run resume` to check; if
+that row cannot be written, the call is denied and nothing runs. With the flag unset, plain
+writes and reads leave no row.
 
 ## Run limits
 

@@ -20,7 +20,7 @@ backend:
     model: llama-guard3:1b
     endpoint: http://localhost:11434
 
-# D5: per-surface p95 latency budgets (ms). Over budget => fail_mode applies.
+# D5: per-surface p95 latency budgets (ms). Over budget is logged (shadow mode); it never denies.
 latency_budget:
   inbound: 150
   retrieved: 150
@@ -53,5 +53,8 @@ output:
 input_safety:
   enabled: true
 
-# closed: degraded guard denies (inbound/retrieved) / holds output with banner.
-fail_mode: closed
+# A guard that cannot run (classifier weights absent, a model down) lets the text through
+# and writes a `guard unavailable` ledger row. There is no `fail_mode` key: one was parsed
+# for a long time and read by nothing, so a "closed" here promised what never happened.
+# The deterministic floor under the retrieved-content guard
+# (IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR, on by default) does not depend on this file.

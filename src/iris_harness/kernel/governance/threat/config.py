@@ -20,7 +20,6 @@ from pydantic import BaseModel, ConfigDict, Field
 #: Maps onto the kernel's ``HookOutcome`` set (plus ``transform`` for G2).
 #: Consumed by the enforcement hooks in later sub-phases; inert in 6a.1.
 OnDetect = Literal["allow", "warn", "require_approval", "deny", "transform"]
-FailMode = Literal["closed", "open"]
 
 #: Global enforcement mode. ``shadow`` downgrades every guard's ``on_detect`` to
 #: log-only (allow + audit) so thresholds can be tuned against real traffic
@@ -148,7 +147,6 @@ class ThreatDetectionConfig(BaseModel):
     retrieved: RetrievedConfig = Field(default_factory=RetrievedConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     input_safety: InputSafetyConfig = Field(default_factory=InputSafetyConfig)
-    fail_mode: FailMode = "closed"
 
     def input_safety_categories(self) -> tuple[frozenset[str], frozenset[str]]:
         """(enforce, log_only) for the input screen, defaulting to the output guard's."""

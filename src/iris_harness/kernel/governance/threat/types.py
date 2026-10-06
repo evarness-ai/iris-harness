@@ -98,8 +98,8 @@ class ThreatClassifier(Protocol):
 
     Implementations must never raise from ``score`` — they return an ``error``
     verdict instead, so a degraded guard can fail-safe rather than break the
-    request path. Enforcement (deny / approval / transform) is the caller's
-    job in later sub-phases, driven by ``config.fail_mode``.
+    request path. Enforcement (deny / approval / transform) is the caller's job; a hook
+    that gets an ``error`` verdict allows the text and audits ``guard unavailable``.
     """
 
     name: str

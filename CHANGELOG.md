@@ -31,7 +31,9 @@ First public release of the IRIS harness.
   actually called: the step resolves its model once and the row and the call share
   it, where the row used to carry a snapshot from when the loop was built and the call
   asked the tier router again (a governor downshift or a tier edit could make them
-  disagree, and each step cost a second governor acquire). `model` and `provider` now
+  disagree, and a turn paid one extra router ask, a governor acquire, for the snapshot).
+  A router answer of the wrong type still fails loudly rather than yielding a row with
+  no model. `model` and `provider` now
   appear in `GET /governance/audit`, `iris governance audit` and the trace, and the
   CLI table has a `by` column (tool owner, capability provider or model).
 - A core-only start (no `email` extra, no domain plugins) stays quiet without going

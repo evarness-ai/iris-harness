@@ -253,3 +253,32 @@ def test_on_the_shipped_tiers_a_secret_search_runs_on_the_local_tier(
     assert len(rows) == len(dialed)  # one per step moved to the local tier
     assert json.loads(rows[0].payload_json)["refused_by"] == "egress_gate"
     assert rows[0].tier == "tier_2"
+
+
+class _CountingRouter(TierRouter):
+    resolves = 0
+
+    def get_llm_config(self, intent: str) -> object:
+        self.resolves += 1
+        return super().get_llm_config(intent)
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["chat", "chat_stream"])
+def test_the_fallback_names_the_step_s_own_config_without_asking_the_router_again(
+    dialed: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stream: bool
+) -> None:
+    """The local model the fallback row names is the config the step already resolved: a
+    step that falls back costs the same router asks as one the cloud synthesis answers."""
+    _use_kernel(monkeypatch, EgressGate())
+    path = tmp_path / "llm_tiers.yaml"
+    path.write_text(_LOCAL_TIERS)
+
+    cloud = _CountingRouter.load_from_yaml(path)
+    _run(cloud, "personal", stream=stream)
+    fell_back = _CountingRouter.load_from_yaml(path)
+    _run(fell_back, "secret", stream=stream)
+
+    assert len(_fallback_rows(tmp_path)) == 1
+    assert fell_back.resolves == cloud.resolves
+    row = json.loads(_fallback_rows(tmp_path)[0].payload_json)
+    assert row["model"] == "local-small"

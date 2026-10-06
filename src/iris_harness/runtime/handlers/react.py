@@ -167,7 +167,12 @@ def _llm_identity(config: object) -> tuple[str, str]:
     """``(model, provider)`` of a tier's ``CodingLLMConfig`` (the router hands it as ``object``)."""
     from iris_harness.llm.client import CodingLLMConfig
 
-    assert isinstance(config, CodingLLMConfig)
+    # An explicit check, not an ``assert``: a router that hands back anything else is a
+    # programming error that must stay loud (``python -O`` strips asserts).
+    if not isinstance(config, CodingLLMConfig):
+        raise TypeError(
+            f"the tier router returned a {type(config).__name__}, expected a CodingLLMConfig"
+        )
     return config.model, config.provider
 
 
@@ -911,8 +916,9 @@ def _make_react_handler(
         def _model_identity() -> tuple[str, str]:
             # Asked once per step, just before its PRE_LLM_CALL: the router's answer is
             # kept for ``_llm_call`` so the row names the model the step then calls.
+            step_config.clear()  # a step that was refused never called; keep nothing stale
             cfg = tier_router.get_llm_config(effective_intent)
-            step_config[:] = [cfg]
+            step_config.append(cfg)
             return _llm_identity(cfg)
 
         return AgenticCore(

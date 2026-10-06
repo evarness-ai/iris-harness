@@ -9,8 +9,9 @@ stack down; ``GET /governance/pii-shadow`` renders the same summary.
 
 ``audit``: the newest ledger rows as ``GET /governance/audit`` returns them
 (``kernel/governance/audit/view.py``): who called (``--caller mcp:`` for every MCP
-client), whether a deterministic handler answered, local or cloud, the reason with email
-addresses masked. Never the payload.
+client), what ran (the ``by`` column: the tool's owning plugin, the capability's provider
+or the model a model call was bound for), whether a deterministic handler answered,
+local or cloud, the reason with email addresses masked. Never the payload.
 
 ``proof-bundle export|verify|check``: the R14 proof bundle -- the ledger's evidence for
 the three onboarding invariants as one versioned JSON document, its offline check, and
@@ -107,7 +108,7 @@ def audit(
     ] = None,
     as_json: Annotated[bool, typer.Option("--json", help="Print the view as JSON.")] = False,
 ) -> None:
-    """The newest governance decisions: hook, decision, caller, label, local or cloud."""
+    """The newest decisions: hook, decision, caller, by (tool owner or model), label, where."""
     from iris_harness.foundation.paths import audit_db_path
     from iris_harness.kernel.governance.audit import AuditLog
     from iris_harness.kernel.governance.audit.view import audit_view

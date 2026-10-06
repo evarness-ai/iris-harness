@@ -2306,7 +2306,10 @@ class AgenticCore:
             return None
         try:
             return self._model_identity()
-        except Exception:  # the ledger's detail must never break the turn
+        except (LookupError, OSError, ValueError):
+            # A recoverable lookup failure (an unknown tier, an unreadable config) costs the
+            # row its model, not the turn: the call asks the router itself and fails there
+            # if it must. A TypeError/AttributeError is a bug and propagates.
             logger.warning("could not resolve the model for the audit row", exc_info=True)
             return None
 

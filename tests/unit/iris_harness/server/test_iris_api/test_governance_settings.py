@@ -54,6 +54,38 @@ def test_governance_state_reports_flags(audit_client: TestClient) -> None:
     assert keys["IRIS_GOVERNANCE_COMMAND_SANDBOX"] is True  # default-on
     assert keys["IRIS_GOVERNANCE_PROMPT_GUARD"] is False  # default-off (opt-in)
     assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER"] is True  # default-on (issue #73)
+    assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL"] is False  # scope: opt-in
+
+
+@pytest.mark.parametrize(
+    ("ledger", "scope", "want_ledger", "want_all"),
+    [
+        ("1", None, True, False),  # explicit on is the same as unset
+        (None, "1", True, True),
+        ("0", None, False, False),
+        ("0", "1", False, False),  # no effect while the ledger is off
+        ("maybe", "maybe", True, False),  # unrecognised: each setting's default
+    ],
+)
+def test_governance_state_reports_both_side_effect_ledger_settings(
+    audit_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    ledger: str | None,
+    scope: str | None,
+    want_ledger: bool,
+    want_all: bool,
+) -> None:
+    for name, raw in (
+        ("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER", ledger),
+        ("IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL", scope),
+    ):
+        if raw is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, raw)
+    keys = {f["key"]: f["on"] for f in audit_client.get("/governance/state").json()["flags"]}
+    assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER"] is want_ledger
+    assert keys["IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL"] is want_all
 
 
 def test_governance_audit_returns_recent_decisions_newest_first(audit_client: TestClient) -> None:

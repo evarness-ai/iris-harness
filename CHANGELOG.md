@@ -16,8 +16,20 @@ First public release of the IRIS harness.
   unset the ledger covers that high-risk class only, and plain writes and reads are
   unchanged (no row, no file). Behavior change for deployments that set
   `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0`: a destructive tool or pinned write is now denied
-  rather than run with no durable record. Remove the setting, or set it to `1` to also
-  record every non-read call, to run them again.
+  rather than run with no durable record. Remove the setting, or set it to `1`, to run
+  them again.
+
+- Behavior change: `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1` (or `true`/`yes`/`on`) is now
+  the same as leaving it unset: the high-risk class only. It used to also record every
+  non-read call, so an explicit `true` silently widened audit scope compared with the
+  default. That scope is now its own boolean, `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL`
+  (default off). If you set `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1` expecting every
+  non-read call to be recorded, also set `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL=1`.
+  `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=0` is unchanged (no ledger; destructive tools and
+  pinned writes are denied), and `..._ALL` set while the ledger is off logs a warning that
+  it has no effect. An explicit `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1` (or `true`/`yes`/`on`)
+  without `..._ALL` logs one warning at startup saying it covers high-risk calls only;
+  leaving the setting unset logs nothing.
 - The side-effect ledger is one shared handle per database, not one per kernel, and a ledger
   key that already holds a row is no longer ignored silently (issue #102). A destructive or
   pinned call whose key is taken is denied before it runs; a call's post-run record that

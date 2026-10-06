@@ -785,16 +785,27 @@ settings:
     default: true
     applies: restart
     label: Side-effect ledger
-    description: Unset (the default) the side-effect ledger (side_effects.db in the governance
-      data dir, $IRIS_HOME/governance when IRIS_HOME is set, else ~/.local/share/iris) covers
-      the high-risk class only. A destructive tool's or a pinned write's row is written before
-      the call runs, and plain writes and reads leave no row and open no file. 1 (on) also records
-      every other non-read call's side effect after it runs. 0 (off) denies every destructive tool
-      and pinned write, since none may run without a durable record.
+    description: On (the default, the same as unset) the side-effect ledger (side_effects.db
+      in the governance data dir, $IRIS_HOME/governance when IRIS_HOME is set, else ~/.local/share/iris)
+      always covers the high-risk class. A destructive tool's or a pinned write's row is written
+      before the call runs, and plain writes and reads leave no row and open no file; setting
+      this to true or 1 does not widen that, use IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL. Off
+      denies every destructive tool and pinned write, since none may run without a durable record.
     tab: guards
     guarded: true
     guard_reason: Turning it off stops governance recording of side effects and denies every
       destructive tool and pinned write.
+  IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_ALL:
+    kind: bool
+    default: false
+    applies: restart
+    label: Side-effect ledger, every non-read call
+    description: Only meaningful while IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER is on. On also records
+      every other non-read call's side effect after it runs (commits, pushes, file writes, sends),
+      on top of the high-risk class the ledger always covers. Off (the default) records the
+      high-risk class only. With the ledger off this has no effect and logs a warning. Before
+      this setting existed, IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER=1 meant this; it no longer does.
+    tab: guards
   IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER_DB_PATH:
     kind: path
     default: null

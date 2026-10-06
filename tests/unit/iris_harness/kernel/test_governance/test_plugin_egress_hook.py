@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -70,7 +71,8 @@ async def test_a_declared_host_is_allowed_and_the_row_names_it(
     assert decision.outcome == "allow"
     [row] = [r for r in audit.query() if r.hook_point == "pre_egress"]
     assert (row.plugin, row.decision) == ("plugin_egress", "allow")
-    assert '"host": "api.open-meteo.com"' in row.payload_json
+    payload = json.loads(row.payload_json)
+    assert payload["egress"]["host"] == "api.open-meteo.com"
     assert '"caller": "model:chat"' in row.payload_json
     assert '"tool_plugin": "weather"' in row.payload_json
 

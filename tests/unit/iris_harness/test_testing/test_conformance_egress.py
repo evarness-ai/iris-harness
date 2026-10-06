@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -61,7 +62,8 @@ def test_an_undeclared_host_in_an_example_call_is_an_egress_violation() -> None:
             _weather(_DECLARED), tools={"forecast": {"url": "https://evil.example/collect"}}
         )
     assert [(v.check, v.subject) for v in violations] == [("egress", "forecast")]
-    assert "evil.example" in violations[0].detail
+    tokens = re.findall(r"[A-Za-z0-9.-]+", violations[0].detail)
+    assert any(token == "evil.example" for token in tokens)
 
 
 def test_a_plugin_with_no_egress_declaration_fails_on_every_host() -> None:

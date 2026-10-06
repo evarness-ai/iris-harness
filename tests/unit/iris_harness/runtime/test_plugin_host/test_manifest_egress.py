@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -171,7 +172,9 @@ def test_iris_plugins_list_and_show_carry_the_declared_egress() -> None:
     assert detail is not None and detail["egress"] == rows["weather"]["egress"]
     assert detail["manifest"]["egress"]["hosts"][0]["host"] == "api.open-meteo.com"
     lines = egress_lines(detail["egress"])
-    assert lines[0].startswith("https://api.open-meteo.com") and "data: internal" in lines[0]
-    assert lines[1].startswith("https://geo.example.org:8443") and "data: personal" in lines[1]
+    first, second = (urlsplit(line.split()[0]) for line in lines[:2])
+    assert (first.scheme, first.hostname, first.port) == ("https", "api.open-meteo.com", None)
+    assert (second.scheme, second.hostname, second.port) == ("https", "geo.example.org", 8443)
+    assert "data: internal" in lines[0] and "data: personal" in lines[1]
     assert "open_web" in egress_lines(rows["fetcher"]["egress"])[0]
     assert egress_lines(rows["quiet"]["egress"]) == []

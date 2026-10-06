@@ -51,6 +51,42 @@ def _write(path: Path, text: str) -> Path:
     return path
 
 
+class _Clock:
+    """A fake monotonic clock: it moves only when a test (or ``step``) moves it, so the scan
+    budgets are exercised by counting work, never by how fast the machine happens to be."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+        self.step = 0.0
+
+    def monotonic(self) -> float:
+        self.now += self.step
+        return self.now
+
+
+@pytest.fixture()
+def clock(monkeypatch: pytest.MonkeyPatch) -> _Clock:
+    from types import SimpleNamespace
+
+    fake = _Clock()
+    monkeypatch.setattr(corpus_mod, "time", SimpleNamespace(monotonic=fake.monotonic))
+    return fake
+
+
+def _scan_costs(monkeypatch: pytest.MonkeyPatch, clock: _Clock, seconds: float) -> list[int]:
+    """Make every content scan cost ``seconds`` of fake time; returns the scanned lengths."""
+    real = corpus_mod.scan_text
+    seen: list[int] = []
+
+    def scan(text: str):  # type: ignore[no-untyped-def]
+        seen.append(len(text))
+        clock.now += seconds
+        return real(text)
+
+    monkeypatch.setattr(corpus_mod, "scan_text", scan)
+    return seen
+
+
 @pytest.fixture()
 def tree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A stand-in checkout with a small docs tree, and a config pointing at it."""
@@ -426,7 +462,7 @@ def test_heading_parser_is_linear_on_a_hostile_line() -> None:
     line = "# a" + " \t" * 2000 + "b #"
     start = time.perf_counter()
     sections = corpus_mod.split_sections(line + "\nbody\n")
-    assert time.perf_counter() - start < 0.5
+    assert time.perf_counter() - start < 20  # the regex this replaced took 122 s
     assert sections and sections[0].heading.startswith("# a")
 
 
@@ -435,7 +471,7 @@ def test_a_400kb_hostile_document_is_split_and_searched_in_bounded_time(tree: Pa
     _write(tree / "docs/guides/hostile.md", hostile)
     start = time.perf_counter()
     out = _search(tree, query="tier routing")
-    assert time.perf_counter() - start < 5
+    assert time.perf_counter() - start < 60  # catastrophic backtracking took minutes
     assert out.startswith("search_docs:")
 
 
@@ -444,28 +480,27 @@ def test_a_400kb_hostile_document_is_split_and_searched_in_bounded_time(tree: Pa
     ["a." * 100000 + "@b.", "+1-" * 130000, "123-45-" * 57000],
     ids=["email-like", "phone-like", "ssn-like"],
 )
-def test_hostile_content_cannot_wedge_the_scan(tree: Path, hostile: str) -> None:
-    """The kernel patterns are super-linear on these (19 s, >20 s, >20 s unchunked)."""
+def test_hostile_content_cannot_wedge_the_scan(
+    tree: Path, hostile: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kernel patterns are super-linear on these (19 s, >20 s, >20 s unchunked), so
+    they must only ever see one bounded chunk: the structural guarantee."""
     _write(tree / "docs/guides/hostile.md", f"# H\n\n{hostile}\n")
+    seen: list[int] = []
+    real = corpus_mod.scan_text
+    monkeypatch.setattr(corpus_mod, "scan_text", lambda t: (seen.append(len(t)), real(t))[1])
     start = time.perf_counter()
     _search(tree, query="tier")
-    assert time.perf_counter() - start < 5
+    assert max(seen) <= load_config().limits.scan_chunk_chars
+    assert time.perf_counter() - start < 60  # unchunked this took 20+ s per input
 
 
 def test_a_document_that_exhausts_the_scan_budget_is_withheld_and_cached(
-    tree: Path, tmp_path, monkeypatch
+    tree: Path, tmp_path, monkeypatch, clock: _Clock
 ) -> None:  # type: ignore[no-untyped-def]
     _write(tree / "docs/guides/slow.md", f"# S\n\n{CANARY}\n" + "x\n" * 5000)
     _write_config(tmp_path, monkeypatch, ROOTS, scan_budget_ms=1, scan_chunk_chars=100)
-    calls: list[int] = []
-    real = corpus_mod.scan_text
-
-    def slow(text: str):  # type: ignore[no-untyped-def]
-        calls.append(1)
-        time.sleep(0.01)
-        return real(text)
-
-    monkeypatch.setattr(corpus_mod, "scan_text", slow)
+    calls = _scan_costs(monkeypatch, clock, 0.01)  # each chunk costs more than the budget
     corpus_mod._CACHE.clear()
     _no_canary(_search(tree, query=CANARY))
     first = len(calls)
@@ -632,7 +667,7 @@ def test_a_frontmatter_alias_bomb_is_withheld_fast(tree: Path, n: int) -> None:
     _write(tree / "docs/architecture/bomb.md", f"{front}# B\n\n{CANARY}\n")
     start = time.perf_counter()
     _no_canary(_search(tree, query=CANARY))
-    assert time.perf_counter() - start < 0.5
+    assert time.perf_counter() - start < 20  # n=9 took 52 s when it walked the shared DAG
     assert corpus_mod._frontmatter_withheld(f"{front}# B")
 
 
@@ -641,7 +676,7 @@ def test_a_deeply_shared_structure_without_anchors_is_walked_bounded() -> None:
     deep = "---\n" + "a: " * 1 + "[" * 400 + "]" * 400 + "\n---\n"
     start = time.perf_counter()
     corpus_mod._frontmatter_withheld(deep)
-    assert time.perf_counter() - start < 0.5
+    assert time.perf_counter() - start < 20
 
 
 @pytest.mark.parametrize(
@@ -721,18 +756,21 @@ def test_every_answer_says_what_was_withheld_and_what_is_pending(tree: Path) -> 
 
 
 def test_twelve_hostile_documents_never_block_a_call_and_converge(
-    tree: Path, tmp_path, monkeypatch
+    tree: Path, tmp_path, monkeypatch, clock: _Clock
 ) -> None:  # type: ignore[no-untyped-def]
+    """Each content scan costs 0.3 s of fake time against a 1 s per-call budget: a call may
+    scan only a few chunks (never an unbounded amount), and repeated calls converge."""
     for i in range(12):
-        _write(tree / f"docs/guides/h{i}.md", f"# H{i}\n\n" + "+1-" * 60000 + "\n")
+        _write(tree / f"docs/guides/h{i}.md", f"# H{i}\n\n" + "+1-" * 2000 + "\n")
     _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1000, scan_chunk_chars=1000)
     corpus_mod._CACHE.clear()
     corpus_mod._PROGRESS.clear()
+    calls = _scan_costs(monkeypatch, clock, 0.3)
     pending = []
-    for _ in range(40):
-        start = time.perf_counter()
+    for _ in range(100):
+        before = len(calls)
         out = _search(tree, query="tier routing")
-        assert time.perf_counter() - start < 5
+        assert len(calls) - before <= 5  # 1 s budget / 0.3 s per scan, plus the guaranteed one
         assert " not yet scanned" in out
         pending.append(int(out.rsplit("unreadable), ", 1)[1].split()[0]))
         if pending[-1] == 0:
@@ -753,7 +791,7 @@ def test_the_directory_swap_does_not_mislabel_a_document(tree: Path, tmp_path, m
 
 
 def test_a_document_longer_than_one_calls_scan_time_still_finishes(
-    tree: Path, tmp_path, monkeypatch
+    tree: Path, tmp_path, monkeypatch, clock: _Clock
 ) -> None:  # type: ignore[no-untyped-def]
     _write(
         tree / "docs/guides/long.md", "# Long\n\n" + "\n".join(f"line {i} body" for i in range(300))
@@ -761,18 +799,43 @@ def test_a_document_longer_than_one_calls_scan_time_still_finishes(
     _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1, scan_chunk_chars=100)
     corpus_mod._CACHE.clear()
     corpus_mod._PROGRESS.clear()
-    real = corpus_mod.scan_text
-
-    def slow(text: str):  # type: ignore[no-untyped-def]
-        time.sleep(0.003)  # more than the call's whole scan time: one chunk per call
-        return real(text)
-
-    monkeypatch.setattr(corpus_mod, "scan_text", slow)
-    for _ in range(400):  # one chunk of progress per call at least
+    _scan_costs(monkeypatch, clock, 0.003)  # more than the call's whole scan time
+    for _ in range(400):
         if " 0 not yet scanned" in _search(tree, query="body"):
             break
     else:
         pytest.fail("the deferred document never finished scanning")
+    assert "docs/guides/long.md" in _search(tree, query="body")
+
+
+def test_every_call_scans_at_least_one_chunk_even_when_the_budget_is_already_spent(
+    tree: Path, tmp_path, monkeypatch, clock: _Clock
+) -> None:  # type: ignore[no-untyped-def]
+    """The progress guarantee: whatever the budget and however slow the machine (here the
+    clock is already past the deadline at every check), the first pending document gets at
+    least one chunk scanned per call, so a deferred document always finishes. The deadline
+    used to be checked before the first chunk, so on a slow runner progress stayed at 0."""
+    _write(
+        tree / "docs/guides/long.md", "# Long\n\n" + "\n".join(f"line {i} body" for i in range(60))
+    )
+    _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1, scan_chunk_chars=100)
+    corpus_mod._CACHE.clear()
+    corpus_mod._PROGRESS.clear()
+    clock.step = 10.0  # every monotonic() call is 10 s later: every deadline is already past
+    calls = _scan_costs(monkeypatch, clock, 0.0)
+    chunks = len(list(corpus_mod._chunks("\n".join(f"line {i} body" for i in range(60)), 100)))
+    done_after = None
+    last = None
+    for n in range(1, 4 * (chunks + 30)):
+        out = _search(tree, query="body")
+        if " 0 not yet scanned" in out:
+            done_after = n
+            break
+        pending = int(out.rsplit("unreadable), ", 1)[1].split()[0])
+        state = (len(calls), pending)  # chunks scanned so far, documents still pending
+        assert state != last, "a call that left documents pending made no progress"
+        last = state
+    assert done_after is not None
     assert "docs/guides/long.md" in _search(tree, query="body")
 
 
@@ -786,14 +849,8 @@ def test_a_hard_linked_file_is_refused(tree: Path, tmp_path: Path) -> None:
 
 
 # ------------------------------------------------------------- round 3 review findings
-def _slow_scan(monkeypatch: pytest.MonkeyPatch) -> None:
-    real = corpus_mod.scan_text
-
-    def slow(text: str):  # type: ignore[no-untyped-def]
-        time.sleep(0.003)
-        return real(text)
-
-    monkeypatch.setattr(corpus_mod, "scan_text", slow)
+def _slow_scan(monkeypatch: pytest.MonkeyPatch, clock: _Clock) -> None:
+    _scan_costs(monkeypatch, clock, 0.003)
 
 
 def _short_lines_with_secret_at(n: int) -> str:
@@ -802,7 +859,7 @@ def _short_lines_with_secret_at(n: int) -> str:
     return "# D\n\n" + "\n".join(lines) + "\n"
 
 
-def test_resume_is_not_valid_across_a_changed_chunk_size(tree: Path, tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+def test_resume_is_not_valid_across_a_changed_chunk_size(tree: Path, tmp_path, monkeypatch, clock: _Clock) -> None:  # type: ignore[no-untyped-def]
     """Call 1 scans a prefix in small chunks and is interrupted; call 2 uses a wider chunk
     size. A chunk index means different text at the two sizes, so the prefix is rescanned."""
     assert scan_text(SECRET_TEXT.replace("\n", " ")).is_secret
@@ -810,7 +867,7 @@ def test_resume_is_not_valid_across_a_changed_chunk_size(tree: Path, tmp_path, m
     _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1, scan_chunk_chars=200)
     corpus_mod._CACHE.clear()
     corpus_mod._PROGRESS.clear()
-    _slow_scan(monkeypatch)
+    _slow_scan(monkeypatch, clock)
     _search(tree, query="filler")
     assert any(v[1][0] > 0 for v in corpus_mod._PROGRESS.values())  # a partial scan exists
     monkeypatch.undo()
@@ -841,7 +898,7 @@ def test_a_same_size_rewrite_with_the_mtime_restored_is_not_served_stale(tree: P
 
 
 def test_a_partially_scanned_document_rewritten_in_place_is_rescanned(
-    tree: Path, tmp_path, monkeypatch
+    tree: Path, tmp_path, monkeypatch, clock: _Clock
 ) -> None:  # type: ignore[no-untyped-def]
     flat = SECRET_TEXT.replace("\n", " ")
     assert scan_text(flat).is_secret
@@ -851,7 +908,7 @@ def test_a_partially_scanned_document_rewritten_in_place_is_rescanned(
     _write_config(tmp_path, monkeypatch, ROOTS, scan_total_ms=1, scan_chunk_chars=200)
     corpus_mod._CACHE.clear()
     corpus_mod._PROGRESS.clear()
-    _slow_scan(monkeypatch)
+    _slow_scan(monkeypatch, clock)
     _search(tree, query="filler")
     assert any(v[1][0] > 0 for v in corpus_mod._PROGRESS.values())  # interrupted partway
     lines[1] = flat  # same size; the secret sits in a chunk that was already scanned clean

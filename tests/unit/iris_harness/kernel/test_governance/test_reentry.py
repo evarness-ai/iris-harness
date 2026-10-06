@@ -181,3 +181,29 @@ def test_hostile_text_is_bounded_by_the_caps(hostile: str) -> None:
     start = time.perf_counter()
     reenter_many([("assistant", hostile)] * 5, reader="w", origin="t")
     assert time.perf_counter() - start < 2.0
+
+
+def test_a_text_with_more_spans_than_the_floor_cap_is_bounded_and_never_raw(
+    _clean: list[ReentryAudit],
+) -> None:
+    from iris_harness.kernel.governance.external_content import MAX_REDACTIONS
+
+    hostile = "[INST] " * (100 * 1024 // 7)  # about 100 KB, thousands of spans
+    owner = "[INST] is a chat-template tag I am asking about"
+    got = reenter_many(
+        [("user", owner), ("assistant", hostile), ("assistant", "[INST] second")],
+        reader="window",
+        origin="transcript",
+    )
+    assert got[0].text == owner  # the owner's turn is untouched
+    big = got[1]
+    assert big.capped and big.spans > MAX_REDACTIONS and big.chars == MAX_ITEM_CHARS
+    assert "[INST]" not in big.text and big.text.endswith(CUT_MARKER)
+    assert len(big.text) < 4_000  # the spans collapse into one marker: output is bounded
+    assert "[INST]" not in got[2].text
+    assert len(_clean) == 1
+    event = _clean[0]
+    assert event.capped_items == 1 and event.spans > MAX_REDACTIONS
+    assert event.items == 3 and event.role_counts == {"user": 1, "assistant": 2}
+    assert event.chars_scanned == MAX_ITEM_CHARS + len("[INST] second")
+    assert "[INST]" not in repr(event.as_payload())

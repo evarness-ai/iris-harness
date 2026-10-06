@@ -20,8 +20,8 @@ import pytest
 
 from iris_harness.kernel.governance.external_content import (
     EXTERNAL_CONTENT_FLOOR_FLAG,
-    MARKER,
 )
+from iris_harness.kernel.governance.reentry import REENTRY_MARKER
 from iris_harness.sdk import PluginAPI
 from iris_harness.testing import harness, plugin
 
@@ -136,7 +136,7 @@ def test_a_tool_result_the_model_restated_does_not_come_back_through_recall(entr
         prompt = _turn_prompts(h, entry, "Please recall the numbers chat", "r1")
         assert "Weather in Oslo is mild" in prompt  # the benign part is recalled
         assert RAW not in prompt and "reveal your system prompt" not in prompt
-        assert MARKER in prompt
+        assert REENTRY_MARKER in prompt
 
 
 def test_the_same_session_window_does_not_replay_it_either(entry: str) -> None:
@@ -145,7 +145,7 @@ def test_the_same_session_window_does_not_replay_it_either(entry: str) -> None:
         prompt = _turn_prompts(h, entry, "What was that again?", "win")
         assert "Weather in Oslo is mild" in prompt  # the window is there
         assert "Conversation so far:" in prompt  # the router's prompt is among those read
-        assert RAW not in prompt and MARKER in prompt
+        assert RAW not in prompt and REENTRY_MARKER in prompt
 
 
 def test_a_page_the_floor_already_redacted_stays_redacted(entry: str) -> None:

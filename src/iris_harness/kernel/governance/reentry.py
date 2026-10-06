@@ -43,7 +43,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from iris_harness.kernel.governance.external_content import floor_enabled, scan
+from iris_harness.kernel.governance.external_content import MARKER, floor_enabled, scan
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,9 @@ MAX_CALL_CHARS = 128 * 1024
 
 CUT_MARKER = "[not scanned: text over the re-entry limit was cut]"
 SPENT_MARKER = "[not scanned: this read passed the re-entry limit]"
+#: What replaces a matched span in stored text. The floor's own marker says "external content",
+#: which is wrong for the model's own earlier turns, so re-entry words it for stored content.
+REENTRY_MARKER = "[redacted: instruction-like text in stored content]"
 
 #: ``audit_log.hook_point`` / ``plugin`` of the rows this module writes.
 AUDIT_HOOK_POINT = "reentry_scan"
@@ -167,11 +170,12 @@ def _scan_cached(text: str) -> tuple[str, tuple[str, ...], int, bool]:
             _memo.move_to_end(key)
             return hit[0], hit[1], hit[2], True
     result = scan(text)
+    redacted = result.text.replace(MARKER, REENTRY_MARKER) if result.spans else result.text
     with _lock:
-        _memo[key] = (result.text, result.ids, result.spans)
+        _memo[key] = (redacted, result.ids, result.spans)
         if len(_memo) > _MEMO_MAX:
             _memo.popitem(last=False)
-    return result.text, result.ids, result.spans, False
+    return redacted, result.ids, result.spans, False
 
 
 def _one(text: str, role: str, remaining: int | None) -> tuple[Reentry, int | None]:
@@ -274,6 +278,7 @@ def reenter_many(
 __all__ = [
     "AUDIT_HOOK_POINT",
     "CUT_MARKER",
+    "REENTRY_MARKER",
     "MAX_CALL_CHARS",
     "MAX_ITEM_CHARS",
     "SPENT_MARKER",

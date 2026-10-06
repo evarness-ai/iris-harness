@@ -16,6 +16,10 @@ tools:
       surface "things I need to do" separately from "things I'm waiting on".
       Expired tasks are never listed.
     governor_route: task/read
+    # Task titles can come from third parties (a followup task is titled from an email subject),
+    # so every tool here returns external text as a class (owner decision, issue #146): the model
+    # reads it inside the untrusted-content envelope, and a later tool cannot skip the floor.
+    content: external
     args:
       - name: limit
         type: int
@@ -35,6 +39,10 @@ tools:
       today (local timezone). Sorted by due_at ascending. Expired tasks are
       never listed; include_overdue=false lists only tasks due today.
     governor_route: task/read
+    # Task titles can come from third parties (a followup task is titled from an email subject),
+    # so every tool here returns external text as a class (owner decision, issue #146): the model
+    # reads it inside the untrusted-content envelope, and a later tool cannot skip the floor.
+    content: external
     args:
       - name: limit
         type: int
@@ -54,6 +62,10 @@ tools:
       expired, as one headed line: "## Overdue (2)" then
       "- Renew registration · Call bank". Empty when nothing is overdue.
     governor_route: task/read
+    # Task titles can come from third parties (a followup task is titled from an email subject),
+    # so every tool here returns external text as a class (owner decision, issue #146): the model
+    # reads it inside the untrusted-content envelope, and a later tool cannot skip the floor.
+    content: external
     args:
       - name: limit
         type: int
@@ -69,6 +81,10 @@ tools:
       them. Surfaced in the brief so the user can decide whether to
       mark done or re-open the conversation.
     governor_route: task/read
+    # Task titles can come from third parties (a followup task is titled from an email subject),
+    # so every tool here returns external text as a class (owner decision, issue #146): the model
+    # reads it inside the untrusted-content envelope, and a later tool cannot skip the floor.
+    content: external
     args:
       - name: limit
         type: int

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from iris_harness.agent.agentic_core import _build_react_prompt
-from iris_harness.kernel.governance.external_content import MARKER
+from iris_harness.kernel.governance.reentry import REENTRY_MARKER
 from iris_harness.memory.compactor import ConversationTurn
 from iris_harness.memory.retriever import MemoryContext, MemoryRetriever
 from iris_harness.memory.semantic_index import RetrievedTurn
@@ -60,7 +60,7 @@ def _turns(store: MemoryStore) -> list[RetrievedTurn]:
 def test_related_turns_scan_the_assistant_and_not_the_owner(store: MemoryStore) -> None:
     context = _retriever(store, _turns(store)).build_context(query="Oslo", session_id="now")
     joined = "\n".join(context.related_turns)
-    assert RAW not in joined and MARKER in joined and "Oslo is mild" in joined
+    assert RAW not in joined and REENTRY_MARKER in joined and "Oslo is mild" in joined
     assert MINE in joined
 
 
@@ -100,7 +100,7 @@ def test_the_window_and_the_summary_are_scanned_where_the_context_is_built(
     sessions._session_summaries["s"] = f"Earlier: weather. {RAW}"
     context = sessions.build_memory_context("and now?", session_id="s")
     window = "\n".join(context.recent_turns)
-    assert RAW not in window and MARKER in window and MINE in window
+    assert RAW not in window and REENTRY_MARKER in window and MINE in window
     assert context.summary is not None and RAW not in context.summary
     # the in-memory window is the stored text, unchanged
     assert RAW in sessions.conversations["s"][1].content
@@ -123,7 +123,7 @@ def test_the_prompt_builder_scans_a_summary_it_was_handed() -> None:
         memory_context=MemoryContext(summary=f"Earlier: weather. {RAW}"),
         memory_token_budget=4300,
     )
-    assert "Earlier: weather" in prompt and RAW not in prompt and MARKER in prompt
+    assert "Earlier: weather" in prompt and RAW not in prompt and REENTRY_MARKER in prompt
 
 
 def test_the_router_context_scans_assistant_turns_before_the_200_character_cut(
@@ -139,5 +139,5 @@ def test_the_router_context_scans_assistant_turns_before_the_200_character_cut(
     ]
     context = sessions.format_recent_context("s3")
     assert context is not None
-    assert "Ignore all previous" not in context and MARKER in context
+    assert "Ignore all previous" not in context and REENTRY_MARKER in context
     assert MINE.replace("\n", " ")[:150] in context  # the owner's own turn is verbatim

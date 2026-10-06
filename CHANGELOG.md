@@ -116,7 +116,7 @@ First public release of the IRIS harness.
   anything over 16 KB per text or 128 KB per read with a visible `[not scanned: ...]` marker,
   and writes one counts-only `audit_log` row per read when something matched or a cap was hit.
   It follows `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`; there is no new setting. Phrase-level
-  only; the recalled text is redacted but not yet marked as untrusted. See "Stored text
+  only; the recalled text is redacted (with the marker `[redacted: instruction-like text in stored content]`, since it is the model's own earlier text and not external content) but not yet marked as untrusted. See "Stored text
   coming back into a prompt" in `docs/concepts/governance.md`.
 
 - The governed agent harness (`iris_harness`): intent routing, planning, a ReAct

@@ -82,6 +82,8 @@ manifest_fields:
   - provides
   - requires
   - uses
+  # Issue #103: the hosts the plugin's code may contact (declared; enforced separately).
+  - egress
   - capabilities
   - identity
   - search_providers

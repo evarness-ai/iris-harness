@@ -17,6 +17,12 @@ First public release of the IRIS harness.
   reach the identity files, the vault, `.env` files, the owner's data or any store, and a
   document that classifies `secret` is dropped. An install without the docs says so.
 
+- Plugin manifests can declare `egress:` (issue #103): the hosts a plugin's code may
+  contact. Declared only, not enforced until the governed client lands (#103b). The host
+  grammar refuses IP literals in any spelling, `localhost`, newlines, repeated dots,
+  suffix-only wildcards (`*.com`) and over-long hosts; `iris plugins show` and
+  `--dump-config` print `none declared (egress not enforced yet)` for a plugin without one.
+
 ### Changed
 
 - **Default flipped (issue #104): text a tool, capability or MCP server declares

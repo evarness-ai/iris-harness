@@ -356,6 +356,25 @@ async def test_web_search_is_the_declared_search_engine_tool(tmp_path: Path) -> 
     }
 
 
+async def test_a_declared_external_service_is_checked_as_egress(tmp_path: Path) -> None:
+    """Issue #103: a plugin tool's arguments (a home address) leaving to its declared host
+    are read by the egress column by declaration, though no name in a list says "network"."""
+    kernel, audit = _kernel(tmp_path, "shadow")
+    await _fire(
+        kernel,
+        _tool_ctx("weather_forecast", {"place": PII["email"]}, sends_to="external_service"),
+    )
+    report = _report(audit)
+    assert report["checked"] == ["egress"]
+    assert {(o["kind"], o["guard"]) for o in report["observations"]} == {("email", "egress")}
+
+
+async def test_an_undeclared_plugin_tool_is_not_an_egress_call(tmp_path: Path) -> None:
+    kernel, audit = _kernel(tmp_path, "shadow")
+    await _fire(kernel, _tool_ctx("weather_forecast", {"place": PII["email"]}))
+    assert _report(audit) == {"checked": []}
+
+
 async def test_web_search_off_without_the_declaration(tmp_path: Path) -> None:
     """``research`` by name alone is not a search engine: the declaration is what counts."""
     kernel, audit = _kernel(tmp_path, "shadow")

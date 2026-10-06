@@ -48,6 +48,7 @@ from iris_harness.foundation.paths import data_dir as resolve_data_dir
 from iris_harness.foundation.settings import SETTINGS_DB_NAME, SettingsStore
 from iris_harness.kernel.governance import kernel_from_env
 from iris_harness.kernel.governance.caller_policy import register_caller_policy
+from iris_harness.kernel.governance.plugin_egress import register_egress_policy
 from iris_harness.kernel.governance.unmask_grants import register_unmask_policy
 from iris_harness.llm.budget import budget_for
 from iris_harness.llm.client import CodingLLMConfig, GovernedPromptCall
@@ -73,6 +74,7 @@ from iris_harness.runtime.channel_wiring import (
 )
 from iris_harness.runtime.classifiers import _build_intent_classifier
 from iris_harness.runtime.confirmations import Confirmations
+from iris_harness.runtime.egress_access import compile_egress_policy
 from iris_harness.runtime.facade import IrisRuntime
 from iris_harness.runtime.governance_judge import build_governance_judge
 from iris_harness.runtime.handlers.general import (
@@ -312,6 +314,9 @@ def _mount_plugins(runtime: IrisRuntime, in_process: Sequence[InProcessPlugin] =
     register_caller_policy(
         compile_caller_policy(runtime.plugin_registry, config_dir=runtime.config_dir)
     )
+    # Issue #103: which hosts each mounted plugin may contact, from the same manifests
+    # (`egress:`). Declared, not yet enforced: nothing reads the policy yet.
+    register_egress_policy(compile_egress_policy(runtime.plugin_registry))
     # ADR-0125: which owner-identity kinds each capability consumer sees unmasked, from
     # the same manifests; unregistered, capability masking grants nothing.
     register_unmask_policy(compile_unmask_policy(runtime.plugin_registry))

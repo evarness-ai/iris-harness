@@ -16,6 +16,7 @@ Where each column is checked:
   same pattern set, so the calls audited are the calls that guard inspects), over the
   tool's arguments; ``log_only_destinations`` relax a deny to ``log`` at ``github_*`` and
   ``mcp_*``, and the observation says so.
+  A tool declaring ``sends_to: external_service`` is checked here too, by declaration.
 - ``web_search`` -- ``PRE_TOOL_USE``, a tool that declares ``sends_to: search_engine`` in
   its manifest (the runner stamps it, ``tool_payload.TOOL_SENDS_TO``). By declaration,
   never by a list of tool names: the research plugin may import only the SDK, so its own
@@ -61,6 +62,7 @@ from iris_harness.kernel.governance.audit.digest import (
 from iris_harness.kernel.governance.hooks.response_payload import RESPONSE, audience_of
 from iris_harness.kernel.governance.hooks.tool_payload import (
     ARGS,
+    sends_to_external_service,
     sends_to_search_engine,
     tool_name_of,
 )
@@ -293,7 +295,11 @@ class OwnerPiiShadowHook:
         if ctx.hook_point == HookPoint.PRE_TOOL_USE:
             tool = tool_name_of(payload)
             args = list(_leaves(payload.get(ARGS)))
-            if tool and is_network_tool(tool, self._network_tools):
+            if (tool and is_network_tool(tool, self._network_tools)) or sends_to_external_service(
+                ctx.metadata
+            ):
+                # A network tool by name, or a tool that declares its arguments go to an
+                # external service (issue #103): one egress check, whichever says so.
                 checks.append(("egress", args, {"destination": tool}))
             if sends_to_search_engine(ctx.metadata):
                 checks.append(("web_search", args, {}))

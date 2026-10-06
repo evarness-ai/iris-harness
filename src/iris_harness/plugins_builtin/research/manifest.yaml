@@ -15,6 +15,13 @@ party: first-party
 provides:
   - tool
   - intent_handler
+# Issue #103: where the plugin's code connects. It fetches the pages a search finds and
+# the operator's own SearXNG, so no fixed list describes it; `open_web` says "any host"
+# out loud. Its keyed providers (api.tavily.com, api.exa.ai, api.search.brave.com,
+# duckduckgo.com) are covered by it. Its own SSRF checks (extract.py) stay: they refuse
+# non-public addresses, which a host list cannot.
+egress:
+  open_web: true
 tools:
   research:
     effect: read

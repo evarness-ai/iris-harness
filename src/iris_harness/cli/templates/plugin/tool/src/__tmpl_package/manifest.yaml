@@ -15,5 +15,6 @@ tools:
     # removes the owner's data is `effect: destructive` (approved per call).
     effect: read
     # internal: the owner's or IRIS's own data. Text a third party wrote is `external`,
-    # and every result is then scanned for injected instructions before the model reads it.
+    # and every result then reaches the model inside an <external_content> envelope with
+    # instruction-like text redacted (IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR, on by default).
     content: internal

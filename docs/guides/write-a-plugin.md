@@ -42,7 +42,7 @@ provides: [tool]
 tools:
   weather_now:
     effect: read        # read | write (asks once per run) | destructive (approved per call)
-    content: internal   # external: a third party wrote it; scanned when the opt-in prompt guard is on
+    content: internal   # external: a third party wrote it; marked untrusted and tripwire-scanned by default (governance.md)
 ```
 
 ```python
@@ -61,7 +61,9 @@ def setup(api: PluginAPI) -> None:
 A tool must be declared under `tools:` with its effect, or the plugin is refused when
 it mounts. The declaration is what the governance kernel enforces: a `write` tool asks
 the owner once before the first write of a run, a `destructive` one waits for approval
-on every call, and an `external` tool's result is scanned before the model sees it.
+on every call, and an `external` tool's result reaches the model inside an untrusted-content envelope with
+instruction-like text redacted (the always-on floor; the optional model guard adds a
+classifier). See [governance](../concepts/governance.md#the-external-content-floor).
 
 ## The six registration kinds
 

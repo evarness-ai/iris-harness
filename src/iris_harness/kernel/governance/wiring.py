@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
+from iris_harness.foundation.env import env_flag
 from iris_harness.foundation.paths import config_path as _resolved_config_path
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.cost import CostStore
@@ -149,6 +150,7 @@ def build_default_kernel(
     side_effect_ledger_db_path: Path | None = None,
     prompt_guard_inbound: Hook | None = None,
     prompt_guard_retrieved: Hook | None = None,
+    external_content_floor: Hook | None = None,
     input_safety: Hook | None = None,
     approval_queue: ApprovalQueue | None = None,
     channel_router: ChannelRouter | None = None,
@@ -304,6 +306,12 @@ def build_default_kernel(
     # G2 indirect-injection guard over tool/RAG results. Opt-in, shadow-first.
     if prompt_guard_retrieved is not None:
         kernel.register(prompt_guard_retrieved)
+    # ExternalContentFloorHook (priority 46) runs after it: the always-on deterministic floor
+    # for `content: external` results (tripwire + untrusted-content envelope, no model, no
+    # weights). Built by `_external_content_floor_from_env` (default ON); None only when the
+    # operator turned it off, or a caller built the kernel without it.
+    if external_content_floor is not None:
+        kernel.register(external_content_floor)
     # McpClientEgressHook (priority 42, after the ledger): a result served to an
     # MCP client (`iris mcp serve`) is withheld when it is secret, or personal and the
     # owner has not declared the client local. A no-op for every other caller.
@@ -405,6 +413,7 @@ def kernel_from_env() -> GovernanceKernel | None:
     mcp_allowlist_enabled, mcp_governance_map = _mcp_allowlist_from_env()
     side_effect_ledger, side_effect_ledger_enabled = _side_effect_ledger_from_env()
     prompt_guard_inbound, prompt_guard_retrieved = _prompt_guards_from_env()
+    external_content_floor = _external_content_floor_from_env()
     input_safety = _input_safety_from_env()
     owner_pii = owner_pii_mode_from_env()
     if owner_pii.problem is not None:
@@ -464,6 +473,7 @@ def kernel_from_env() -> GovernanceKernel | None:
         side_effect_ledger_db_path=_side_effect_ledger_db_path_from_env(),
         prompt_guard_inbound=prompt_guard_inbound,
         prompt_guard_retrieved=prompt_guard_retrieved,
+        external_content_floor=external_content_floor,
         input_safety=input_safety,
         owner_pii_mode=owner_pii.mode,
     )
@@ -830,6 +840,35 @@ def _prompt_guards_from_env() -> tuple[Hook | None, Hook | None]:
             exc_info=True,
         )
         return None, None
+
+
+#: The flag behind the external-content floor (a plain boolean, default ON).
+EXTERNAL_CONTENT_FLOOR_FLAG: Final = "IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR"
+
+
+def _external_content_floor_from_env() -> Hook | None:
+    """Build the always-on external-content floor, or None when the operator turned it off.
+
+    ON by default, unlike the model guard it sits under: it needs no weights and no network,
+    so there is no install where it cannot run. ``IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`` is
+    a plain boolean read like every other flag (``foundation.env.env_flag``: unset is on,
+    ``0``/``false``/``no``/``off`` or blank is off, anything else on); turning it off logs a
+    warning, because the owner then has neither the marker nor the tripwire on text a third
+    party wrote.
+    """
+    if not env_flag(EXTERNAL_CONTENT_FLOOR_FLAG, default=True):
+        logger.warning(
+            "governance: %s is OFF; tool results declared `content: external` reach the model "
+            "unmarked and unscanned unless the model guard (IRIS_GOVERNANCE_PROMPT_GUARD) is on "
+            "and its classifier is installed.",
+            EXTERNAL_CONTENT_FLOOR_FLAG,
+        )
+        return None
+    from iris_harness.kernel.governance.plugins.external_content_floor import (
+        ExternalContentFloorHook,
+    )
+
+    return ExternalContentFloorHook()
 
 
 def _input_safety_from_env() -> Hook | None:

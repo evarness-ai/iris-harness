@@ -5,7 +5,7 @@ tool then tries it in the chain's order (``config/search_providers.yaml``: after
 configured built-ins, before the keyless DuckDuckGo floor) and it inherits what the chain
 does for every provider: a question about the owner's own finances never reaches it,
 their name and email addresses are stripped from the query, results are cached, reranked
-and scanned for injected instructions before the model reads them, and every call is
+and marked untrusted and tripwire-scanned before the model reads them, and every call is
 audited. There is no tool of its own to declare.
 
 :class:`Backend` serves canned results, so the plugin works offline. Replace

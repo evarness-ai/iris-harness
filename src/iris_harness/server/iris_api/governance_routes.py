@@ -60,6 +60,11 @@ _GOVERNANCE_FLAGS: tuple[tuple[str, str, bool], ...] = (
     ("IRIS_GOVERNANCE_LOOP_DETECT_ENABLED", "Loop detection", False),
     ("IRIS_GOVERNANCE_COST_LIMITER_ENABLED", "Cost limiter", False),
     ("IRIS_GOVERNANCE_PROMPT_GUARD", "Prompt / threat guard", False),
+    (
+        "IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR",
+        "External-content floor (marker + instruction tripwire, no model)",
+        True,
+    ),
     ("IRIS_GOVERNANCE_INPUT_SAFETY", "Input safety screen", False),
 )
 

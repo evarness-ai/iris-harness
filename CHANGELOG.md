@@ -11,6 +11,30 @@ First public release of the IRIS harness.
 
 ### Changed
 
+- **Default flipped (issue #104): text a tool, capability or MCP server declares
+  `content: external` is now marked and scanned on every install.** The new
+  external-content floor needs no model, no weights and no network. An external result
+  reaches the model inside an `<external_content source=... trust="untrusted">` envelope,
+  and a short list of deterministic patterns (instruction overrides, chat-template and
+  tool-call syntax, exfiltration instructions, hidden characters) is redacted with a ledger
+  row naming the pattern ids, the tool and the source, never the text. It is on by default
+  (`IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR`, a plain boolean; turning it off logs a
+  warning) and acts at `POST_TOOL_USE`, so the agent loop, `api.tools`, `iris mcp serve`,
+  the MCP bridge and capability results all get it. A text that quotes an attack phrase is
+  redacted too: see "The external-content floor" in `docs/concepts/governance.md` for the
+  pattern list and its limits. The model guard (`IRIS_GOVERNANCE_PROMPT_GUARD`) is
+  unchanged: opt-in, shadow-first, fail-open.
+- The retrieved-content guard's `guard unavailable` ledger row now records the tool, how
+  many segments went unscanned, and the classifier's backend and detail. Docs and manifest
+  comments that said external content is always scanned now say what is on by default.
+- `config/governance/threat-detection.yaml` no longer has a `fail_mode` key. It was
+  parsed and read by nothing, so `closed` promised what never happened; a guard that
+  cannot run still lets the text through and writes a `guard unavailable` row. A config
+  override that still sets `fail_mode` now fails to load (loudly, like any unknown key)
+  and the model guards stay off with a startup warning: delete the line.
+- A skill package's tool can declare `content: internal | external` in its manifest
+  (`web-fetch`'s `fetch_web_content` is external), served and in the loop alike.
+
 - Destructive tools and pinned writes now get a durable side-effect ledger row before
   they run (issue #73). This needs no flag: with `IRIS_GOVERNANCE_SIDE_EFFECT_LEDGER`
   unset the ledger covers that high-risk class only, and plain writes and reads are

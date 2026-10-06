@@ -144,6 +144,10 @@ class PromptGuardRetrievedHook:
     of the document stays usable (plan D3). Shadow mode audits but allows; a
     degraded guard allows; the kernel re-binds ``transformed_payload`` for
     downstream hooks.
+
+    Opt-in and fail-open, so it is not what a default install relies on: the
+    deterministic floor under it (``plugins/external_content_floor.py``, always on)
+    marks and tripwire-scans the same results with no model.
     """
 
     name: str = "prompt_guard_retrieved"

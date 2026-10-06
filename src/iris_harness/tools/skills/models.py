@@ -123,7 +123,8 @@ class SkillToolManifest(BaseModel):
     args: tuple[ToolArg, ...] = Field(default_factory=tuple)
     # What the tool's output is, as a plugin tool declares it (``content:`` in a plugin
     # manifest): ``external`` = text a third party wrote (a web page, a feed), which the
-    # retrieved-content injection guard scans at POST_TOOL_USE when that guard is on.
+    # external-content floor marks and tripwire-scans at POST_TOOL_USE (always on), and the
+    # retrieved-content model guard scans when that guard is on.
     content: Literal["internal", "external"] = "internal"
 
 

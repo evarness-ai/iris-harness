@@ -704,8 +704,10 @@ def test_a_rebuild_that_fails_after_the_delete_says_the_index_is_incomplete(
     def _boom(_chunks: Any) -> int:
         raise OSError("disk full")
 
-    monkeypatch.setattr(index, "rebuild", _boom)
-    with pytest.raises(IndexRebuildIncomplete, match="incomplete.*Rerun"):
-        reset_and_reindex(store=store, index=index)
-    monkeypatch.undo()
+    # A context, not monkeypatch.undo(): undo would also drop the autouse fixture's hashing
+    # embedder, and the rerun would try to download Chroma's default model (network).
+    with monkeypatch.context() as patched:
+        patched.setattr(index, "rebuild", _boom)
+        with pytest.raises(IndexRebuildIncomplete, match="incomplete.*Rerun"):
+            reset_and_reindex(store=store, index=index)
     assert reset_and_reindex(store=store, index=index) > 0  # the rerun heals it

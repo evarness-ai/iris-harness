@@ -126,7 +126,6 @@ First public release of the IRIS harness.
   the reset and restart it after. A server that was left running no longer fails silently:
   on its next request it logs one warning, reopens the collection and retries once (and
   falls back to keyword search with a warning if the reopen fails).
-
 - The external-content floor bounds what a hostile text can grow to without erasing what
   follows it. The first 64 redacted spans in a text keep the full-size marker; each further
   span is redacted with the 3-character `[~]` and the legitimate text between spans is kept

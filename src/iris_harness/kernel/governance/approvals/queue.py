@@ -52,6 +52,8 @@ class ApprovalQueue:
         card: ApprovalCard | None = None,
         caller: str | None = None,
         call_id: str | None = None,
+        step_id: int | None = None,
+        turn_id: str | None = None,
     ) -> ApprovalId:
         approval_id = self._store.enqueue(
             run_id,
@@ -66,6 +68,8 @@ class ApprovalQueue:
             card=card,
             caller=caller,
             call_id=call_id,
+            step_id=step_id,
+            turn_id=turn_id,
         )
         if self._audit is not None:
             self._audit.record(

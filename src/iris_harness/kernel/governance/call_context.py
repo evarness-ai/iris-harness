@@ -32,6 +32,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from typing import Any
 
 _CURRENT: ContextVar[str | None] = ContextVar("iris_current_call_id", default=None)
 
@@ -104,6 +105,21 @@ def lineage_of(call_id: str | None) -> CallLineage | None:
         return _calls.get(call_id)
 
 
+def identity_kwargs(call_id: str | None) -> dict[str, Any]:
+    """The call's identity as keyword arguments for a store row (``call_id``, ``parent_call_id``,
+    ``attempt``, ``replay_of``): what the harness recorded when it minted the call. Empty for
+    a call with no id; the lineage fields are None when the registry no longer holds it."""
+    if not call_id:
+        return {}
+    lineage = lineage_of(call_id)
+    return {
+        "call_id": call_id,
+        "parent_call_id": lineage.parent_call_id if lineage else None,
+        "attempt": lineage.attempt if lineage else None,
+        "replay_of": lineage.replay_of if lineage else None,
+    }
+
+
 def mark_run_resumed(run_id: str) -> None:
     """Record that ``run_id`` was re-entered after a halt, in this process."""
     if not run_id:
@@ -126,6 +142,7 @@ __all__ = [
     "CallLineage",
     "call_scope",
     "current_call_id",
+    "identity_kwargs",
     "is_run_resumed",
     "lineage_of",
     "mark_run_resumed",

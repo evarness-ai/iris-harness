@@ -26,9 +26,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from iris_harness.foundation.ids import new_ulid
 from iris_harness.foundation.paths import governance_data_dir
+from iris_harness.foundation.persistence.sqlite import add_columns_if_missing
 
 logger = logging.getLogger(__name__)
+
+#: Identity columns added to a ledger a released version created (issue #134, stage 3).
+IDENTITY_COLUMNS: dict[str, str] = {
+    "call_id": "TEXT",
+    "parent_call_id": "TEXT",
+    "attempt": "INTEGER",
+    "replay_of": "TEXT",
+    "record_id": "TEXT",
+}
 
 # Override slot (``None``: resolved from ``IRIS_HOME`` on every use, never frozen at
 # import -- a process that relocates the home after importing IRIS writes into the
@@ -119,6 +130,9 @@ class SideEffectLedger:
         with SideEffectLedger._connect(self) as conn:
             conn.executescript(schema)
             conn.commit()
+        # A ledger a released version created lacks the identity columns: add them on a
+        # connection of their own, under ``BEGIN IMMEDIATE`` (see ``add_columns_if_missing``).
+        add_columns_if_missing(self.db_path, "side_effect_ledger", IDENTITY_COLUMNS)
 
     @staticmethod
     def _row(r: sqlite3.Row) -> SideEffectRow:
@@ -152,6 +166,10 @@ class SideEffectLedger:
         probe_metadata: dict[str, Any] | None = None,
         side_effect_id: str | None = None,
         exclusive: bool = False,
+        call_id: str | None = None,
+        parent_call_id: str | None = None,
+        attempt: int | None = None,
+        replay_of: str | None = None,
     ) -> str:
         """Insert a new pending side-effect row; returns the side_effect_id.
 
@@ -163,23 +181,42 @@ class SideEffectLedger:
         tell that nothing was written. A caller that must know passes ``exclusive=True``:
         a taken key raises ``SideEffectKeyExists`` and the existing row is untouched. The
         ledger hooks do (a row they believe they wrote must be theirs).
+
+        ``call_id`` / ``parent_call_id`` / ``attempt`` / ``replay_of`` are the call's identity
+        (#134): ids and a count the hooks read from the harness's own record of the call. The
+        store mints the row's ``record_id`` and appends a ``pending`` event.
         """
         side_effect_id = side_effect_id or str(uuid.uuid4())
         meta_json = json.dumps(probe_metadata or {}, default=str, sort_keys=True)
         verb = "INSERT" if exclusive else "INSERT OR IGNORE"
         with self._connect() as conn:
             try:
-                conn.execute(
+                cur = conn.execute(
                     f"""
                     {verb} INTO side_effect_ledger
                         (side_effect_id, run_id, step_id, tool,
-                         verification_probe, probe_metadata, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                         verification_probe, probe_metadata, status,
+                         call_id, parent_call_id, attempt, replay_of, record_id)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
                     """,
-                    (side_effect_id, run_id, step_id, tool, verification_probe, meta_json),
+                    (
+                        side_effect_id,
+                        run_id,
+                        step_id,
+                        tool,
+                        verification_probe,
+                        meta_json,
+                        call_id,
+                        parent_call_id,
+                        attempt,
+                        replay_of,
+                        new_ulid(),
+                    ),
                 )
             except sqlite3.IntegrityError as exc:
                 raise SideEffectKeyExists(side_effect_id) from exc
+            if cur.rowcount:  # INSERT OR IGNORE of a taken key wrote nothing: no event either
+                _append_event(conn, side_effect_id, "pending", call_id)
             conn.commit()
         logger.debug(
             "side_effect recorded %s run=%s step=%d tool=%s probe=%s",
@@ -238,6 +275,7 @@ class SideEffectLedger:
                 """,
                 (status, completed_at, error, side_effect_id),
             )
+            _append_event(conn, side_effect_id, status, _call_id_of(conn, side_effect_id))
             conn.commit()
 
     def finalize(
@@ -289,8 +327,27 @@ class SideEffectLedger:
                     side_effect_id,
                 ),
             )
+            _append_event(conn, side_effect_id, status, _call_id_of(conn, side_effect_id))
             conn.commit()
         return True
+
+
+def _call_id_of(conn: sqlite3.Connection, side_effect_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT call_id FROM side_effect_ledger WHERE side_effect_id = ?", (side_effect_id,)
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _append_event(
+    conn: sqlite3.Connection, side_effect_id: str, status: str, call_id: str | None
+) -> None:
+    """Append one transition to ``side_effect_events`` (identifiers and a status only)."""
+    conn.execute(
+        "INSERT INTO side_effect_events(event_id, side_effect_id, status, ts, call_id) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (new_ulid(), side_effect_id, status, datetime.now(UTC).isoformat(), call_id),
+    )
 
 
 class DeferredSideEffectLedger(SideEffectLedger):

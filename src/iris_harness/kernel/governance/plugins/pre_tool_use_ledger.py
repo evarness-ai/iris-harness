@@ -46,6 +46,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from iris_harness.kernel.governance.call_context import identity_kwargs
 from iris_harness.kernel.governance.hooks.tool_payload import (
     SIDE_EFFECT_ID,
     TOOL_EFFECT,
@@ -112,6 +113,7 @@ class PreToolUseLedgerHook:
                     PRE_RECORDED: True,
                 },
                 exclusive=True,
+                **identity_kwargs(call_id_of(ctx.metadata)),
             )
         except SideEffectKeyExists:
             # The key already has a row: another call's. This hook cannot show it is this

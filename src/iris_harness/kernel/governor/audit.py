@@ -3,15 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 
-from iris_harness.foundation.persistence.sqlite import sqlite_conn
+from iris_harness.foundation.ids import new_ulid
+from iris_harness.foundation.persistence.sqlite import add_columns_if_missing, sqlite_conn
 
 from .exceptions import GovernorAuditError
 from .models import GovernorAuditEntry, GovernorGuardDecision
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_AUDIT_DB_PATH = Path("data/audit.db")
+
+#: Identity columns (issue #134, stage 3): which run, call and session a guard decision was
+#: made for, and the row's own id. Nullable: a decision made before the column existed, or
+#: for a request that is not a tool call, has none. Identifiers only, never text.
+IDENTITY_COLUMNS: dict[str, str] = {
+    "run_id": "TEXT",
+    "call_id": "TEXT",
+    "session_id": "TEXT",
+    "record_id": "TEXT",
+}
 
 
 class GovernorAuditLogger:
@@ -25,6 +40,7 @@ class GovernorAuditLogger:
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path.resolve()
         self._initialized = False
+        self._has_identity = False
 
     @classmethod
     def from_repo_root(
@@ -36,36 +52,57 @@ class GovernorAuditLogger:
         """Construct an audit logger using the default IRIS audit location."""
         return cls((db_path or (repo_root / DEFAULT_AUDIT_DB_PATH)).resolve())
 
-    def record_decision(self, decision: GovernorGuardDecision) -> None:
-        """Append one guard decision to the audit store."""
+    def record_decision(
+        self,
+        decision: GovernorGuardDecision,
+        *,
+        identity: Mapping[str, str | None] | None = None,
+    ) -> None:
+        """Append one guard decision to the audit store.
+
+        ``identity`` names the run, call and session the decision was made for (``run_id``,
+        ``call_id``, ``session_id``; any may be absent). Only those three keys are read, and
+        only a non-empty string is kept.
+        """
         self._ensure_initialized()
+        ids = {
+            key: value
+            for key in ("run_id", "call_id", "session_id")
+            if isinstance(value := (identity or {}).get(key), str) and value
+        }
+        columns = [
+            "route",
+            "action",
+            "allowed",
+            "reason",
+            "matched_policy",
+            "requires_approval",
+            "retry_after_seconds",
+            "metadata_json",
+            "created_at",
+        ]
+        values: list[object] = [
+            decision.route,
+            decision.action,
+            1 if decision.allowed else 0,
+            decision.reason,
+            decision.matched_policy,
+            1 if decision.requires_approval else 0,
+            decision.retry_after_seconds,
+            json.dumps(decision.metadata, sort_keys=True),
+            decision.created_at.isoformat(),
+        ]
+        if (
+            self._has_identity
+        ):  # the columns exist; a store that could not migrate writes the old shape
+            columns += ["run_id", "call_id", "session_id", "record_id"]
+            values += [ids.get("run_id"), ids.get("call_id"), ids.get("session_id"), new_ulid()]
         try:
             with sqlite_conn(self.db_path) as connection:
                 connection.execute(
-                    """
-                    INSERT INTO governor_guard_audit (
-                        route,
-                        action,
-                        allowed,
-                        reason,
-                        matched_policy,
-                        requires_approval,
-                        retry_after_seconds,
-                        metadata_json,
-                        created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        decision.route,
-                        decision.action,
-                        1 if decision.allowed else 0,
-                        decision.reason,
-                        decision.matched_policy,
-                        1 if decision.requires_approval else 0,
-                        decision.retry_after_seconds,
-                        json.dumps(decision.metadata, sort_keys=True),
-                        decision.created_at.isoformat(),
-                    ),
+                    f"INSERT INTO governor_guard_audit ({', '.join(columns)}) "  # noqa: S608
+                    f"VALUES ({', '.join('?' for _ in columns)})",
+                    values,
                 )
         except sqlite3.Error as exc:  # pragma: no cover - exercised through caller failure paths
             raise GovernorAuditError(f"unable to record governor decision: {exc}") from exc
@@ -148,3 +185,15 @@ class GovernorAuditLogger:
                     """)
         except sqlite3.Error as exc:  # pragma: no cover - exercised through caller failure paths
             raise GovernorAuditError(f"unable to initialize governor audit db: {exc}") from exc
+        try:
+            add_columns_if_missing(self.db_path, "governor_guard_audit", IDENTITY_COLUMNS)
+            self._has_identity = True
+        except sqlite3.Error:
+            # The decisions must still be written: the old schema keeps working, without the
+            # identity columns, until the next start tries the migration again.
+            logger.error(
+                "governor audit: could not add the identity columns to %s; "
+                "decisions are written without them",
+                self.db_path,
+                exc_info=True,
+            )

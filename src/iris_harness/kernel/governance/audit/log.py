@@ -21,14 +21,43 @@ import json
 import logging
 import os
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from iris_harness.foundation.ids import new_ulid
+from iris_harness.foundation.persistence.sqlite import add_columns_if_missing
+
 logger = logging.getLogger(__name__)
+
+#: The identity columns of a row (issue #134, stage 3), all nullable: a row written before a
+#: database was migrated has NULL in every one, which is how it is told apart as written in the
+#: "pre-identity era". ``record_id`` is minted by the store; the rest are the identifiers the
+#: kernel stamped into the payload (a closed set of ids and one count, never text).
+IDENTITY_COLUMNS: dict[str, str] = {
+    "record_id": "TEXT",
+    "session_id": "TEXT",
+    "turn_id": "TEXT",
+    "call_id": "TEXT",
+    "parent_call_id": "TEXT",
+    "attempt": "INTEGER",
+    "replay_of": "TEXT",
+    "resumed_from_run": "TEXT",
+}
+_IDENTITY_INDEXES: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_record_id ON audit_log(record_id) "
+    "WHERE record_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_audit_call_id ON audit_log(call_id) "
+    "WHERE call_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_audit_session_ts ON audit_log(session_id, ts) "
+    "WHERE session_id IS NOT NULL",
+)
+#: ``audit_meta`` key for the boundary of the pre-identity era (see ``_record_boundary``).
+IDENTITY_META_KEY = "identity"
+IDENTITY_SCHEMA_VERSION = 2
 
 
 # Override slot (``None``: resolved on every use, never frozen at import -- a process
@@ -70,6 +99,17 @@ class AuditRow:
     severity: str
     reason: str
     payload_json: str
+    # Identity (issue #134, stage 3). None on a row written before the database was migrated
+    # (the "pre-identity era"); ``session_id`` falls back to the payload's copy, because old
+    # rows are never rewritten.
+    record_id: str | None = None
+    session_id: str | None = None
+    turn_id: str | None = None
+    call_id: str | None = None
+    parent_call_id: str | None = None
+    attempt: int | None = None
+    replay_of: str | None = None
+    resumed_from_run: str | None = None
 
 
 class AuditLog:
@@ -103,36 +143,49 @@ class AuditLog:
         encoding uses ``default=str`` and falls back to ``{}`` on a
         rare encoding error (logged at WARN).
         """
-        payload_json = _safe_json(payload or {})
-        ts_iso = (ts or datetime.now(UTC)).isoformat()
         with self._connect() as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO audit_log(
-                    ts, run_id, step_id, agent_type, hook_point, plugin,
-                    decision, classification, tier, cost_usd, severity,
-                    reason, payload_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    ts_iso,
-                    run_id,
-                    step_id,
-                    agent_type,
-                    hook_point,
-                    plugin,
-                    decision,
-                    classification,
-                    tier,
-                    cost_usd,
-                    severity,
-                    reason,
-                    payload_json,
-                ),
+            row_id = _insert(
+                conn,
+                run_id=run_id,
+                step_id=step_id,
+                agent_type=agent_type,
+                hook_point=hook_point,
+                plugin=plugin,
+                decision=decision,
+                severity=severity,
+                reason=reason,
+                classification=classification,
+                tier=tier,
+                cost_usd=cost_usd,
+                payload=payload,
+                ts=ts,
             )
             conn.commit()
-            return int(cur.lastrowid or 0)
+            return row_id
+
+    def record_many(self, rows: Sequence[Mapping[str, Any]]) -> list[int | None]:
+        """Append several rows in one connection, each succeeding or failing on its own.
+
+        ``rows`` are the keyword arguments of :meth:`record`. A row that cannot be written
+        (an exotic value SQLite refuses) is rolled back alone and reported as ``None`` in
+        the result, in order; the others are kept. That is per-row failure semantics: a
+        failed row is neither hidden nor does it take the rest with it. (Atomic-per-firing is
+        a separate decision, #134 stage 4.)
+        """
+        ids: list[int | None] = []
+        with self._connect() as conn:
+            for n, row in enumerate(rows):
+                conn.execute("SAVEPOINT audit_row")
+                try:
+                    ids.append(_insert(conn, **row))
+                except (sqlite3.Error, TypeError, ValueError) as exc:
+                    conn.execute("ROLLBACK TO audit_row")
+                    logger.warning("audit_log: row %d of a batch failed to write: %s", n, exc)
+                    ids.append(None)
+                finally:
+                    conn.execute("RELEASE audit_row")
+            conn.commit()
+        return ids
 
     def query(
         self,
@@ -237,12 +290,135 @@ class AuditLog:
                     cost_usd        REAL,
                     severity        TEXT NOT NULL,
                     reason          TEXT NOT NULL,
-                    payload_json    TEXT NOT NULL
+                    payload_json    TEXT NOT NULL,
+                    record_id        TEXT,
+                    session_id       TEXT,
+                    turn_id          TEXT,
+                    call_id          TEXT,
+                    parent_call_id   TEXT,
+                    attempt          INTEGER,
+                    replay_of        TEXT,
+                    resumed_from_run TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_audit_run_ts ON audit_log(run_id, ts);
                 CREATE INDEX IF NOT EXISTS idx_audit_decision_ts ON audit_log(decision, ts);
+                CREATE TABLE IF NOT EXISTS audit_meta (
+                    key   TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
                 """)
             conn.commit()
+        # A database a released version created has the table without the identity columns:
+        # add them on a connection of their own (never inside ``_connect``'s transaction, see
+        # ``add_columns_if_missing``). Only the process that adds them records the boundary.
+        add_columns_if_missing(
+            self.db_path,
+            "audit_log",
+            IDENTITY_COLUMNS,
+            indexes=_IDENTITY_INDEXES,
+            on_added=_record_boundary,
+        )
+
+
+def _record_boundary(conn: sqlite3.Connection, added: list[str]) -> None:
+    """Write the pre-identity boundary, in the transaction that added the columns.
+
+    Every row up to the largest ``id`` now present was written before identity existed;
+    rows after it carry a ``record_id`` (a row without one is pre-identity, whatever its id:
+    an older process may still be writing). Old rows are not touched (never backfilled).
+    A fresh database has no such era and records nothing.
+    """
+    if "record_id" not in added:
+        return
+    (last_id,) = conn.execute("SELECT COALESCE(MAX(id), 0) FROM audit_log").fetchone()
+    boundary = {
+        "schema": IDENTITY_SCHEMA_VERSION,
+        "first_identity_row_id": int(last_id) + 1,
+        "migrated_at": datetime.now(UTC).isoformat(),
+    }
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS audit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO audit_meta(key, value) VALUES (?, ?)",
+        (IDENTITY_META_KEY, json.dumps(boundary, sort_keys=True)),
+    )
+
+
+def _identity_values(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """The identity columns' values from a payload the kernel stamped (ids and one count).
+
+    A value of the wrong type is dropped, never coerced: the columns hold identifiers and
+    nothing else, so no text from an argument can land in one.
+    """
+    out: dict[str, Any] = {}
+    for name, declaration in IDENTITY_COLUMNS.items():
+        if name == "record_id":
+            continue
+        value = payload.get(name)
+        if declaration == "INTEGER":
+            ok = isinstance(value, int) and not isinstance(value, bool)
+        else:
+            ok = isinstance(value, str) and bool(value)
+        out[name] = value if ok else None
+    return out
+
+
+def _insert(
+    conn: sqlite3.Connection,
+    *,
+    run_id: str,
+    step_id: int | None,
+    agent_type: str,
+    hook_point: str,
+    plugin: str,
+    decision: str,
+    severity: str,
+    reason: str,
+    classification: str | None = None,
+    tier: str | None = None,
+    cost_usd: float | None = None,
+    payload: Mapping[str, Any] | None = None,
+    ts: datetime | None = None,
+) -> int:
+    payload_dict = dict(payload or {})
+    ids = _identity_values(payload_dict)
+    cur = conn.execute(
+        """
+        INSERT INTO audit_log(
+            ts, run_id, step_id, agent_type, hook_point, plugin,
+            decision, classification, tier, cost_usd, severity,
+            reason, payload_json,
+            record_id, session_id, turn_id, call_id, parent_call_id,
+            attempt, replay_of, resumed_from_run
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            (ts or datetime.now(UTC)).isoformat(),
+            run_id,
+            step_id,
+            agent_type,
+            hook_point,
+            plugin,
+            decision,
+            classification,
+            tier,
+            cost_usd,
+            severity,
+            reason,
+            _safe_json(payload_dict),
+            new_ulid(),
+            ids["session_id"],
+            ids["turn_id"],
+            ids["call_id"],
+            ids["parent_call_id"],
+            ids["attempt"],
+            ids["replay_of"],
+            ids["resumed_from_run"],
+        ),
+    )
+    return int(cur.lastrowid or 0)
 
 
 def _row_to_audit(row: sqlite3.Row) -> AuditRow:
@@ -263,7 +439,26 @@ def _row_to_audit(row: sqlite3.Row) -> AuditRow:
         severity=str(row["severity"]),
         reason=str(row["reason"]),
         payload_json=str(row["payload_json"]),
+        **_identity_of(row),
     )
+
+
+def _identity_of(row: sqlite3.Row) -> dict[str, Any]:
+    """The identity columns of ``row``; absent (a connection to an old file) reads as None.
+
+    ``session_id`` falls back to the payload's own copy: rows from before the column existed
+    are not backfilled (#134 D6), and they still say which session they belong to.
+    """
+    keys = set(row.keys())
+    out: dict[str, Any] = {name: (row[name] if name in keys else None) for name in IDENTITY_COLUMNS}
+    if out["session_id"] is None:
+        try:
+            payload = json.loads(row["payload_json"])
+        except ValueError:
+            payload = None
+        copy = payload.get("session_id") if isinstance(payload, dict) else None
+        out["session_id"] = copy if isinstance(copy, str) and copy else None
+    return out
 
 
 def _iso(value: datetime | str) -> str:

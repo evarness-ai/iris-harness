@@ -30,12 +30,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from iris_harness.agent.intent_router import IntentResult
-from iris_harness.foundation.persistence.sqlite import sqlite_conn
+from iris_harness.foundation.ids import new_ulid
+from iris_harness.foundation.observability.session_log import current_turn_id
+from iris_harness.foundation.persistence.sqlite import add_columns_if_missing, sqlite_conn
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_AUDIT_DB_PATH = Path("data/audit.db")
 TABLE_NAME = "router_decisions"
+
+#: Identity columns (issue #134, stage 3): the row's own id and the chat turn it classified.
+#: Nullable: a decision made before the column existed has neither. The table is append-only
+#: (triggers), so old rows are never rewritten.
+IDENTITY_COLUMNS: dict[str, str] = {"record_id": "TEXT", "turn_id": "TEXT"}
 
 
 class RouterAuditLogger:
@@ -43,6 +50,7 @@ class RouterAuditLogger:
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = db_path.resolve()
+        self._has_identity = False
         self._initialize()
 
     @classmethod
@@ -69,26 +77,32 @@ class RouterAuditLogger:
         digest = hashlib.sha256(message.encode("utf-8")).hexdigest()[:16]
         now = datetime.now(UTC).isoformat()
         try:
+            columns = (
+                "session_id, message_hash, message_length, intent, agent_type, "
+                "confidence, source, is_multi_step, router_model, channel, created_at"
+            )
+            values: list[object] = [
+                session_id,
+                digest,
+                len(message),
+                result.intent,
+                result.agent_type,
+                float(result.confidence),
+                result.source or "",
+                1 if result.is_multi_step else 0,
+                router_model,
+                channel,
+                now,
+            ]
+            if self._has_identity:  # a store that could not migrate keeps writing the old shape
+                columns += ", record_id, turn_id"
+                values += [new_ulid(), current_turn_id()]
             with sqlite_conn(self.db_path) as connection:
                 connection.execute(
                     # TABLE_NAME is a module constant, not user input; values are bound below
                     f"INSERT INTO {TABLE_NAME} ("  # noqa: S608
-                    "session_id, message_hash, message_length, intent, agent_type, "
-                    "confidence, source, is_multi_step, router_model, channel, created_at"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        session_id,
-                        digest,
-                        len(message),
-                        result.intent,
-                        result.agent_type,
-                        float(result.confidence),
-                        result.source or "",
-                        1 if result.is_multi_step else 0,
-                        router_model,
-                        channel,
-                        now,
-                    ),
+                    f"{columns}) VALUES ({', '.join('?' for _ in values)})",
+                    values,
                 )
         except sqlite3.Error as exc:
             # Never break the chat turn over an audit write failure.
@@ -139,3 +153,16 @@ class RouterAuditLogger:
                     """)
         except sqlite3.Error as exc:
             logger.warning("could not initialize router audit db: %s", exc)
+            return
+        try:
+            add_columns_if_missing(self.db_path, TABLE_NAME, IDENTITY_COLUMNS)
+            self._has_identity = True
+        except sqlite3.Error:
+            # Decisions must still be written: the old schema keeps working, without the
+            # identity columns, and the next start tries the migration again.
+            logger.error(
+                "router audit: could not add the identity columns to %s; "
+                "decisions are written without them",
+                self.db_path,
+                exc_info=True,
+            )

@@ -54,6 +54,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
+from iris_harness.kernel.governance.call_context import identity_kwargs
 from iris_harness.kernel.governance.hooks.tool_payload import (
     TOOL_EFFECT,
     TOOL_ERROR,
@@ -187,6 +188,7 @@ class PostToolUseLedgerHook:
                 verification_probe=probe_name,
                 probe_metadata={**meta, "subject": subject or key, "effect": effect},
                 exclusive=True,
+                **identity_kwargs(call_id_of(ctx.metadata)),
             )
         except SideEffectKeyExists:
             if self._is_own_stream_row(key, tool, ctx):

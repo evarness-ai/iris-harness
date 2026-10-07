@@ -11,6 +11,15 @@ First public release of the IRIS harness.
 
 ### Added
 
+- The audit stores carry an identity in real columns (issue #134, stage 3). `audit_log` gains
+  `record_id` (minted by the store, unique), `session_id`, `turn_id`, `call_id`,
+  `parent_call_id`, `attempt`, `replay_of` and `resumed_from_run`; the side-effect ledger gains the
+  call's identity and an append-only `side_effect_events` table; the approval queue gains
+  `step_id` and `turn_id`; the router and governor audit tables gain their ids. A database an
+  earlier release created is migrated when it is opened: columns are added, nothing is rewritten
+  or backfilled, a row without a `record_id` is one written before identity (an `audit_meta` row
+  records the boundary), and several processes opening the file at once are safe.
+
 - An audit row says where its call sits (issue #134, stage 2): `parent_call_id` (the governed
   call it ran inside: a tool a tool called, a capability a tool called, a bridged MCP call),
   `attempt` (2 on the approved re-execution of a held call, with `replay_of` naming the held

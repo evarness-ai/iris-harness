@@ -22,11 +22,14 @@ Four rules, each load-bearing:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from iris_harness.foundation.paths import iris_home
 
 logger = logging.getLogger(__name__)
 
@@ -223,4 +226,44 @@ def _write_index(
     (out_dir / "index.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-__all__ = ["ExportResult", "export_memory_vault"]
+_NAME_MAX = 64
+_EXPORT_DIR_ENV = "IRIS_EXPORT_DIR"
+
+
+class ExportTargetError(ValueError):
+    """A requested export folder name that cannot be used."""
+
+
+def export_root() -> Path:
+    """The one folder the web API exports under: ``$IRIS_EXPORT_DIR`` else ``<IRIS_HOME>/exports``."""
+    configured = os.environ.get(_EXPORT_DIR_ENV, "").strip()
+    return Path(configured).expanduser() if configured else iris_home() / "exports"
+
+
+def resolve_export_dir(name: str) -> Path:
+    """The folder ``name`` stands for under :func:`export_root`, created owner-only if the root
+    is new. ``name`` comes from a request, so it is one plain path component: no separator, no
+    ``..``, not absolute, at most 64 characters. The result, with symlinks resolved, must sit
+    directly inside the resolved root, and must not be an existing non-directory."""
+    if not name or len(name) > _NAME_MAX:
+        raise ExportTargetError(f"export folder name must be 1-{_NAME_MAX} characters")
+    if name in {".", ".."} or any(c in name for c in ("/", "\\", "\x00")) or os.path.isabs(name):
+        raise ExportTargetError("export folder name must be a single plain folder name")
+    root = export_root()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    real_root = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(real_root, name))
+    if not target.startswith(real_root + os.sep) or os.path.dirname(target) != real_root:
+        raise ExportTargetError("export folder resolves outside the export folder")
+    if os.path.exists(target) and not os.path.isdir(target):
+        raise ExportTargetError("export folder name is an existing file")
+    return Path(target)
+
+
+__all__ = [
+    "ExportResult",
+    "ExportTargetError",
+    "export_memory_vault",
+    "export_root",
+    "resolve_export_dir",
+]

@@ -855,20 +855,26 @@ def install_memory_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
         }
 
     @app.post("/memory/export")
-    def memory_export(out_dir: str, include_unconfirmed: bool = False) -> dict[str, Any]:
+    def memory_export(name: str, include_unconfirmed: bool = False) -> dict[str, Any]:
         """Export the memory graph as a linked markdown vault (Obsidian-compatible).
 
-        One way: nothing in the vault is read back. Write-gated, and the response
-        repeats where the data landed — the folder holds personal memory, and moving it
-        to a cloud notebook is an egress decision the caller makes knowingly.
+        One way: nothing in the vault is read back. Write-gated. ``name`` is a folder name,
+        never a path: the vault lands in that folder under the owner's export folder
+        (``IRIS_EXPORT_DIR``, default ``~/.iris/exports``). The response repeats where the
+        data landed -- the folder holds personal memory, and moving it to a cloud notebook is
+        an egress decision the caller makes knowingly. ``iris memory export --to PATH``
+        writes anywhere the owner types.
         """
-        from pathlib import Path as _Path
+        from iris_harness.memory.export import (
+            ExportTargetError,
+            export_memory_vault,
+            resolve_export_dir,
+        )
 
-        from iris_harness.memory.export import export_memory_vault
-
-        target = _Path(out_dir).expanduser()
-        if not target.is_absolute():
-            raise HTTPException(status_code=400, detail="out_dir must be an absolute path")
+        try:
+            target = resolve_export_dir(name)
+        except ExportTargetError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         result = export_memory_vault(
             _memory_store_or_503(), target, include_unconfirmed=include_unconfirmed
         )

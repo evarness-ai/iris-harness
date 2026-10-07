@@ -27,6 +27,7 @@ import psutil
 from iris_harness.foundation.clock import utc_now
 from iris_harness.foundation.eventbus import EventBus
 from iris_harness.foundation.persistence import connect, data_path
+from iris_harness.foundation.persistence.sqlite import ensure_columns
 
 from .events import (
     ACTIVITY_COMPLETED,
@@ -101,7 +102,8 @@ class ActivityStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
-            _add_column_if_missing(conn, "activities", "owner_pid", "INTEGER")
+        # On a connection of its own under BEGIN IMMEDIATE (#201), see ``TaskStore``.
+        ensure_columns(self.db_path, "activities", {"owner_pid": "INTEGER"})
 
     def _connect(self) -> sqlite3.Connection:
         return connect(self.db_path, row_factory=sqlite3.Row)
@@ -341,13 +343,6 @@ CREATE TABLE IF NOT EXISTS activities (
 CREATE INDEX IF NOT EXISTS idx_activities_status ON activities(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_activities_origin ON activities(origin, created_at);
 """
-
-
-def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
-    """Idempotent additive migration for an existing table."""
-    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
-    if column not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 _INSERT_SQL = """

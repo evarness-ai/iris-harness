@@ -24,6 +24,7 @@ from typing import Any
 from iris_harness.foundation.clock import utc_now
 from iris_harness.foundation.eventbus import EventBus
 from iris_harness.foundation.persistence import connect, data_path
+from iris_harness.foundation.persistence.sqlite import ensure_columns
 
 from .events import (
     GOAL_ACHIEVED,
@@ -52,13 +53,6 @@ def _iso(dt: datetime | None) -> str | None:
 
 def _parse_dt(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
-
-
-def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
-    """Idempotent additive migration for an existing table (ADR-0073)."""
-    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
-    if column not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 def _row_to_task(row: sqlite3.Row) -> Task:
@@ -131,8 +125,14 @@ class TaskStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
-            _add_column_if_missing(conn, "tasks", "action", "TEXT")  # ADR-0073
-            _add_column_if_missing(conn, "tasks", "closed_reason", "TEXT")  # expiry
+        # Additive columns, on a connection of their own under BEGIN IMMEDIATE (#201): a read of
+        # ``table_info`` then an ``ALTER`` raised "duplicate column name" for the process that
+        # lost a race to open an older tasks.db.
+        ensure_columns(
+            self.db_path,
+            "tasks",
+            {"action": "TEXT", "closed_reason": "TEXT"},  # ADR-0073; expiry
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = connect(self.db_path, row_factory=sqlite3.Row)

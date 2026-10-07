@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.paths import governance_data_dir
-from iris_harness.foundation.persistence.sqlite import connect
+from iris_harness.foundation.persistence.sqlite import connect, ensure_columns
 
 logger = logging.getLogger(__name__)
 
@@ -324,18 +324,22 @@ class CheckpointStore:
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_expires
                     ON checkpoints(expires_at);
                 """)
-            # A database written before ADR-0106 has no session_id, and CREATE TABLE
-            # IF NOT EXISTS leaves it that way. Add the column before anything that
-            # references it — indexing first fails on exactly the legacy databases
-            # this migration exists for. Nullable, so pre-existing rows stay valid
-            # and simply answer "no session" to by_session().
-            columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(checkpoints)")}
-            if "session_id" not in columns:
-                conn.execute("ALTER TABLE checkpoints ADD COLUMN session_id TEXT")
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id)"
-            )
             conn.commit()
+        # A database written before ADR-0106 has no session_id, and CREATE TABLE IF NOT EXISTS
+        # leaves it that way. Add the column, then the index that references it (indexing
+        # first fails on exactly the legacy databases this migration exists for). Nullable, so
+        # pre-existing rows stay valid and simply answer "no session" to by_session(). On a
+        # connection of its own under BEGIN IMMEDIATE: several processes open this file, and
+        # a read of ``table_info`` followed by an ``ALTER`` raised "duplicate column name" for
+        # the one that lost the race (#201).
+        ensure_columns(
+            self.db_path,
+            "checkpoints",
+            {"session_id": "TEXT"},
+            indexes=(
+                "CREATE INDEX IF NOT EXISTS idx_checkpoints_session ON checkpoints(session_id)",
+            ),
+        )
 
 
 def _row_to_checkpoint(row: sqlite3.Row) -> Checkpoint:

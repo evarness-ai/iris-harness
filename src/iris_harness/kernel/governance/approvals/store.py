@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.paths import governance_data_dir
-from iris_harness.foundation.persistence.sqlite import add_columns_if_missing
+from iris_harness.foundation.persistence.sqlite import ensure_columns
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,18 @@ def default_approvals_db_path() -> Path:
 
 
 _SCHEMA_PATH = Path(__file__).parent / "schema.sql"
+
+#: Columns added after ``approval_queue`` first shipped, by name (see ``ApprovalStore._init_schema``).
+_LATER_COLUMNS: dict[str, str] = {
+    "session_id": "TEXT",
+    "items_json": "TEXT",
+    "card_json": "TEXT",
+    "caller": "TEXT",
+    "executed_at": "TEXT",
+    "call_id": "TEXT",
+    "step_id": "INTEGER",
+    "turn_id": "TEXT",
+}
 
 
 class ApprovalNotFoundError(LookupError):
@@ -249,40 +261,16 @@ class ApprovalStore:
         schema = _SCHEMA_PATH.read_text(encoding="utf-8")
         with self._connect() as conn:
             conn.executescript(schema)
-            # A database written before the timeout notice has no session_id, and
-            # CREATE TABLE IF NOT EXISTS leaves it that way. Nullable, so pre-existing
-            # rows stay valid and simply answer "no session" — they get the channel
-            # notice when they lapse and no in-chat one.
-            columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(approval_queue)")}
-            if "session_id" not in columns:
-                conn.execute("ALTER TABLE approval_queue ADD COLUMN session_id TEXT")
-            # ADR-0118: the pinned calls of a destructive-tool approval. Nullable for
-            # the same reason: every older row is an evaluator approval and has none.
-            if "items_json" not in columns:
-                conn.execute("ALTER TABLE approval_queue ADD COLUMN items_json TEXT")
-            if "card_json" not in columns:
-                conn.execute("ALTER TABLE approval_queue ADD COLUMN card_json TEXT")
-            # Plugin-capabilities decision 1: a code caller's approved call. Nullable for
-            # the same reason again: no older row is one.
-            if "caller" not in columns:
-                conn.execute("ALTER TABLE approval_queue ADD COLUMN caller TEXT")
-            if "executed_at" not in columns:
-                conn.execute("ALTER TABLE approval_queue ADD COLUMN executed_at TEXT")
-            # #134: the id of the held call attempt. Nullable (older rows have none).
-            # Several processes open this file; the one that loses the race to ALTER
-            # sees "duplicate column name", which is the state it wanted.
-            if "call_id" not in columns:
-                try:
-                    conn.execute("ALTER TABLE approval_queue ADD COLUMN call_id TEXT")
-                except sqlite3.OperationalError as exc:
-                    if "duplicate column" not in str(exc).lower():
-                        raise
             conn.commit()
-        # #134 stage 3: where the held call was raised. Added on a connection of its own, under
-        # ``BEGIN IMMEDIATE`` (``add_columns_if_missing``): nullable, no existing row rewritten.
-        add_columns_if_missing(
-            self.db_path, "approval_queue", {"step_id": "INTEGER", "turn_id": "TEXT"}
-        )
+        # Columns that arrived after the table first shipped, all nullable so every older row
+        # stays valid and reads as "none": ``session_id`` (the timeout notice), ``items_json`` and
+        # ``card_json`` (ADR-0118: the pinned calls of a destructive-tool approval),
+        # ``caller`` and ``executed_at`` (a code caller's approved call), ``call_id`` (#134: the
+        # held attempt) and ``step_id`` / ``turn_id`` (#134 stage 3: where it was raised). Added
+        # on a connection of their own, under ``BEGIN IMMEDIATE`` (``add_columns_if_missing``):
+        # several processes open this file, and a read of ``table_info`` followed by an ``ALTER``
+        # raised "duplicate column name" for the one that lost the race (#201).
+        ensure_columns(self.db_path, "approval_queue", _LATER_COLUMNS)
 
     @staticmethod
     def _row(r: sqlite3.Row) -> ApprovalRow:

@@ -9,8 +9,6 @@ process that adds it first (``duplicate column name``).
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -97,71 +95,23 @@ def test_a_fresh_db_has_the_column_from_the_schema(tmp_path: Path) -> None:
     assert _columns(db).count("call_id") == 1
 
 
-def test_losing_the_alter_race_is_not_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Another process added the column between our ``PRAGMA table_info`` and our ALTER."""
-    db = tmp_path / "approvals.db"
-    _release_db(db)
-    other = sqlite3.connect(db)
-    other.execute("ALTER TABLE approval_queue ADD COLUMN call_id TEXT")
-    other.commit()
-    other.close()
-
-    real_connect = ApprovalStore._connect
-
-    class _Stale:
-        """Hides ``call_id`` from the table_info read, as a stale view of the table would."""
-
-        def __init__(self, conn: sqlite3.Connection) -> None:
-            self._conn = conn
-
-        def execute(self, sql: str, *args: Any) -> Any:
-            cur = self._conn.execute(sql, *args)
-            if sql.startswith("PRAGMA table_info(approval_queue)"):
-                return [r for r in cur.fetchall() if r[1] != "call_id"]
-            return cur
-
-        def __getattr__(self, name: str) -> Any:
-            return getattr(self._conn, name)
-
-    @contextmanager
-    def racy(self: ApprovalStore) -> Iterator[Any]:
-        with real_connect(self) as conn:
-            yield _Stale(conn)
-
-    monkeypatch.setattr(ApprovalStore, "_connect", racy)
-    store = ApprovalStore(db_path=db)  # the ALTER raises "duplicate column name": tolerated
-    monkeypatch.undo()
-    assert _columns(db).count("call_id") == 1
-    assert store.get("old-1") is not None
+# The race between two processes opening an older file is measured with real interpreters in
+# ``foundation/test_persistence/test_alter_race_stores.py`` (``[approvals]``, #201); the faked
+# "stale table_info" test that stood here is gone with the read-then-ALTER it faked.
 
 
 def test_another_operational_error_is_not_swallowed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from iris_harness.foundation.persistence import sqlite as persistence
+
     db = tmp_path / "approvals.db"
     _release_db(db)
-    real_connect = ApprovalStore._connect
 
-    class _Locked:
-        def __init__(self, conn: sqlite3.Connection) -> None:
-            self._conn = conn
+    def refuse(*_a: Any, **_k: Any) -> list[str]:
+        raise sqlite3.OperationalError("database is locked")
 
-        def execute(self, sql: str, *args: Any) -> Any:
-            if "ADD COLUMN call_id" in sql:
-                raise sqlite3.OperationalError("database is locked")
-            return self._conn.execute(sql, *args)
-
-        def __getattr__(self, name: str) -> Any:
-            return getattr(self._conn, name)
-
-    @contextmanager
-    def locked(self: ApprovalStore) -> Iterator[Any]:
-        with real_connect(self) as conn:
-            yield _Locked(conn)
-
-    monkeypatch.setattr(ApprovalStore, "_connect", locked)
+    monkeypatch.setattr(persistence, "add_columns_if_missing", refuse)
     with pytest.raises(sqlite3.OperationalError, match="locked"):
         ApprovalStore(db_path=db)
 

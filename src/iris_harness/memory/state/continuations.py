@@ -39,7 +39,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from iris_harness.foundation.persistence.sqlite import connect
+from iris_harness.foundation.persistence.sqlite import connect, ensure_columns
 from iris_harness.memory.state.store import default_checkpoint_db_path
 
 logger = logging.getLogger(__name__)
@@ -336,14 +336,15 @@ class ContinuationStore:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_continuations_one_pending
                     ON continuations(session_id) WHERE status = 'pending';
                 """)
-            # A table created before the payload seam has neither column, and CREATE
-            # TABLE IF NOT EXISTS leaves it that way. Both nullable, so every existing
-            # row stays valid and simply answers "nothing to execute".
-            columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(continuations)")}
-            for column in ("executor_kind", "payload_json"):
-                if column not in columns:
-                    conn.execute(f"ALTER TABLE continuations ADD COLUMN {column} TEXT")
             conn.commit()
+        # A table created before the payload seam has neither column, and CREATE TABLE IF NOT
+        # EXISTS leaves it that way. Both nullable, so every existing row stays valid and simply
+        # answers "nothing to execute". On a connection of its own under BEGIN IMMEDIATE (#201).
+        ensure_columns(
+            self.db_path,
+            "continuations",
+            {"executor_kind": "TEXT", "payload_json": "TEXT"},
+        )
 
 
 def _row_to_continuation(row: sqlite3.Row) -> Continuation:

@@ -17,6 +17,7 @@ from pathlib import Path
 
 from iris_harness.foundation.clock import utc_now
 from iris_harness.foundation.persistence import connect, data_path
+from iris_harness.foundation.persistence.sqlite import ensure_columns
 from iris_harness.services.rag.models import DocumentChunk, DocumentSource, SourceKind
 from iris_harness.services.rag.sensitivity import ratchet
 
@@ -51,18 +52,18 @@ class DocumentStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
-            added: set[tuple[str, str]] = set()
-            for table, migrations in (
-                ("document_sources", _SOURCE_MIGRATIONS),
-                ("document_chunks", _CHUNK_MIGRATIONS),
-            ):
-                cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
-                for name, ddl in migrations:
-                    if name not in cols:
-                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
-                        added.add((table, name))
-            if ("document_sources", "classification") in added:
-                _backfill_source_classification(conn)
+        # Additive columns, each table on a connection of its own under BEGIN IMMEDIATE (#201):
+        # a read of ``table_info`` then an ``ALTER`` raised "duplicate column name" for the process
+        # that lost a race to open an older rag.db. The chunks go first: the per-source
+        # classification is backfilled from them, and the backfill runs inside the transaction that
+        # adds the column, so only the process that added it does it, once.
+        ensure_columns(self.db_path, "document_chunks", dict(_CHUNK_MIGRATIONS))
+        ensure_columns(
+            self.db_path,
+            "document_sources",
+            dict(_SOURCE_MIGRATIONS),
+            on_added=_backfill_when_classification_added,
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = connect(self.db_path, row_factory=sqlite3.Row)
@@ -251,6 +252,13 @@ def _row_to_source(row: sqlite3.Row) -> DocumentSource:
         mtime=float(row["mtime"]) if "mtime" in keys and row["mtime"] is not None else 0.0,
         classification=row["classification"] if "classification" in keys else None,
     )
+
+
+def _backfill_when_classification_added(conn: sqlite3.Connection, added: list[str]) -> None:
+    """``add_columns_if_missing`` callback: backfill only when the per-source column is new."""
+    if "classification" in added:
+        conn.row_factory = sqlite3.Row
+        _backfill_source_classification(conn)
 
 
 def _backfill_source_classification(conn: sqlite3.Connection) -> None:

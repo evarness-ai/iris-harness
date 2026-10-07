@@ -367,6 +367,16 @@ First public release of the IRIS harness.
   one warning says how many. Only RAG's own entries are removed, never a file. `IngestResult`
   gains defaulted `sources_removed` and `sources_unavailable` counts.
 
+- The re-entry scan's audit rows are deduplicated (issue #164). A poisoned turn left in the
+  history window used to write a `reentry_scan` row on every later read (about two a turn: 100
+  reads, 100 rows). Rows are now keyed on session, reader, origin and the hashes of the matched
+  or cut texts, in this process: the first sighting writes a row and a later one is written at
+  the 2nd, 4th, 8th, 16th... sighting, each carrying `sightings` (the running count) in its
+  payload. The audit log is append-only, so the count rides on new rows, not on an edit of the
+  first. A different poisoned text is a different key and always gets its own row. The counts
+  are in-process: a restart resets them. The existing payload fields are unchanged. This is a
+  deliberate change to the kernel's audit behaviour.
+
 - `iris run resume` reads the process's shared side-effect ledger for the database instead of
   building a second handle of its own, and opens it before it lists pending rows, so an
   unusable ledger database stops the command there (issue #102).

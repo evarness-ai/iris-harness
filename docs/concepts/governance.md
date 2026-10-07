@@ -281,7 +281,15 @@ retriever adds, and the recent-turns block of the intent router's prompt. `kerne
   with counts only: the reader, role counts, characters scanned, spans, pattern ids, capped
   items, with the session and trace ids. It is written only when something matched or a cap
   was hit; a clean read writes nothing. If the write fails the redaction still applies and a
-  warning is logged.
+  warning is logged. The same poisoned turn stays in the history window and is read on every
+  later turn, so rows are deduplicated per session, reader, origin and the hashes of the
+  matched or cut texts: the first sighting writes a row, and a later row is written at the
+  2nd, 4th, 8th, 16th... sighting, each with `sightings` (the running count). The ledger is
+  append-only, so the count is carried by new rows rather than by editing the first. A
+  different poisoned text has a different hash and always gets its own row. The counts are
+  kept in the process: a restart starts them again, and a long-lived process forgets the
+  oldest keys. This was chosen (issue #164) over one row per read, which wrote about a
+  hundred rows for one text.
 - **The setting.** There is none of its own: `IRIS_GOVERNANCE_EXTERNAL_CONTENT_FLOOR` off
   means no scan here either.
 

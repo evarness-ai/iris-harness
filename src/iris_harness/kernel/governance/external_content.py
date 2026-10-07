@@ -276,6 +276,12 @@ class ScanResult:
     # Ids the owner allowed (``external_content_allow``) that matched here and were kept: the
     # floor records them on its row so the allow-list's effect is visible.
     allowed: tuple[str, ...] = ()
+    # How many passes it took (1 when the first pass was all). More than 1 means a redaction
+    # exposed a phrase the first pass could not see (issue #166).
+    passes: int = 1
+    # True when :data:`MAX_SCAN_PASSES` was reached with text still matching. The text handed
+    # on is the redacted result of those passes, never an exception.
+    exhausted: bool = False
 
     @property
     def matched(self) -> bool:
@@ -317,8 +323,24 @@ def _redact(text: str, patterns: tuple[FloorPattern, ...]) -> tuple[str, list[st
     return "".join(out), ids, len(merged)
 
 
+#: The most passes :func:`scan` makes over one text. Each pass that matches consumes at least
+#: one non-marker character and the markers match nothing, so a text settles after a handful
+#: of passes at the very most; the cap is the backstop that turns a bug into a logged,
+#: counted event instead of a loop.
+MAX_SCAN_PASSES = 8
+
+
 def scan(text: str, *, allow: frozenset[str] = frozenset()) -> ScanResult:
-    """``text`` with every tripwire match replaced by :data:`MARKER`.
+    """``text`` with every tripwire match replaced by :data:`MARKER`, until nothing matches.
+
+    A redaction can change what a later pattern sees: the marker puts a word boundary where
+    there was none (``...?q=1disregard the above prompt`` becomes ``...]disregard the above
+    prompt``), so one pass can leave a phrase that the next would take. ``scan`` therefore
+    runs to a fixpoint (at most :data:`MAX_SCAN_PASSES`, spans and ids accumulated across the
+    passes), which makes it idempotent: ``scan(scan(x).text)`` finds nothing and changes
+    nothing (issue #166). A text the first pass leaves alone is returned as the same string.
+
+    One pass, as above:
 
     ``allow`` is the pattern ids the owner allowed for this text's source
     (``external_content_allow.allowed_ids``): those phrase patterns are not redacted, and the
@@ -331,6 +353,38 @@ def scan(text: str, *, allow: frozenset[str] = frozenset()) -> ScanResult:
     not rewritten. Past :data:`MAX_REDACTIONS` spans in one pass the rest are replaced by
     :data:`SHORT_MARKER` and the text between them is kept.
     """
+    first = _scan_pass(text, allow)
+    if not first.matched:
+        return first
+    current = first
+    ids = list(first.ids)
+    spans = first.spans
+    allowed = list(first.allowed)
+    passes = 1
+    while passes < MAX_SCAN_PASSES:
+        nxt = _scan_pass(current.text, allow)
+        if not nxt.matched:
+            break
+        passes += 1
+        current = nxt
+        spans += nxt.spans
+        ids.extend(i for i in nxt.ids if i not in ids)
+        allowed.extend(i for i in nxt.allowed if i not in allowed)
+    else:
+        exhausted = _scan_pass(current.text, allow).matched
+        if exhausted:
+            logger.warning(
+                "external-content scan: still matching after %d passes; the redacted text "
+                "of the last pass is handed on",
+                MAX_SCAN_PASSES,
+            )
+            return ScanResult(
+                current.text, tuple(ids), spans, tuple(allowed), passes, exhausted=True
+            )
+    return ScanResult(current.text, tuple(ids), spans, tuple(allowed), passes)
+
+
+def _scan_pass(text: str, allow: frozenset[str]) -> ScanResult:
     hidden = tuple(p for p in PATTERNS if p.id in _HIDDEN_IDS)
     phrases = tuple(p for p in PATTERNS if p.id not in _HIDDEN_IDS)
     kept = tuple(p for p in phrases if p.id in allow)

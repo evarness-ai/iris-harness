@@ -281,6 +281,8 @@ class DeviceService:
     def _record(
         self, decision: str, *, subject: str, severity: str, reason: str, payload: dict[str, Any]
     ) -> None:
+        # The audit log (an append-only row per event, no caller key), not the side-effect
+        # ledger: there is no key to collide, so nothing here needs ``exclusive`` (#102).
         self._ledger.record(
             run_id=f"device:{subject}",
             step_id=None,

@@ -213,7 +213,7 @@ class AuditLog:
                 )
                 claimed = self._write_preamble(conn, writer, extra)
                 conn.commit()
-        except Exception as exc:  # noqa: BLE001 - any database failure spools
+        except Exception as exc:  # silent-ok: spooled and logged in _spool_or_raise  # noqa: BLE001
             sequence.restore_gaps(self.db_path, writer, claimed)
             for lost_seq in extra:  # a gap row's own number: a hole too, but not a lost event
                 sequence.note_failure(self.db_path, writer, lost_seq, exc, spooled=False, own=True)
@@ -316,7 +316,8 @@ class AuditLog:
                 for rec in records:
                     _insert_spooled(conn, rec)
                 conn.commit()
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            logger.warning("audit_log: spooled rows not replayed yet: %s", exc.__class__.__name__)
             return False
         return True
 

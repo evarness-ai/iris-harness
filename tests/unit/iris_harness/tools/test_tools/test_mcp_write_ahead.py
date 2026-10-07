@@ -50,7 +50,7 @@ def _governor(root: Path) -> IRISGovernorService:
 
 
 class Rig:
-    def __init__(self, root: Path, tools: dict[str, str]) -> None:
+    def __init__(self, root: Path, tools: dict[str, str], *, undeclared: str | None = None) -> None:
         self.queue = ApprovalQueue(db_path=root / "approvals.db")
         self.ledger = shared_side_effect_ledger(root / "ledger.db")
         kernel = build_default_kernel(
@@ -59,7 +59,8 @@ class Rig:
             side_effect_ledger_db_path=root / "ledger.db",
         )
         governance = MCPServerGovernance(
-            tools={n: MCPToolGovernance(effect=e) for n, e in tools.items()}  # type: ignore[arg-type]
+            tools={n: MCPToolGovernance(effect=e) for n, e in tools.items()},  # type: ignore[arg-type]
+            **({"undeclared_tools": undeclared} if undeclared else {}),  # type: ignore[arg-type]
         )
         config = MCPBridgeConfig(
             enabled=True,
@@ -164,13 +165,80 @@ def test_a_taken_ledger_key_denies_the_call_before_it_runs(
     assert rig.reached == []
 
 
-def test_an_undeclared_tool_behaves_as_before_with_no_row(tmp_path: Path) -> None:
+def test_an_undeclared_tool_with_no_approval_never_reaches_the_server(tmp_path: Path) -> None:
+    """Fail closed (#180): a tool nobody declared is treated as destructive."""
     rig = Rig(tmp_path, {"delete_file": "destructive"})
+
+    with pytest.raises(PermissionError):
+        rig.call("read_file")
+
+    assert rig.reached == [] and rig.ledger.pending(RUN) == []
+
+
+def test_an_undeclared_tool_with_an_approval_pinning_the_call_runs_with_a_row(
+    tmp_path: Path,
+) -> None:
+    rig = Rig(tmp_path, {})
+    approval_id = rig.queue.enqueue(
+        RUN,
+        None,
+        "read",
+        "read notes.txt",
+        items=(ApprovalItem.of("mcp/files/read_file", ARGS),),
+    )
+    rig.queue.respond(approval_id, status="approved", actor="owner")
+
+    result = rig.call("read_file", approved_by=str(approval_id))
+
+    assert result.result == "deleted" and rig.reached == ["read_file"]
+    (row,) = rig.rows_when_reached[0]  # written ahead, like a declared destructive tool
+    assert row.tool == "mcp/files/read_file" and row.status == "pending"
+
+
+def test_a_server_that_opts_out_runs_its_undeclared_tools_unchanged(tmp_path: Path) -> None:
+    rig = Rig(tmp_path, {"delete_file": "destructive"}, undeclared="read")
 
     result = rig.call("read_file")
 
     assert result.result == "deleted" and rig.reached == ["read_file"]
     assert rig.rows_when_reached == [[]] and rig.ledger.pending(RUN) == []
+    with pytest.raises(PermissionError):  # the declared destructive tool is still gated
+        rig.call("delete_file")
+
+
+def test_undeclared_tools_rejects_an_unknown_value() -> None:
+    with pytest.raises(ValidationError):
+        MCPServerGovernance.model_validate({"undeclared_tools": "write"})
+    assert MCPServerGovernance().undeclared_tools == "destructive"
+
+
+def test_a_server_with_no_governance_block_fails_closed_too(tmp_path: Path) -> None:
+    from iris_harness.tools.mcp_bridge import effective_effect
+
+    bare = MCPServerConfig(name="files", enabled=True, command="python")
+
+    assert effective_effect(bare, "anything") == "destructive"
+
+
+def test_discovery_warns_naming_the_undeclared_tools_and_the_default(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    rig = Rig(tmp_path, {"list_files": "read"})
+    rig.bridge._invoke_transport = lambda *_a, **_k: {  # type: ignore[method-assign]
+        "tools": [
+            {"name": "list_files", "description": "d", "inputSchema": {}},
+            {"name": "delete_file", "description": "d", "inputSchema": {}},
+            {"name": "read_file", "description": "d", "inputSchema": {}},
+        ]
+    }
+
+    with caplog.at_level("WARNING", logger="iris_harness.tools.mcp_bridge"):
+        rig.bridge.list_external_tools("files", approval_granted=True)
+
+    (record,) = [r for r in caplog.records if "no declared effect" in r.getMessage()]
+    message = record.getMessage()
+    assert "delete_file, read_file" in message and "list_files" not in message
+    assert "treated as destructive" in message
 
 
 def test_a_declared_read_tool_needs_no_approval_and_writes_no_row(tmp_path: Path) -> None:

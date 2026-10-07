@@ -9,7 +9,7 @@ import os
 import select
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urljoin, urlparse
@@ -210,6 +210,25 @@ def declared_effect(server: MCPServerConfig, tool_name: str) -> str | None:
     return declared.effect if declared is not None else None
 
 
+def effective_effect(server: MCPServerConfig, tool_name: str) -> str:
+    """What the bridge treats ``tool_name`` as: the declared effect, else the server's default.
+
+    An undeclared tool fails closed to ``destructive`` (issue #180); the operator's
+    ``governance.undeclared_tools: read`` is the per-server opt-out.
+    """
+    declared = declared_effect(server, tool_name)
+    if declared is not None:
+        return declared
+    if server.governance is None:
+        return "destructive"
+    return server.governance.undeclared_tools
+
+
+def undeclared_tool_names(server: MCPServerConfig, tool_names: Iterable[str]) -> list[str]:
+    """The names in ``tool_names`` the operator has not declared on ``server``."""
+    return [name for name in tool_names if declared_effect(server, name) is None]
+
+
 class MCPBridge:
     """Bridge local skill tools into MCP definitions and guard external tool calls."""
 
@@ -371,7 +390,20 @@ class MCPBridge:
 
         result = self._invoke_transport(server, method="tools/list", params={})
         tool_payloads = _coerce_mcp_tools_payload(result)
-        return tuple(_coerce_external_tool_definition(server, payload) for payload in tool_payloads)
+        definitions = tuple(
+            _coerce_external_tool_definition(server, payload) for payload in tool_payloads
+        )
+        undeclared = undeclared_tool_names(server, (d.name for d in definitions))
+        if undeclared:
+            default = server.governance.undeclared_tools if server.governance else "destructive"
+            logger.warning(
+                "MCP server %r has tools with no declared effect: %s; they are treated as %s "
+                "(declare them under governance.tools, or set governance.undeclared_tools)",
+                server.name,
+                ", ".join(sorted(undeclared)),
+                default,
+            )
+        return definitions
 
     def invoke_external_tool(
         self,
@@ -411,10 +443,12 @@ class MCPBridge:
         effect through both steps (issue #102). A ``destructive`` one is refused before the
         server is reached unless ``approved_by`` names an approved queue row that pinned
         exactly this call, and it leaves a pending write-ahead ledger row before it runs,
-        settled after. A tool nobody declared behaves as before.
+        settled after. A tool nobody declared is treated as ``destructive`` (the server's
+        ``governance.undeclared_tools``, default ``destructive``; ``read`` opts a server out),
+        so it fails closed (issue #180).
         """
         server = self._require_enabled_server(server_name)
-        effect = declared_effect(server, tool_name)
+        effect = effective_effect(server, tool_name)
         call_arguments = dict(arguments)
         # One id for this outbound call, minted here and nowhere else: its PRE and POST rows
         # both carry it (#134). Not the caller's to supply.
@@ -574,8 +608,8 @@ class MCPBridge:
 
         An external server's output is third-party text, so it is declared
         ``content: external``; its effect is the one the operator declared for the tool, or
-        none (an MCP server declares none itself), so a call nobody declared stamps no
-        effect. ``deny`` / ``require_approval`` raise :exc:`PermissionError` (the result is
+        the server's ``undeclared_tools`` default (an MCP server declares none itself).
+        ``deny`` / ``require_approval`` raise :exc:`PermissionError` (the result is
         withheld); a ``transform`` is returned.
         """
         from iris_harness.kernel.governance.audit.digest import audit_digester

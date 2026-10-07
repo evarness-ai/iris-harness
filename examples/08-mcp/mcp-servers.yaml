@@ -17,6 +17,10 @@ servers:
       - weather_server.py
     env: {}
     governance:
+      # A tool nobody declares is treated as destructive (needs an approval). Declare
+      # what each tool does, or set `undeclared_tools: read` for a server that only reads.
+      tools:
+        forecast: {effect: read}
       allowed_for_personas:
         - persona: developer
           tools: ["forecast"]

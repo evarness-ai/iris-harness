@@ -69,7 +69,8 @@ class MCPToolGovernance(BaseModel):
     the server's claim, not the operator's, so the bridge never trusts them. The operator
     says what a tool does here; the bridge then treats the call like a plugin tool of that
     effect (a ``destructive`` one waits for an itemised approval and leaves a write-ahead
-    ledger row before it runs).
+    ledger row before it runs). A tool the operator does not list is governed by
+    ``MCPServerGovernance.undeclared_tools`` (``destructive`` unless the server opts out).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -83,9 +84,13 @@ class MCPServerGovernance(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     allowed_for_personas: tuple[MCPPersonaGrant, ...] = Field(default_factory=tuple)
-    # Tool name -> what the operator declares it does. A tool not listed declares nothing
-    # and is handled as before: no effect, no write-ahead row.
+    # Tool name -> what the operator declares it does.
     tools: dict[str, MCPToolGovernance] = Field(default_factory=dict)
+    # What a tool NOT listed in ``tools`` is treated as (issue #180). Fail closed: an
+    # undeclared tool is ``destructive`` (an itemised approval and a write-ahead row)
+    # until the operator declares it. ``read`` is the one-line opt-out for a server that
+    # only reads. A server's own hints (``readOnlyHint``) never relax this.
+    undeclared_tools: Literal["destructive", "read"] = "destructive"
 
     @field_validator("tools")
     @classmethod

@@ -394,8 +394,62 @@ Payload-only: no schema change and no migration (the audit payload is schema-fre
 * **Surfaces.** `audit/write_health.py` is the one source: System Health row (red when lost, yellow
   while the spool waits), `iris system status`, `GET /governance/state` and `/governance/audit`
   (`write_health`), the Governance screen.
-* **Not yet (4b).** Compaction still drops the identity columns from the archive and has no marker;
-  until it does, it skips the store's own rows so a `writer`/`gap` row is never archived unaccounted.
+* **Not yet (4b).** Compaction still dropped the identity columns from the archive and had no
+  marker; it skipped the store's own rows so a `writer`/`gap` row was never archived unaccounted.
+  Stage 4b (below) closes both.
+
+### 6.4 Stage 4b as built (compaction markers, Parquet schema, de-duplicating view)
+
+* **Columns kept.** The archive schema gains `id`, `record_id`, `session_id`, `turn_id`,
+  `call_id`, `parent_call_id`, `attempt`, `replay_of`, `resumed_from_run`, `writer_id`,
+  `writer_seq` and `kind`. The compactor builds every row with all 26 columns, and archives
+  `writer`/`gap` rows too. Chunks written before 4b keep their 14 columns and are never rewritten;
+  the view reads them with `union_by_name` and NULL for what they lack.
+* **Order of operations** (under an exclusive `flock` on `<archive>/.compact.lock`):
+  1. adopt or move the orphans of an interrupted run (below);
+  2. select the hot rows older than the cutoff, except `compaction` markers;
+  3. write each month's chunk as `audit-<compaction ULID>-<n>.parquet` under a temporary name,
+     fsync it, rename it into place, fsync the directory (a published name is always a complete
+     file);
+  4. ONE SQLite transaction (`AuditLog.write_compaction`): insert the marker, check that every
+     archived `(id, record_id)` is still there unchanged, delete exactly those ids, commit. The
+     delete is by id, never by time range: a spooled row that drains late with an old timestamp
+     is not in any chunk and must not be deleted. Any mismatch rolls the whole transaction back.
+* **The marker** is a `kind='compaction'` row (`hook_point='audit.compaction'`, numbered by the
+  compactor's own writer sequence). Payload: `compaction_id`, `cutoff_ts` (null when adopted),
+  `adopted`, `row_count`, `id_range`, `pre_identity_rows`, `pre_sequence_rows`, `kinds`, `chunks`
+  (file, `sha256`, rows, `ts_min`, `ts_max`) and `writers` (per writer: `min_seq`, `max_seq`,
+  `count`). A writer's hole inside a range stays visible: the range is wider than the count.
+  Markers are never archived, so a run's account stays where it can be checked: one small row
+  per run stays hot. `writers` is not capped: 5,000 writers (a month of CLI runs) measure under
+  1 MB (`test_marker_size_for_a_synthetic_month_of_writers`); a sidecar file is the follow-up if
+  it ever passes that.
+* **Orphans.** A crash between step 3 and step 4 leaves chunks no marker names. The next run
+  looks only at files whose name carries a compaction ULID (and the `.tmp` of an unfinished
+  publish). A group whose rows are all still hot is **adopted** (one marker, `adopted: true`,
+  its SHA-256 taken then: it proves the file as of adoption, not as written; that is stage 6's
+  job). A chunk that cannot be read, or whose rows are no longer all hot, is **moved** to
+  `<archive>/.orphans/<compaction id>/year=../month=../` (reversible, never unlinked). A chunk of
+  the older shape, a corrupt one, or any other file is never adopted, moved or removed:
+  `iris audit verify` reports it and leaves it.
+* **The view.** `audit_all` holds every row, de-duplicated: hot first, then cold, keyed by
+  `record_id`, or by `'id:' || id` for a pre-identity row (the hot `id` is unique, never reused,
+  and kept in the chunk). A chunk of the older shape has neither and is not de-duplicated.
+  `audit_archive` is `audit_all` minus the store's own rows (`kind` not NULL), the same default as
+  `AuditLog.query()`; `iris audit query|export --include-store-rows` (or
+  `AuditQueryEngine(include_store_rows=True)`) shows them. The hot read lists the columns the
+  file has, so a database an older release created still reads. `iris audit export` rows gain the
+  new columns.
+* **Readers of the archive** (all listed, none missed): `AuditQueryEngine` (used by `iris audit
+  query`, `iris audit export` and `scripts/demo_governance_phase5_exit_criteria.py`) and
+  `iris audit verify` (markers against chunks). The governance API, the web audit routes, the
+  proof bundle and the trace builder read the hot ledger through `AuditLog`, which already hides
+  the store's rows; none opens Parquet (`test_readers_of_the_archive_are_the_query_engine_only`).
+* **Known limit.** A spool line left after a crash between "drain applied" and "line removed"
+  can re-insert (`INSERT OR IGNORE` finds no row) a row that was archived meanwhile. The view and
+  stage 5 de-duplicate by `record_id`, and the next compaction archives the copy again (a cold
+  duplicate, collapsed by the view); a marker's per-writer `count` counts it twice. The drain is
+  not changed.
 
 ## 7. Verified vs not verified
 Verified by running (current main fbfb7e8, scripted model, temp IRIS_HOME, throwaway vault key): the two scenarios and their

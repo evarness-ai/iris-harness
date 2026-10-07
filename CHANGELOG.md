@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Audit compaction now keeps what the ledger knows and accounts for what it moved (issue #134,
+  stage 4b). The Parquet archive keeps the identity and sequence columns (`id`, `record_id`,
+  `session_id`, `turn_id`, `call_id`, `parent_call_id`, `attempt`, `replay_of`,
+  `resumed_from_run`, `writer_id`, `writer_seq`, `kind`) and archives the ledger's own
+  `writer` and `gap` rows. Each run writes and fsyncs its chunks, then ONE transaction inserts a
+  `compaction` marker (chunk files, SHA-256, row counts, id range, each writer's lowest and
+  highest sequence number and count) and deletes exactly the archived rows by id. A crash between
+  the two leaves chunks no marker names: the next run adopts them (their rows are still in the
+  ledger) or moves them to `<archive>/.orphans/` (never deleted); a chunk written by an older
+  release, or any file it does not recognise, is never touched. `audit_archive` de-duplicates a
+  row found in both tiers or in two chunks by `record_id`, hides the ledger's own rows by default
+  (`iris audit query|export --include-store-rows` shows them), and reads old and new chunks
+  together. `iris audit verify` checks every marker against its chunks. Compactions are
+  serialised by a lock in the archive directory. Known limit: a spool line that survives a crash
+  between being applied and being removed can re-insert a row archived in the meantime; the view
+  collapses the copy.
+
 ### Security
 
 - An unexpected failure in `/chat/stream` or a web slash command now tells the client the exception class and to see the server log, not the exception text. The full traceback is logged. Curated errors (validation, removal, allow-list) are unchanged.

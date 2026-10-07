@@ -18,6 +18,37 @@ from iris_harness.kernel.governance.audit.log import _default_audit_db_path
 
 ExportFormat = Literal["jsonl", "csv"]
 
+#: The columns of a row as the view shows them, in order, with their DuckDB types. The first
+#: fourteen are the original archive; the rest arrived with call identity and the writer
+#: sequence (issue #134) and read as NULL from a chunk or a database that predates them.
+_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("id", "BIGINT"),
+    ("ts", "TIMESTAMP"),
+    ("run_id", "VARCHAR"),
+    ("step_id", "INTEGER"),
+    ("agent_type", "VARCHAR"),
+    ("hook_point", "VARCHAR"),
+    ("plugin", "VARCHAR"),
+    ("decision", "VARCHAR"),
+    ("classification", "VARCHAR"),
+    ("tier", "VARCHAR"),
+    ("cost_usd", "DOUBLE"),
+    ("severity", "VARCHAR"),
+    ("reason", "VARCHAR"),
+    ("payload_json", "VARCHAR"),
+    ("record_id", "VARCHAR"),
+    ("session_id", "VARCHAR"),
+    ("turn_id", "VARCHAR"),
+    ("call_id", "VARCHAR"),
+    ("parent_call_id", "VARCHAR"),
+    ("attempt", "INTEGER"),
+    ("replay_of", "VARCHAR"),
+    ("resumed_from_run", "VARCHAR"),
+    ("writer_id", "VARCHAR"),
+    ("writer_seq", "BIGINT"),
+    ("kind", "VARCHAR"),
+)
+
 
 @dataclass(frozen=True)
 class QueryResult:
@@ -26,14 +57,21 @@ class QueryResult:
 
 
 class AuditQueryEngine:
-    """Run DuckDB SQL against a unified ``audit_archive`` view."""
+    """Run DuckDB SQL against a unified ``audit_archive`` view.
+
+    ``audit_archive`` holds the rows of hook firings, like ``AuditLog.query``; the store's own
+    rows (writer start/close, gap, compaction: ``kind`` not NULL) are in it only with
+    ``include_store_rows=True``. The ``audit_all`` view always holds every row.
+    """
 
     def __init__(
         self,
         *,
         audit_db_path: Path | None = None,
         archive_root: Path | None = None,
+        include_store_rows: bool = False,
     ) -> None:
+        self._include_store_rows = include_store_rows
         self._audit_db_path = (audit_db_path or _default_audit_db_path()).expanduser().resolve()
         self._archive_root = (archive_root or default_archive_root()).expanduser().resolve()
 
@@ -59,7 +97,7 @@ class AuditQueryEngine:
         sql = (
             "SELECT * FROM audit_archive "  # noqa: S608
             f"WHERE ts >= '{clause}' "
-            "ORDER BY ts ASC, id ASC"
+            "ORDER BY ts ASC, writer_id ASC, writer_seq ASC, id ASC"
         )
         result = self.query(sql)
         if fmt == "jsonl":
@@ -76,60 +114,62 @@ class AuditQueryEngine:
         return len(result.rows)
 
     def _prepare_views(self, conn: duckdb.DuckDBPyConnection) -> None:
-        hot_rows = self._read_hot_rows()
-        conn.execute("""
-            CREATE TEMP TABLE audit_hot (
-                id BIGINT,
-                ts TIMESTAMP,
-                run_id VARCHAR,
-                step_id INTEGER,
-                agent_type VARCHAR,
-                hook_point VARCHAR,
-                plugin VARCHAR,
-                decision VARCHAR,
-                classification VARCHAR,
-                tier VARCHAR,
-                cost_usd DOUBLE,
-                severity VARCHAR,
-                reason VARCHAR,
-                payload_json VARCHAR
-            )
-            """)
-        if hot_rows:
-            conn.executemany(
-                """
-                INSERT INTO audit_hot VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                hot_rows,
-            )
+        """``audit_all`` (every row, de-duplicated) and ``audit_archive`` (what readers see).
 
-        parquet_glob = str(self._archive_root / "year=*" / "month=*" / "audit-*.parquet")
+        A row can be in both tiers for a moment (a compaction wrote its chunk and crashed
+        before deleting it), or in two chunks (an orphan re-selected by a later run). Rows are
+        de-duplicated by ``record_id``; a row of the pre-identity era has none, so its ``id``
+        (unique in the database, kept in the chunk since stage 4b) stands in. The hot copy wins.
+        A chunk of the older shape has no ``id`` and no identity: it is read as is, never
+        de-duplicated.
+        """
+        conn.execute("SET TimeZone = 'UTC'")
+        hot_rows = self._read_hot_rows()
+        defs = ", ".join(f"{name} {typ}" for name, typ in _COLUMNS)
+        conn.execute(f"CREATE TEMP TABLE audit_hot ({defs})")
+        if hot_rows:
+            marks = ", ".join("?" for _ in _COLUMNS)
+            conn.executemany(f"INSERT INTO audit_hot VALUES ({marks})", hot_rows)  # noqa: S608
+
+        names = ", ".join(name for name, _ in _COLUMNS)
+        glob = str(self._archive_root / "year=*" / "month=*" / "audit-*.parquet")
         if any(self._archive_root.glob("year=*/month=*/audit-*.parquet")):
-            # parquet_glob is an internal archive path, not user input — no injection vector
+            source = f"read_parquet('{glob}', union_by_name=true)"  # internal path, not user input
+            describe = f"DESCRIBE SELECT * FROM {source}"  # noqa: S608 - internal path
+            have = {row[0] for row in conn.execute(describe).fetchall()}
+            select = ", ".join(
+                name if name in have else f"NULL::{typ} AS {name}" for name, typ in _COLUMNS
+            )
             conn.execute(
-                "CREATE TEMP VIEW audit_cold AS "  # noqa: S608
-                "SELECT NULL::BIGINT AS id, ts, run_id, step_id, agent_type, hook_point, "
-                "plugin, decision, classification, tier, cost_usd, severity, reason, payload_json "
-                f"FROM read_parquet('{parquet_glob}')"
+                f"CREATE TEMP VIEW audit_cold AS SELECT {select} FROM {source}"  # noqa: S608
             )
         else:
             conn.execute("CREATE TEMP VIEW audit_cold AS SELECT * FROM audit_hot WHERE 1=0")
 
-        conn.execute("""
-            CREATE TEMP VIEW audit_archive AS
-            SELECT * FROM audit_hot
-            UNION ALL
-            SELECT * FROM audit_cold
-            """)
+        conn.execute(f"""
+            CREATE TEMP VIEW audit_all AS
+            WITH u AS (
+                SELECT {names}, 0 AS src FROM audit_hot
+                UNION ALL
+                SELECT {names}, 1 AS src FROM audit_cold
+            ), k AS (
+                SELECT *, COALESCE(
+                    record_id, CASE WHEN id IS NOT NULL THEN 'id:' || CAST(id AS VARCHAR) END
+                ) AS dedup_key FROM u
+            ), r AS (
+                SELECT *, row_number() OVER (PARTITION BY dedup_key ORDER BY src, id) AS rn FROM k
+            )
+            SELECT {names} FROM r WHERE dedup_key IS NULL OR rn = 1
+            """)  # noqa: S608 - fixed column list
+        where = "" if self._include_store_rows else " WHERE kind IS NULL"
+        view = f"CREATE TEMP VIEW audit_archive AS SELECT * FROM audit_all{where}"  # noqa: S608
+        conn.execute(view)
 
     def _read_hot_rows(self) -> list[tuple[object, ...]]:
         if not self._audit_db_path.exists():
             return []
         with closing(sqlite3.connect(self._audit_db_path)) as conn, conn:
-            rows = conn.execute("""
-                SELECT id, ts, run_id, step_id, agent_type, hook_point, plugin, decision,
-                       classification, tier, cost_usd, severity, reason, payload_json
-                FROM audit_log
-                WHERE kind IS NULL
-                """).fetchall()
+            present = {row[1] for row in conn.execute("PRAGMA table_info(audit_log)")}
+            select = ", ".join(name if name in present else "NULL" for name, _ in _COLUMNS)
+            rows = conn.execute(f"SELECT {select} FROM audit_log").fetchall()  # noqa: S608
         return [tuple(row) for row in rows]

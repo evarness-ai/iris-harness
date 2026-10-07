@@ -814,7 +814,7 @@ Five orthogonal signals, each a separate verifier. Default model per signal is c
 | Hot | SQLite — `~/.local/share/iris/audit.db` (`audit_log`, the chat/kernel ledger; override `IRIS_GOVERNANCE_AUDIT_DB_PATH`), plus `approvals.db`, `cost-ledger.db`, `side_effects.db`, `checkpoints.db`, and `~/.config/iris/vault.db` | Last 30 days, fast queries | Rolling 30d |
 | Cold | Parquet+zstd files under `~/.local/share/iris/audit-archive/YYYY/MM/` | Everything older than 30d | **Never purged** (your `C3` answer) |
 
-Daily compaction job (`iris audit compact`) moves rows older than 30d from SQLite into a partitioned Parquet file, then drops them from SQLite.
+Daily compaction job (`iris audit compact`) moves rows older than 30d from SQLite into a partitioned Parquet file, then drops them from SQLite. Each run leaves a `compaction` marker row in the same transaction as the delete, and `iris audit verify` checks the markers against the chunks (stage 4b: [call-identity-and-audit-replay.md](call-identity-and-audit-replay.md) section 6.4).
 
 ### 13.2 Schemas (hot)
 

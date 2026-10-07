@@ -1298,6 +1298,56 @@ def cmd_audit_compact(
         f"deleted={result.deleted_rows}, partitions={result.partition_count})"
     )
     console.print(f"  [dim]cutoff:[/dim] {result.cutoff_ts}")
+    if result.adopted_chunks or result.quarantined_chunks:
+        console.print(
+            f"  [dim]interrupted run:[/dim] adopted {result.adopted_chunks} chunk(s), "
+            f"moved {result.quarantined_chunks} to the archive's .orphans/ directory"
+        )
+
+
+@audit_app.command("verify")
+def cmd_audit_verify(
+    db_path: Annotated[
+        str | None,
+        typer.Option("--db", help="Override governance audit SQLite path."),
+    ] = None,
+    archive_root: Annotated[
+        str | None,
+        typer.Option("--archive-root", help="Override Parquet archive root path."),
+    ] = None,
+) -> None:
+    """Check every compaction marker against the archive chunks it names (read-only)."""
+    from pathlib import Path as _Path
+
+    try:
+        from iris_harness.kernel.governance.audit.archive import default_archive_root
+        from iris_harness.kernel.governance.audit.archive.markers import verify_archive
+        from iris_harness.kernel.governance.audit.log import _default_audit_db_path
+    except ModuleNotFoundError as exc:
+        print_error(
+            f"audit verify requires optional dependency {exc.name!r}; "
+            "install project dependencies from pyproject.toml first."
+        )
+        raise typer.Exit(2) from exc
+
+    report = verify_archive(
+        _Path(db_path) if db_path else _default_audit_db_path(),
+        _Path(archive_root) if archive_root else default_archive_root(),
+    )
+    console.print(
+        f"  {report.markers} compaction marker(s), {report.chunks_checked} chunk(s) checked"
+    )
+    for line in report.problems:
+        console.print(f"  [bold red]✗[/bold red]  {line}")
+    for name in report.unreadable:
+        console.print(f"  [bold red]✗[/bold red]  cannot read {name} (left untouched)")
+    for name in report.orphans:
+        console.print(
+            f"  [yellow]![/yellow]  {name}: no marker yet (the next compaction handles it)"
+        )
+    if not report.clean:
+        raise typer.Exit(1)
+    console.print("  [bold green]✓[/bold green]  every marker reconciles with its chunks")
 
 
 @audit_app.command("query")
@@ -1315,6 +1365,13 @@ def cmd_audit_query(
         str | None,
         typer.Option("--archive-root", help="Override Parquet archive root path."),
     ] = None,
+    include_store_rows: Annotated[
+        bool,
+        typer.Option(
+            "--include-store-rows",
+            help="Also show the ledger's own rows (writer start/close, gap, compaction).",
+        ),
+    ] = False,
 ) -> None:
     """Run a read-only DuckDB query across hot (SQLite) and cold (Parquet) audit data."""
     import json as _json
@@ -1340,6 +1397,7 @@ def cmd_audit_query(
     engine = AuditQueryEngine(
         audit_db_path=_Path(db_path) if db_path else None,
         archive_root=_Path(archive_root) if archive_root else None,
+        include_store_rows=include_store_rows,
     )
     try:
         result = engine.query(sql)
@@ -1388,6 +1446,13 @@ def cmd_audit_export(
         str | None,
         typer.Option("--archive-root", help="Override Parquet archive root path."),
     ] = None,
+    include_store_rows: Annotated[
+        bool,
+        typer.Option(
+            "--include-store-rows",
+            help="Also show the ledger's own rows (writer start/close, gap, compaction).",
+        ),
+    ] = False,
 ) -> None:
     """Export audit rows since a given timestamp across hot+cold tiers."""
     from datetime import UTC, datetime
@@ -1421,6 +1486,7 @@ def cmd_audit_export(
     engine = AuditQueryEngine(
         audit_db_path=_Path(db_path) if db_path else None,
         archive_root=_Path(archive_root) if archive_root else None,
+        include_store_rows=include_store_rows,
     )
     if output_format == "jsonl":
         count = engine.export_since(

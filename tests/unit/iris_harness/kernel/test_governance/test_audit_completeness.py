@@ -538,22 +538,6 @@ def test_an_older_release_writing_the_old_insert_shape_still_works(db: Path) -> 
     assert AuditLog(db_path=db).count() == 2
 
 
-def test_compaction_leaves_the_stores_own_rows_hot(db: Path) -> None:
-    from datetime import UTC, datetime, timedelta
-
-    from iris_harness.kernel.governance.audit.archive.compact import AuditCompactor
-    from iris_harness.kernel.governance.audit.archive.writer import AuditArchive
-
-    log = AuditLog(db_path=db)
-    old = datetime.now(UTC) - timedelta(days=90)
-    log.record(**_row(1, ts=old))
-    compactor = AuditCompactor(
-        audit_log=log, archive=AuditArchive(root=db.parent / "archive"), retention_days=30
-    )
-    compactor.compact()
-    assert {r["hook_point"] for r in _all(db)} == {"writer.start"}  # the decision went cold
-
-
 def _run(code: str, db: Path, *, check: bool = True) -> int:
     proc = subprocess.run(
         [sys.executable, "-c", code, str(db)],

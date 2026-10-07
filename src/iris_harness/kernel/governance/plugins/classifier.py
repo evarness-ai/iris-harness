@@ -19,6 +19,7 @@ output classification (the ``PostToolUse`` companion plugin reuses
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,7 +29,7 @@ from iris_harness.kernel.governance.hooks.types import (
     HookDecision,
     HookPoint,
 )
-from iris_harness.kernel.governance.plugins.regex_packs import ALL_PACKS, RegexEntry
+from iris_harness.kernel.governance.plugins.regex_packs import ALL_PACKS, ClassifierEntry
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,7 @@ class DataClassifier:
     effects. Safe to instantiate as a singleton at process start.
     """
 
-    def __init__(self, *, packs: dict[str, list[RegexEntry]] | None = None) -> None:
+    def __init__(self, *, packs: Mapping[str, Sequence[ClassifierEntry]] | None = None) -> None:
         self._packs = packs if packs is not None else ALL_PACKS
 
     def classify(self, text: str) -> ClassificationResult:

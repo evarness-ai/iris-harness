@@ -253,7 +253,7 @@ def resolve_export_dir(name: str) -> Path:
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     real_root = os.path.realpath(root)
     target = os.path.realpath(os.path.join(real_root, name))
-    if os.path.dirname(target) != real_root:
+    if not target.startswith(real_root + os.sep) or os.path.dirname(target) != real_root:
         raise ExportTargetError("export folder resolves outside the export folder")
     if os.path.exists(target) and not os.path.isdir(target):
         raise ExportTargetError("export folder name is an existing file")

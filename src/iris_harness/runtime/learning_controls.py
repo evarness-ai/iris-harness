@@ -555,9 +555,15 @@ class LearningControls:
         except Exception:
             logger.debug("intention context: routines unavailable", exc_info=True)
         try:
+            from iris_harness.kernel.governance.reentry import reenter_memory_lines
             from iris_harness.memory.identity.loader import list_episodic_patterns
 
-            habits = [p.text for p in list_episodic_patterns()]
+            # They go to the intention-rollup model: scanned like the chat prompt's copy (#163).
+            habits = list(
+                reenter_memory_lines(
+                    [p.text for p in list_episodic_patterns()], "intention_rollup.habits"
+                )
+            )
             if habits:
                 lines.append("Confirmed habits:\n" + "\n".join(f"- {h}" for h in habits[:20]))
         except Exception:

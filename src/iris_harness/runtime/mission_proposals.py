@@ -115,13 +115,17 @@ class MissionProposals:
         proposed = 0
         if self.mission_autocreate_enabled():
             try:
+                from iris_harness.kernel.governance.reentry import reenter_memory
                 from iris_harness.memory.identity import list_episodic_patterns
                 from iris_harness.services.missions.proposer import (
                     build_episodic_mission,
                 )
 
                 for pattern in list_episodic_patterns():
-                    text = (getattr(pattern, "text", "") or "").strip()
+                    # The pattern becomes a mission goal a model later runs: scan it (#163).
+                    text = reenter_memory(
+                        (getattr(pattern, "text", "") or "").strip(), "mission_proposals"
+                    )
                     if len(text) < 12:
                         continue
                     if self.propose_mission(build_episodic_mission(text)):

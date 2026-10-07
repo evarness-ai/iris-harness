@@ -23,7 +23,7 @@ from email.utils import parseaddr
 from pathlib import Path
 from typing import Any
 
-from iris_harness.sdk.persistence import connect, data_path
+from iris_harness.sdk.persistence import connect, data_path, ensure_columns
 from iris_personal.email.contracts import EmailAttachment, EmailMessage
 
 
@@ -80,45 +80,41 @@ def _attachments_from_json(raw: str | None) -> tuple[EmailAttachment, ...]:
     return tuple(EmailAttachment(**item) for item in items)
 
 
-def _apply_migrations(conn: sqlite3.Connection) -> None:
+def _migrate_columns(db_path: Path) -> None:
     """Additive column migrations for existing databases.
 
-    ``ensure_schema()`` calls this BEFORE running ``_SCHEMA_SQL`` so
-    that index statements in ``_SCHEMA_SQL`` which reference
-    newly-added columns don't fail on a partially-migrated emails
-    table.
+    ``ensure_schema()`` calls this BEFORE running ``_SCHEMA_SQL`` so that index statements in
+    ``_SCHEMA_SQL`` which reference newly-added columns don't fail on a partially-migrated
+    emails table. On a fresh database the tables don't exist yet: there is nothing to migrate,
+    and ``_SCHEMA_SQL`` creates them with the new columns included.
 
-    On a fresh database the emails table doesn't exist yet — we
-    detect that via PRAGMA returning empty and skip; ``_SCHEMA_SQL``
-    creates the table with the new column included.
-
-    Pattern: read PRAGMA table_info, add what's missing. ALTER TABLE
-    ADD COLUMN is the only schema change SQLite supports cheaply; we
-    don't drop or rename columns here.
+    Each ``ensure_columns`` call adds what is missing on a connection of its own under
+    ``BEGIN IMMEDIATE``: this used to read ``PRAGMA table_info`` and then ``ALTER``, and two
+    processes opening an older ``email.db`` at once (the API, the CLI, a heartbeat) both saw the
+    column missing, so the loser's ``ALTER`` raised ``duplicate column name`` (#201). ALTER TABLE ADD
+    COLUMN is the only schema change SQLite supports cheaply; we don't drop or rename columns here.
     """
-    # PRAGMA table_info returns (cid, name, type, notnull, default, pk);
-    # use positional access so this works regardless of the connection's
-    # row_factory setting.
-    trashed_cols = {row[1] for row in conn.execute("PRAGMA table_info(trashed)").fetchall()}
-    if trashed_cols and "labels_before" not in trashed_cols:
-        # The provider labels a message had when it was trashed (JSON), so a restore
-        # can put back what the trash removed. Rows from before stay NULL.
-        conn.execute("ALTER TABLE trashed ADD COLUMN labels_before TEXT")
-    existing = {row[1] for row in conn.execute("PRAGMA table_info(emails)").fetchall()}
-    if not existing:
-        return  # fresh DB — _SCHEMA_SQL will create the table with all columns
-    if "triage_state" not in existing:
-        conn.execute("ALTER TABLE emails ADD COLUMN triage_state TEXT")
-    if "classified_source" not in existing:
-        conn.execute("ALTER TABLE emails ADD COLUMN classified_source TEXT")
-        # Every classification written before this column existed came from IRIS
-        # (triage or a user correction). Stamp them so a vendor category arriving on
-        # the next sync never overwrites one.
+    # The provider labels a message had when it was trashed (JSON), so a restore can put back what
+    # the trash removed. Rows from before stay NULL.
+    ensure_columns(db_path, "trashed", {"labels_before": "TEXT"})
+    ensure_columns(
+        db_path,
+        "emails",
+        {"triage_state": "TEXT", "classified_source": "TEXT"},
+        on_added=_stamp_iris_classifications,
+    )
+    # Future migrations append here.
+
+
+def _stamp_iris_classifications(conn: sqlite3.Connection, added: list[str]) -> None:
+    """``ensure_columns`` callback: every classification written before ``classified_source``
+    existed came from IRIS (triage or a user correction). Stamp them so a vendor category arriving
+    on the next sync never overwrites one. Runs once, in the transaction that added the column."""
+    if "classified_source" in added:
         conn.execute(
             "UPDATE emails SET classified_source = 'iris' "
             "WHERE classified_category IS NOT NULL AND classified_source IS NULL"
         )
-    # Future migrations append here.
 
 
 def _setup_fts(conn: sqlite3.Connection) -> None:
@@ -370,10 +366,10 @@ class EmailStore:
 
     def ensure_schema(self) -> None:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Migrate first — _SCHEMA_SQL's CREATE INDEX statements reference columns the
+        # migration may need to add.
+        _migrate_columns(self.db_path)
         with self._connect() as conn:
-            # Migrate first — _SCHEMA_SQL's CREATE INDEX statements
-            # reference columns the migration may need to add.
-            _apply_migrations(conn)
             conn.executescript(_SCHEMA_SQL)
             _setup_fts(conn)
 

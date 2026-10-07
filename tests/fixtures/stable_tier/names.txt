@@ -146,6 +146,7 @@ iris_harness.sdk.persistence:collection_kwargs
 iris_harness.sdk.persistence:connect
 iris_harness.sdk.persistence:data_dir
 iris_harness.sdk.persistence:data_path
+iris_harness.sdk.persistence:ensure_columns
 iris_harness.sdk.persistence:sqlite_conn
 iris_harness.sdk.persistence:with_locked_retry
 iris_harness.sdk.process_state:register_process_state

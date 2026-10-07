@@ -13,6 +13,7 @@ older version left. Then twelve real interpreters open it at once (each has impo
 
 from __future__ import annotations
 
+import ast
 import importlib
 import re
 import sqlite3
@@ -72,6 +73,16 @@ STORES: dict[str, tuple[str, str, list[tuple[str, list[str]]]]] = {
         "iris_harness.services.notifications.store:ReminderStore",
         "S(P).ensure_schema()",
         [],  # filled from the store's own list of added columns
+    ),
+    "email": (
+        "iris_personal.email.store:EmailStore",
+        "S(P).ensure_schema()",
+        [("emails", ["triage_state", "classified_source"]), ("trashed", ["labels_before"])],
+    ),
+    "onboarding": (
+        "iris_personal.plugins.email_workflows.onboarding:OnboardingStore",
+        "S(P).get('x')",
+        [("email_onboarding", ["activity_id"])],
     ),
     "approvals": (
         "iris_harness.kernel.governance.approvals.store:ApprovalStore",
@@ -318,16 +329,70 @@ def test_the_notification_lifecycle_backfill_runs_once_and_never_again(tmp_path:
     conn.close()
 
 
+def test_the_email_source_backfill_stamps_old_classifications_once_and_never_again(
+    tmp_path: Path,
+) -> None:
+    from iris_personal.email.store import EmailStore
+
+    db = tmp_path / "email.db"
+    EmailStore(db).ensure_schema()
+    conn = sqlite3.connect(db)
+    for mid, category in (("classified", "bills"), ("unclassified", None)):
+        conn.execute(
+            "INSERT INTO emails(id, provider, account_id, from_address, received_at, "
+            "classified_category, created_at, updated_at) VALUES (?, 'p', 'a', 'x@y.z', 't', ?, 't', 't')",
+            (mid, category),
+        )
+    conn.commit()
+    conn.close()
+    _release_shape(db, [("emails", ["classified_source"])])  # rows keep their categories
+
+    outcomes = _race(db, "iris_personal.email.store:EmailStore", "S(P).ensure_schema()")
+
+    assert outcomes == ["ok"] * len(outcomes) and len(outcomes) == 12, outcomes
+    conn = sqlite3.connect(db)
+    got = dict(conn.execute("SELECT id, classified_source FROM emails").fetchall())
+    assert got == {
+        "classified": "iris",
+        "unclassified": None,
+    }  # stamped once, only where classified
+    # A vendor category that arrives later must not be re-stamped by a later open.
+    conn.execute("UPDATE emails SET classified_source = 'vendor' WHERE id = 'classified'")
+    conn.commit()
+    conn.close()
+    EmailStore(db).ensure_schema()
+    conn = sqlite3.connect(db)
+    assert conn.execute(
+        "SELECT classified_source FROM emails WHERE id = 'classified'"
+    ).fetchone() == ("vendor",)
+    conn.close()
+
+
 # ----------------------------------------------------------------------- the guard
 # ``ALTER TABLE`` belongs in the helper. memris keeps its own versioned upgrade path (a schema
-# version row); the two iris_personal stores are migrated in the follow-up PR and are listed so
-# the guard is exact today and tightens when they move.
+# version row, each upgrade ALTER already tolerating "duplicate column", connections with a 30 s
+# timeout): measured with 12 interpreters x 15 rounds opening a v4-shaped file, zero errors, so it
+# is not this bug (#201).
 _ALTER_ALLOWED = {
     "src/iris_harness/foundation/persistence/sqlite.py",
     "src/memris/store/sqlite.py",
-    "src/iris_personal/email/store.py",
-    "src/iris_personal/plugins/email_workflows/onboarding.py",
 }
+
+
+def _runs_alter_table(source: str) -> bool:
+    """Whether the module builds an ``ALTER TABLE`` statement (a string that starts with it,
+    including the head of an f-string); a docstring or comment that mentions it does not count."""
+    for node in ast.walk(ast.parse(source)):
+        head: str | None = None
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            head = node.value
+        elif isinstance(node, ast.JoinedStr) and node.values:
+            first = node.values[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                head = first.value
+        if head is not None and re.match(r"\s*ALTER\s+TABLE\b", head, re.IGNORECASE):
+            return True
+    return False
 
 
 def test_no_store_runs_alter_table_outside_the_helper() -> None:
@@ -337,7 +402,7 @@ def test_no_store_runs_alter_table_outside_the_helper() -> None:
         rel = path.relative_to(root).as_posix()
         if rel in _ALTER_ALLOWED:
             continue
-        if re.search(r"ALTER\s+TABLE", path.read_text(encoding="utf-8")):
+        if _runs_alter_table(path.read_text(encoding="utf-8")):
             offenders.append(rel)
     assert offenders == [], (
         "a migration that runs ALTER TABLE itself is the read-then-ALTER race of #201: "

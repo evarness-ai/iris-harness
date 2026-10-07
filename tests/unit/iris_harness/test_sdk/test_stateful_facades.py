@@ -18,6 +18,7 @@ import pytest
 from iris_harness.cli import render
 from iris_harness.foundation import clock, console, eventbus, persistence
 from iris_harness.foundation.persistence import embedding
+from iris_harness.foundation.persistence import sqlite as persistence_sqlite
 from iris_harness.kernel.governance.vault import credentials, secret_store
 from iris_harness.kernel.governance.vault import keys as vault_keys
 from iris_harness.llm import embeddings, narrate, tier_router
@@ -59,6 +60,7 @@ FACADES = [
             "connect": persistence,
             "data_dir": persistence,
             "data_path": persistence,
+            "ensure_columns": persistence_sqlite,
             "sqlite_conn": persistence,
             "with_locked_retry": persistence,
         },

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.paths import data_dir
-from iris_harness.kernel.governance.reentry import reenter_many
+from iris_harness.kernel.governance.reentry import one_line, reenter_many
 from iris_harness.memory.graph_context import memory_graph_description, memory_graph_tool
 from iris_harness.memory.identity import (
     load_agents_md,
@@ -106,8 +106,21 @@ def builtin_react_tools(
         # owner's box held 1,420 test turns to 2,310 real ones.
         return max(n * 5, 50)
 
-    def _semantic_turns(query: str, n: int, session_id: str) -> list[tuple[str, str, str]]:
-        """``(session_id, role, content)`` of past turns nearest ``query`` by meaning.
+    def _origins(row_ids: list[str | int]) -> dict[str, str | None]:
+        """The stored ``turn_origin`` of each row id, one query; unknown when it cannot be read
+        (the turn then comes back scanned but not enveloped, as before the column)."""
+        if memory_store is None or not row_ids:
+            return {}
+        try:
+            return memory_store.turn_origins(row_ids)
+        except Exception as exc:  # noqa: BLE001 — the scan still applies without an origin
+            _log_tool_failure("recall turn origins", exc)
+            return {}
+
+    def _semantic_turns(
+        query: str, n: int, session_id: str
+    ) -> list[tuple[str, str, str, str | None]]:
+        """``(session_id, role, content, turn_origin)`` of past turns nearest ``query`` by meaning.
 
         Removed conversations never come back (ADR-0119), and an unreadable removal
         ledger returns nothing (fail closed, as the retriever does); playground and test
@@ -129,21 +142,19 @@ def builtin_react_tools(
             n=_overfetch(n) if not session_id else n,
             max_distance=recall_max_distance(),
         )
-        return [
-            (t.session_id, t.role, t.content)
-            for t in found
-            if t.session_id not in removed and _recallable(t.session_id)
-        ][:n]
+        kept = [t for t in found if t.session_id not in removed and _recallable(t.session_id)][:n]
+        origins = _origins([t.row_id for t in kept])
+        return [(t.session_id, t.role, t.content, origins.get(str(t.row_id))) for t in kept]
 
     def _search_sessions(query: str, n: int) -> list[str]:
         if memory_store is None:
             return []
         n = max(1, n)
-        picked: list[tuple[str, str, str]] = []  # (session_id, role, text)
+        picked: list[tuple[str, str, str, str | None]] = []  # (session_id, role, text, origin)
         seen: set[str] = set()
         # Conversations whose turns are near the query by meaning, then summaries that
         # contain it literally (an exact name or number).
-        for sid, role, content in _semantic_turns(query, _overfetch(n), ""):
+        for sid, role, content, origin in _semantic_turns(query, _overfetch(n), ""):
             if sid in seen:
                 continue
             seen.add(sid)
@@ -152,7 +163,9 @@ def builtin_react_tools(
             except Exception as exc:  # noqa: BLE001 — the matched turn still says what it was
                 _log_tool_failure("memory_search session summary", exc)
                 summary = ""
-            picked.append((sid, "summary", summary) if summary else (sid, role, content))
+            picked.append(
+                (sid, "summary", summary, None) if summary else (sid, role, content, origin)
+            )
             if len(picked) >= n:
                 break
         if len(picked) < n:
@@ -162,18 +175,20 @@ def builtin_react_tools(
                     break
                 if _recallable(sid) and sid not in seen:
                     seen.add(sid)
-                    picked.append((sid, "summary", text))
+                    picked.append((sid, "summary", text, None))
         # Stored text coming back into a prompt: assistant turns and summaries are scanned
         # before they are shortened, so a phrase cannot be cut in half to slip past (#145).
         scanned = reenter_many(
-            [(role, text) for _sid, role, text in picked],
+            [(role, text) for _sid, role, text, _origin in picked],
             reader="memory_search",
             origin="sessions",
             chronological=False,
+            origins=[origin for _sid, _role, _text, origin in picked],
+            limit=240,
         )
         return [
-            f"past session {sid} — {' '.join(r.text.split())[:240]}"
-            for (sid, _role, _text), r in zip(picked, scanned, strict=True)
+            f"past session {sid} — {one_line(r, 240)}"
+            for (sid, _role, _text, _origin), r in zip(picked, scanned, strict=True)
         ]
 
     def _memory_search(args: dict[str, Any]) -> str:
@@ -220,22 +235,25 @@ def builtin_react_tools(
                 # literally: "which hotel am I in?" vs "Booked Taj Fort Aguada"), then
                 # the literal matches, which still find exact names and numbers.
                 rows = _semantic_turns(query, n, session_id)
-                seen = {(sid, content) for sid, _role, content in rows}
+                seen = {(sid, content) for sid, _role, content, _origin in rows}
                 hits = memory_store.search_turns(query, limit=_overfetch(n))
                 if session_id:
                     hits = [h for h in hits if h[1] == session_id]
+                hit_origins = _origins([h[0] for h in hits])
                 for h in hits:
                     if len(rows) >= n:
                         break
                     if _recallable(h[1]) and (h[1], h[3]) not in seen:
-                        rows.append((h[1], h[2], h[3]))
+                        rows.append((h[1], h[2], h[3], hit_origins.get(str(h[0]))))
                         seen.add((h[1], h[3]))
                 if not rows and session_id and _recallable(session_id):
                     # A pointer named this conversation as related: read it back
                     # rather than answer "nothing matches".
                     rows = [
-                        (session_id, role, content)
-                        for role, content in memory_store.load_recent_turns(session_id, limit=n)
+                        (session_id, role, content, origin)
+                        for role, content, origin in memory_store.load_recent_turns_with_origin(
+                            session_id, limit=n
+                        )
                     ]
                     in_order = True
             else:
@@ -246,8 +264,10 @@ def builtin_react_tools(
                         "'session_id' to read back."
                     )
                 rows = [
-                    (sid, role, content)
-                    for role, content in memory_store.load_recent_turns(sid, limit=n)
+                    (sid, role, content, origin)
+                    for role, content, origin in memory_store.load_recent_turns_with_origin(
+                        sid, limit=n
+                    )
                 ]
                 in_order = True
         except Exception as exc:  # noqa: BLE001 — the agent reads the failure
@@ -288,14 +308,16 @@ def builtin_react_tools(
         # Stored turns coming back into a prompt: the assistant's are scanned, the owner's
         # are not (#145). Scanned before the 400-character cut, newest first.
         shown = reenter_many(
-            [(role, content) for _sid, role, content in rows],
+            [(role, content) for _sid, role, content, _origin in rows],
             reader="recall_conversation",
             origin="transcript",
             chronological=in_order,
+            origins=[origin for _sid, _role, _content, origin in rows],
+            limit=400,
         )
         return "\n".join(
-            f"- [{sid}] {role}: {' '.join(r.text.split())[:400]}"
-            for (sid, role, _content), r in zip(rows, shown, strict=True)
+            f"- [{sid}] {role}: {one_line(r, 400)}"
+            for (sid, role, _content, _origin), r in zip(rows, shown, strict=True)
         )
 
     # --- Conversational memory curation (all reversible + audited via history) ---

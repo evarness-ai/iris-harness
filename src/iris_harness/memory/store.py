@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.persistence import data_path, sqlite_conn, with_locked_retry
+from iris_harness.foundation.persistence.sqlite import add_columns_if_missing
 from iris_harness.memory.fact_statements import FactStatements, Link
 from iris_harness.memory.vocabulary import Vocabulary
 from memris.graph import MemoryGraph
@@ -140,6 +142,19 @@ class LearningSignal:
     timestamp: datetime
 
 
+#: Columns added to a table after it first shipped, by table. ``seen_count`` lets repeated
+#: identical conflicts and proposals dedup (bump) instead of inserting a fresh row every turn;
+#: ``confirmed`` arrived with owner-confirmed recall and defaults to 0 on purpose (the facts
+#: already in a store were mined without anyone reviewing them, and stop reaching prompts until
+#: they are); ``turn_origin`` (#145) is nullable: NULL is unknown, never backfilled.
+_LATER_COLUMNS: dict[str, dict[str, str]] = {
+    "user_fact_contradictions": {"seen_count": "INTEGER NOT NULL DEFAULT 1"},
+    "user_facts": {"confirmed": "INTEGER NOT NULL DEFAULT 0"},
+    "fact_proposals": {"seen_count": "INTEGER NOT NULL DEFAULT 1"},
+    "conversations": {"turn_origin": "TEXT"},
+}
+
+
 @dataclass
 class MemoryStore:
     """Small bootstrap persistence layer for memory facts and signals."""
@@ -151,6 +166,9 @@ class MemoryStore:
         default=None, init=False, repr=False, compare=False
     )
     _facts_migrated: bool = field(default=False, init=False, repr=False, compare=False)
+    _columns_ready_for: tuple[int, int] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def memory_graph(self) -> MemoryGraph:
         """The memris graph behind user facts — read it, resolve against it, review merges.
@@ -239,7 +257,8 @@ class MemoryStore:
                     session_id TEXT NOT NULL,
                     role      TEXT NOT NULL,
                     content   TEXT NOT NULL,
-                    ts        TEXT NOT NULL
+                    ts        TEXT NOT NULL,
+                    turn_origin TEXT
                 )
                 """)
             conn.execute(
@@ -290,30 +309,10 @@ class MemoryStore:
                     seen_count           INTEGER NOT NULL DEFAULT 1
                 )
                 """)
-            # Migration: seen_count was added after the table first shipped — add it to
-            # any pre-existing table so repeated identical conflicts dedup (bump) instead
-            # of inserting a fresh row every turn.
-            contra_cols = {
-                r[1] for r in conn.execute("PRAGMA table_info(user_fact_contradictions)").fetchall()
-            }
-            if "seen_count" not in contra_cols:
-                conn.execute(
-                    "ALTER TABLE user_fact_contradictions "
-                    "ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1"
-                )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_fact_contra_ack "
                 "ON user_fact_contradictions(acknowledged, id)"
             )
-            # Migration: `confirmed` arrived with owner-confirmed recall. Existing rows
-            # default to 0 on purpose — the 58 facts already in this store were mined
-            # without anyone reviewing them, and they stop reaching prompts until they
-            # are reviewed. Nothing is deleted; they queue up as legacy proposals.
-            fact_cols = {r[1] for r in conn.execute("PRAGMA table_info(user_facts)").fetchall()}
-            if "confirmed" not in fact_cols:
-                conn.execute(
-                    "ALTER TABLE user_facts ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 0"
-                )
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS fact_proposals (
                     id           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -332,15 +331,6 @@ class MemoryStore:
                 "CREATE INDEX IF NOT EXISTS idx_fact_proposals_status "
                 "ON fact_proposals(status, created_at)"
             )
-            # Migration: how many separate turns proposed the same thing. People repeat
-            # what is true about them, so a proposal seen often enough stops waiting.
-            proposal_cols = {
-                r[1] for r in conn.execute("PRAGMA table_info(fact_proposals)").fetchall()
-            }
-            if "seen_count" not in proposal_cols:
-                conn.execute(
-                    "ALTER TABLE fact_proposals ADD COLUMN seen_count INTEGER NOT NULL DEFAULT 1"
-                )
             # Lessons wait in the same kind of queue as facts: an approved one becomes a
             # behavior file, which is the mechanism that already reaches the prompt.
             conn.execute("""
@@ -379,6 +369,32 @@ class MemoryStore:
                 "ON memory_removals(kind, target_id)"
             )
             conn.commit()
+        self._add_later_columns()
+
+    def _add_later_columns(self) -> None:
+        """Add the columns that arrived after their tables first shipped (``_LATER_COLUMNS``).
+
+        Each goes in on a connection of its own under ``BEGIN IMMEDIATE``
+        (``add_columns_if_missing``). They used to be a ``PRAGMA table_info`` read followed by
+        an ``ALTER`` inside the connection's transaction, which fails with ``database is
+        locked`` / ``duplicate column name`` when two processes open an older ``memory.db`` at
+        once (the API, the CLI, a heartbeat); the busy timeout does not help. The nullable,
+        no-default rule is the policy for NEW identity columns (``turn_origin``); the others
+        keep the declaration they always had, so an old row reads exactly as before.
+
+        Done once per database file this instance has seen (its device and inode), not on every
+        call: ``ensure_schema`` runs before every store method.
+        """
+        try:
+            stat = self.db_path.stat()
+        except OSError:
+            return
+        identity = (stat.st_dev, stat.st_ino)
+        if self._columns_ready_for == identity:
+            return
+        for table, columns in _LATER_COLUMNS.items():
+            add_columns_if_missing(self.db_path, table, columns)
+        self._columns_ready_for = identity
 
     @with_locked_retry
     def upsert_user_fact(self, fact: UserFact) -> None:
@@ -887,16 +903,37 @@ class MemoryStore:
     # ------------------------------------------------------------------
 
     @with_locked_retry
-    def save_conversation_turns(self, session_id: str, turns: list[tuple[str, str]]) -> None:
-        """Append (role, content) pairs for a session. Ignores empty lists."""
+    def save_conversation_turns(
+        self,
+        session_id: str,
+        turns: list[tuple[str, str]],
+        *,
+        assistant_origin: str | None = None,
+    ) -> None:
+        """Append (role, content) pairs for a session. Ignores empty lists.
+
+        ``assistant_origin`` is the ``turn_origin`` stored on the assistant rows only
+        (``"external"`` when the run read third-party text; None is unknown). A user row never
+        carries one: the owner's own words are not provenance-tracked.
+        """
         if not turns:
             return
         self.ensure_schema()
         now = datetime.now(UTC).isoformat()
         with sqlite_conn(self.db_path) as conn:
             conn.executemany(
-                "INSERT INTO conversations(session_id, role, content, ts) VALUES(?, ?, ?, ?)",
-                [(session_id, role, content, now) for role, content in turns],
+                "INSERT INTO conversations(session_id, role, content, ts, turn_origin) "
+                "VALUES(?, ?, ?, ?, ?)",
+                [
+                    (
+                        session_id,
+                        role,
+                        content,
+                        now,
+                        assistant_origin if role == "assistant" else None,
+                    )
+                    for role, content in turns
+                ],
             )
             conn.commit()
 
@@ -917,6 +954,45 @@ class MemoryStore:
                 (session_id, limit),
             )
             return [(row[0], row[1]) for row in cursor.fetchall()]
+
+    def load_recent_turns_with_origin(
+        self, session_id: str, *, limit: int = 10
+    ) -> list[tuple[str, str, str | None]]:
+        """:meth:`load_recent_turns` with each row's ``turn_origin`` (None = unknown: a row
+        written before the column, or by a producer that did not say)."""
+        self.ensure_schema()
+        with sqlite_conn(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT role, content, turn_origin FROM (
+                    SELECT role, content, turn_origin, id
+                    FROM conversations
+                    WHERE session_id = ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                ) ORDER BY id ASC
+                """,
+                (session_id, limit),
+            )
+            return [(row[0], row[1], row[2]) for row in cursor.fetchall()]
+
+    def turn_origins(self, row_ids: Sequence[str | int]) -> dict[str, str | None]:
+        """``turn_origin`` of each row id, one query. An id that is not a row (a Chroma id with
+        no SQLite row) is left out of the result, which reads as unknown."""
+        keys: list[int] = []
+        for row_id in row_ids:
+            try:
+                keys.append(int(row_id))
+            except (TypeError, ValueError):
+                continue
+        if not keys:
+            return {}
+        self.ensure_schema()
+        marks = ", ".join("?" for _ in keys)
+        sql = f"SELECT id, turn_origin FROM conversations WHERE id IN ({marks})"  # noqa: S608 - placeholders only
+        with sqlite_conn(self.db_path) as conn:
+            rows = conn.execute(sql, keys).fetchall()
+        return {str(r[0]): r[1] for r in rows}
 
     @with_locked_retry
     def save_conversation_summary(self, session_id: str, summary: str) -> None:
@@ -962,17 +1038,33 @@ class MemoryStore:
 
     @with_locked_retry
     def save_conversation_turns_and_get_ids(
-        self, session_id: str, turns: list[tuple[str, str]]
+        self,
+        session_id: str,
+        turns: list[tuple[str, str]],
+        *,
+        assistant_origin: str | None = None,
     ) -> list[int]:
-        """Append turns and return their assigned SQLite row IDs (same order as input)."""
+        """Append turns and return their assigned SQLite row IDs (same order as input).
+
+        ``assistant_origin``: see :meth:`save_conversation_turns`."""
         if not turns:
             return []
         self.ensure_schema()
         now = datetime.now(UTC).isoformat()
         with sqlite_conn(self.db_path) as conn:
             conn.executemany(
-                "INSERT INTO conversations(session_id, role, content, ts) VALUES(?, ?, ?, ?)",
-                [(session_id, role, content, now) for role, content in turns],
+                "INSERT INTO conversations(session_id, role, content, ts, turn_origin) "
+                "VALUES(?, ?, ?, ?, ?)",
+                [
+                    (
+                        session_id,
+                        role,
+                        content,
+                        now,
+                        assistant_origin if role == "assistant" else None,
+                    )
+                    for role, content in turns
+                ],
             )
             last_id: int = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             conn.commit()

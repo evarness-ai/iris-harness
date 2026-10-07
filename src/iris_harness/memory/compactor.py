@@ -89,6 +89,9 @@ def reset_summary_config_cache() -> None:
 class ConversationTurn:
     role: str
     content: str
+    # Where an assistant turn came from (#145 step two): ``"external"`` when the run read
+    # third-party text before answering, None when unknown. The owner's own turns have none.
+    origin: str | None = None
 
 
 @dataclass(frozen=True)

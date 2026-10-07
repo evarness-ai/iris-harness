@@ -377,6 +377,12 @@ class ResponseCurator:
         token_keys = {"prompt_tokens", "completion_tokens", "total_tokens"}
         for result in succeeded:
             for key, value in result.metadata.items():
+                if key == "turn_origin":
+                    # A turn assembled from several results is external when ANY of them is
+                    # (#145): the first result's value must not hide a later one's.
+                    if value == "external" or key not in metadata:
+                        metadata[key] = value
+                    continue
                 if key in token_keys or key in metadata:
                     continue
                 metadata[key] = value

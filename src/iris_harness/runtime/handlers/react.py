@@ -1070,6 +1070,8 @@ def _make_react_handler(
             # ADR-0118 decision 5: what this run changed, and whether it continued a
             # paused run. Escalation reads both before it would re-run the turn.
             "effects_executed": list(trace.effects_executed),
+            # #145 step two: what the stored turn records about where its answer came from.
+            "turn_origin": "external" if trace.read_external else "internal",
             "resumed": seed is not None,
             "pending_approval_id": trace.pending_approval_id,
             "trace": [

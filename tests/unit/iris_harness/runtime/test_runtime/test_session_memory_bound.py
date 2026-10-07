@@ -18,7 +18,11 @@ class _Store:
         self.turns: dict[str, list[tuple[str, str]]] = {}
 
     def save_conversation_turns_and_get_ids(
-        self, session_id: str, turns: list[tuple[str, str]]
+        self,
+        session_id: str,
+        turns: list[tuple[str, str]],
+        *,
+        assistant_origin: str | None = None,
     ) -> list[int]:
         self.turns.setdefault(session_id, []).extend(turns)
         return []
@@ -28,6 +32,11 @@ class _Store:
 
     def load_recent_turns(self, session_id: str, limit: int) -> list[tuple[str, str]]:
         return self.turns.get(session_id, [])[-limit:]
+
+    def load_recent_turns_with_origin(
+        self, session_id: str, limit: int
+    ) -> list[tuple[str, str, str | None]]:
+        return [(role, text, None) for role, text in self.load_recent_turns(session_id, limit)]
 
 
 def _sessions(monkeypatch: pytest.MonkeyPatch, cap: str | None) -> tuple[SessionMemory, _Store]:

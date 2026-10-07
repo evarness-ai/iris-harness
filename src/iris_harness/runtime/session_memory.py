@@ -188,9 +188,14 @@ class SessionMemory:
             # Reload what the window can hold, not a fixed 10 rows: with the prompt's
             # transcript now filled by token budget, a restart used to hand it a third
             # of the history it had a moment earlier.
-            raw = self._host.memory_store.load_recent_turns(session_id, limit=_RELOAD_MAX_TURNS)
+            raw = self._host.memory_store.load_recent_turns_with_origin(
+                session_id, limit=_RELOAD_MAX_TURNS
+            )
             if raw:
-                turns = [ConversationTurn(role=role, content=content) for role, content in raw]
+                turns = [
+                    ConversationTurn(role=role, content=content, origin=origin)
+                    for role, content, origin in raw
+                ]
                 self.conversations[session_id] = self._fit_reloaded(turns)
         except Exception:
             logger.exception("failed to reload session history for %s", session_id)
@@ -276,6 +281,7 @@ class SessionMemory:
             [(t.role, t.content) for t in window],
             reader="session_window",
             origin="transcript",
+            origins=[t.origin for t in window],
         )
         recent = tuple(f"{t.role}: {r.text}" for t, r in zip(window, shown, strict=True))
         if summary:
@@ -346,13 +352,21 @@ class SessionMemory:
             [(getattr(t, "role", ""), getattr(t, "content", "") or "") for t in window],
             reader="router_context",
             origin="transcript",
+            origins=[getattr(t, "origin", None) for t in window],
+            limit=self._ROUTING_CONTEXT_PER_TURN_CHARS,
         )
         for turn, scanned in zip(reversed(window), reversed(shown), strict=True):
             text = (scanned.text or "").strip().replace("\n", " ")
             if not text:
                 continue
             role = "User" if getattr(turn, "role", "") == "user" else "Assistant"
-            line = f"{role}: {text[: self._ROUTING_CONTEXT_PER_TURN_CHARS]}"
+            # An enveloped turn was cut inside its envelope already; cutting it again would
+            # drop the closing tag.
+            line = (
+                f"{role}: {text}"
+                if scanned.enveloped
+                else f"{role}: {text[: self._ROUTING_CONTEXT_PER_TURN_CHARS]}"
+            )
             if used + len(line) > self._ROUTING_CONTEXT_MAX_CHARS:
                 break
             lines.append(line)
@@ -360,11 +374,21 @@ class SessionMemory:
         lines.reverse()  # back to chronological order for the prompt
         return "\n".join(lines) if lines else None
 
-    def record_turn(self, session_id: str, user_msg: str, assistant_msg: str) -> None:
+    def record_turn(
+        self,
+        session_id: str,
+        user_msg: str,
+        assistant_msg: str,
+        *,
+        origin: str | None = None,
+    ) -> None:
+        """Remember one exchange. ``origin`` is the assistant turn's ``turn_origin`` (#145):
+        ``"external"`` when the run read third-party text before answering, None when the
+        producer did not say (only the loop does, today)."""
         self._touch(session_id)
         history = self.conversations.setdefault(session_id, [])
         history.append(ConversationTurn(role="user", content=user_msg))
-        history.append(ConversationTurn(role="assistant", content=assistant_msg))
+        history.append(ConversationTurn(role="assistant", content=assistant_msg, origin=origin))
         # Honor an explicit conversation-scope qualifier ("for this
         # conversation, ...", "just for now", ...): mark the whole session
         # ephemeral so neither the scoped statement nor the follow-up Q&A
@@ -383,7 +407,9 @@ class SessionMemory:
         try:
             row_ids = (
                 self._host.memory_store.save_conversation_turns_and_get_ids(
-                    session_id, [("user", user_msg), ("assistant", assistant_msg)]
+                    session_id,
+                    [("user", user_msg), ("assistant", assistant_msg)],
+                    assistant_origin=origin,
                 )
                 if persist
                 else []

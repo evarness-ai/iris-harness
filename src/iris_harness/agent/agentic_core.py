@@ -302,6 +302,9 @@ class ReactTrace:
     # ADR-0118: the approval this run halted on, if any. The turn is waiting on the
     # owner, so escalation must not re-run it (that would raise a second approval).
     pending_approval_id: str | None = None
+    # Whether the run read third-party text (a ``content: external`` tool's result) before it
+    # answered (#145 step two): the stored turn's ``turn_origin``.
+    read_external: bool = False
 
 
 def _step_to_dict(step: ReactStep) -> dict[str, Any]:
@@ -1794,6 +1797,7 @@ class AgenticCore:
 
         trace.elapsed_ms = (time.monotonic() - start) * 1000
         trace.stall_count = stall_count
+        trace.read_external = self._run_tainted(trace.steps)
         if trace.pending_approval_id is None and trace.halt_reason != "awaiting_user_input":
             self._report_run_complete(
                 CompletedRun(
@@ -2940,6 +2944,8 @@ class AgenticCore:
             "trace": [_step_to_dict(s) for s in steps],
             "effects_executed": list(effects_executed),
             "pending_approval_id": pending_approval_id,
+            # #145 step two: the stored turn's origin (same rule as ``ReactTrace.read_external``).
+            "turn_origin": "external" if self._run_tainted(steps) else "internal",
             "elapsed_ms": (time.monotonic() - start) * 1000,
             # ADR-0106 Tier B: the resume point, so the runtime can record a
             # continuation that points back into this halted run rather than only

@@ -76,7 +76,7 @@ def test_my_plugin_answers() -> None:
     with harness(plugins=[plugin(setup, manifest="manifest.yaml")], fake_model=script) as h:
         result = h.chat("hello")          # or h.chat_stream("hello")
         assert result.text == "Scripted answer."
-        assert h.audit_gaps() == []       # every model call and every answer audited
+        assert h.audit_gaps() == []       # every model call and answer audited, nothing lost
 ```
 
 `harness()` builds the same runtime `iris` runs, in a throwaway `IRIS_HOME`: the

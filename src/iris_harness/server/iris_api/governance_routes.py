@@ -3,6 +3,7 @@
     GET    /governance/state
     GET    /cost
     GET    /governance/audit
+    GET    /governance/replay
     GET    /governance/pii-shadow
     GET    /governance/proof-bundle/check
     GET    /governance/approvals
@@ -25,6 +26,12 @@ from pydantic import BaseModel
 
 from iris_harness.foundation.env import env_flag
 from iris_harness.kernel.governance.audit import AuditLog
+from iris_harness.kernel.governance.audit.replay import (
+    API_MAX_ROWS,
+    API_MAX_SECONDS,
+    ReplaySources,
+    replay_session,
+)
 from iris_harness.kernel.governance.audit.view import audit_view, redaction_view
 from iris_harness.kernel.governance.audit.write_health import write_health
 from iris_harness.kernel.governance.external_content import (
@@ -225,6 +232,29 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
                 "callers": [],
                 "entries": [],
             }
+
+    @app.get("/governance/replay")
+    def governance_replay(
+        session: str, turn: str | None = None, run: str | None = None
+    ) -> dict[str, Any]:
+        """One session rebuilt from the stores, with the gaps and notes found (issue #134).
+
+        Read-only, identifiers and decisions only. A request reads at most ``API_MAX_ROWS``
+        rows per store within ``API_MAX_SECONDS``; a longer session answers with
+        ``complete: false`` (and no gaps judged) and is a job for ``iris audit replay``.
+        """
+        audit = _audit_log()
+        try:
+            return replay_session(
+                session,
+                turn=turn,
+                run=run,
+                sources=ReplaySources.default(audit.db_path),
+                max_rows=API_MAX_ROWS,
+                max_seconds=API_MAX_SECONDS,
+            ).as_dict()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     @app.get("/governance/redactions")
     def governance_redactions(limit: int = 100) -> dict[str, Any]:

@@ -305,7 +305,7 @@ class AuditLog:
                 kind=sequence.KIND_WRITER,
                 hook_point=sequence.WRITER_START,
                 reason="this process began writing to the ledger",
-                payload={"pid": os.getpid()},
+                payload=_process_identity(),
             )
         gaps = sequence.claim_gaps(self.db_path, writer)
         try:
@@ -703,6 +703,20 @@ def _insert(
         ),
     )
     return int(cur.lastrowid or 0) if cur.rowcount else 0
+
+
+def _process_identity() -> dict[str, Any]:
+    """The process behind a writer: its pid and when it began, so a later reader can tell this
+    process from another that was given the same pid (``psutil`` creation time; omitted when
+    the platform will not say)."""
+    out: dict[str, Any] = {"pid": os.getpid()}
+    try:
+        import psutil
+
+        out["started"] = round(psutil.Process().create_time(), 3)
+    except Exception:
+        logger.debug("audit_log: process start time unavailable", exc_info=True)
+    return out
 
 
 def _insert_meta(

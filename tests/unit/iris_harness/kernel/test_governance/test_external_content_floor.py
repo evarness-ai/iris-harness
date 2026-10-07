@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -554,12 +555,75 @@ def test_the_settings_api_cannot_write_a_blank_for_it() -> None:
     ],
 )
 def test_the_tripwire_cost_is_linear_on_whitespace_heavy_hostile_text(hostile: str) -> None:
-    """A quadratic pattern let one page freeze the loop (reviewer: 20k chars took 5.5 s)."""
+    """A quadratic pattern let one page freeze the loop (reviewer: 20k chars took 5.5 s).
+
+    The absolute bound is a gross guard (these take 1-6 ms alone; the quadratic pattern took
+    seconds); the scaling test below is what proves linear time on any machine.
+    """
     import time
 
     started = time.perf_counter()
     scan(hostile)
-    assert time.perf_counter() - started < 0.5
+    assert time.perf_counter() - started < 10.0
+
+
+_SCALING = {
+    "angle bracket, long space run": (lambda n: "<" + " " * n, 900_000),
+    "closing bracket, long space run": (lambda n: "</" + " " * n, 900_000),
+    "alternating bracket and space": (lambda n: "< " * n, 200_000),
+    "space run before tool_call": (lambda n: "<" + " " * n + "tool_call", 900_000),
+    "bracket, 500 spaces, repeated": (lambda n: ("<" + " " * 500) * n, 1_500),
+}
+
+
+# Runner-independent: doubling the input must not much more than double the time. Each size is
+# chosen so a linear run takes 40-60 ms; best of five on each side removes a noisy neighbour (a
+# busy xdist worker, a loaded hosted runner); the additive slack covers the rest. A quadratic
+# scan gives about 4x at 2N whatever the machine.
+_RATIO = 3.0
+_SLACK_SECONDS = 0.25
+_REPEATS = 5
+
+
+def _best_of(run: Any, text: Any, repeats: int) -> float:
+    best = float("inf")
+    for _ in range(repeats):
+        start = time.perf_counter()
+        run(text)
+        best = min(best, time.perf_counter() - start)
+    return best
+
+
+def _scales_linearly(
+    run: Any, build: Any, n: int, repeats: int = _REPEATS
+) -> tuple[bool, float, float]:
+    small = _best_of(run, build(n), repeats)
+    large = _best_of(run, build(2 * n), repeats)
+    return large <= _RATIO * small + _SLACK_SECONDS, small, large
+
+
+def _quadratic(text: str) -> int:
+    """A stand-in for a quadratic scan: every position looks at every later position."""
+    hits = 0
+    for i in range(len(text)):
+        for j in range(i, len(text)):
+            hits += text[j] == "x"
+    return hits
+
+
+@pytest.mark.parametrize("name", list(_SCALING))
+def test_the_tripwire_time_grows_linearly_with_the_input(name: str) -> None:
+    build, n = _SCALING[name]
+    ok, small, large = _scales_linearly(scan, build, n)
+
+    assert ok, f"{name}: {small:.3f}s at N, {large:.3f}s at 2N (limit {_RATIO}x + slack)"
+
+
+def test_the_tripwire_scaling_check_does_catch_a_quadratic_scan() -> None:
+    """The detector must bite. One run per side: a quadratic ratio needs no noise filtering."""
+    ok, small, large = _scales_linearly(_quadratic, lambda n: "a" * n, 8_000, repeats=1)
+
+    assert not ok, f"a quadratic scan passed as linear ({small:.3f}s -> {large:.3f}s)?"
 
 
 @pytest.mark.parametrize(

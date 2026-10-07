@@ -96,7 +96,7 @@ def test_stuck_lookups_are_capped_and_the_next_one_fails_closed_at_once(hang: _H
     with pytest.raises(BlockedAddress, match="backed up"):
         backend.connect_tcp(NAME, 80)
 
-    assert time.monotonic() - started < 0.5  # no wait, no extra thread
+    assert time.monotonic() - started < 2  # no wait (a real one is 5 s), no extra thread
     assert backend.refused is not None and "backed up" in backend.refused
     assert len(_lookup_threads()) == MAX_STUCK_LOOKUPS
 

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.paths import data_dir
-from iris_harness.kernel.governance.reentry import one_line, reenter_many
+from iris_harness.kernel.governance.reentry import one_line, reenter_many, reenter_memory_lines
 from iris_harness.memory.graph_context import memory_graph_description, memory_graph_tool
 from iris_harness.memory.identity import (
     load_agents_md,
@@ -84,7 +84,9 @@ def builtin_react_tools(
     def _search_patterns(query: str, n: int) -> list[str]:
         if semantic_index is None:
             return []
-        return [f"pattern — {p}" for p in semantic_index.query_episodic(query, n=max(1, n))]
+        found = semantic_index.query_episodic(query, n=max(1, n))
+        # Learned memory read back to the model: scanned like the prompt's own copy (#163).
+        return [f"pattern — {p}" for p in reenter_memory_lines(found, "memory_search.patterns")]
 
     def _search_behaviors(query: str, n: int) -> list[str]:
         from iris_harness.memory.identity import (
@@ -94,7 +96,8 @@ def builtin_react_tools(
 
         scored = score_behaviors("", query)
         behaviors = [b for b, _s in scored] or list_behaviors()
-        return [f"lesson — {b.name}: {b.headline}" for b in behaviors[: max(1, n)]]
+        lines = [f"lesson — {b.name}: {b.headline}" for b in behaviors[: max(1, n)]]
+        return list(reenter_memory_lines(lines, "memory_search.behaviors"))
 
     def _recallable(session_id: str) -> bool:
         """A playground or test run is not the owner's past (retention.yaml), unless it is

@@ -389,6 +389,15 @@ First public release of the IRIS harness.
   the end of the prompt now allows for the closing tag. Nothing is scanned at ingest: stored
   text is not rewritten, and retrieval is marked where it is read.
 
+- Learned memory is scanned where it is read back into a prompt (issue #163). `active.md`,
+  `episodic.md` and a lesson's body are written from conversations, some of which held third-party
+  text, and used to reach the model unscanned. The retriever (`active`, the episodic digest, the
+  matched lesson and its pointers, the semantic episodic patterns), `memory_search` (`patterns`,
+  `behaviors`), the intention-rollup context and the mission proposer now scan them after the size
+  cut. Text the scan redacts also comes back inside the untrusted-content envelope
+  (`source="learned_memory"`); clean text is unchanged and not enveloped, because a lesson is a
+  recipe the model follows. Audit rows carry origin `learned_memory`.
+
 - A document index made under a different embedding model can be repaired (issue #144).
   Chroma refuses to reopen the persisted collection under a new embedder, so the index was
   unavailable, retrieval fell back to keyword search and `iris docs reindex` could not

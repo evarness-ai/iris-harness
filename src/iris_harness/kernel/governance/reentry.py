@@ -15,7 +15,8 @@ What it does, and does not:
 - It reuses :func:`external_content.scan` (the floor's tripwire; the patterns are not
   copied) and the floor's switch (:func:`external_content.floor_enabled`). There is no new
   setting: floor off means no scan here either.
-- It scans ``assistant`` turns and ``summary`` text only. A ``user`` turn is the owner's own
+- It scans ``assistant`` turns, ``summary`` text and learned memory (``memory``: the identity
+  files ``active.md`` / ``episodic.md``, a lesson's body, #163) only. A ``user`` turn is the owner's own
   words and comes back untouched (an owner's note that says "ignore previous instructions"
   must not be rewritten).
 - It redacts, and marks only what is known to be third-party. A turn the loop recorded as
@@ -78,10 +79,16 @@ AUDIT_PLUGIN = "reentry"
 #: Roles that come back verbatim: the owner's own words.
 FIRST_PARTY_ROLES = frozenset({"user"})
 
+#: ``role`` for learned memory read back into a prompt (``active.md``, ``episodic.md``, a
+#: lesson): not the owner's own words, so it is scanned (issue #163).
+MEMORY_ROLE = "memory"
+
 #: ``turn_origin`` of a stored assistant turn whose run read third-party text (#145 step two).
 EXTERNAL_TURN = "external"
 #: ``source`` of the envelope a stored external-origin turn comes back in.
 ENVELOPE_SOURCE = "stored_transcript"
+#: ``source`` of the envelope learned memory comes back in when the scan redacted it (#163).
+MEMORY_ENVELOPE_SOURCE = "learned_memory"
 
 _MEMO_MAX = 2048
 #: How many ``(session, reader, origin, texts)`` keys the sighting counter remembers; the
@@ -218,6 +225,7 @@ def _one(
     turn_origin: str | None = None,
     reader: str = "",
     limit: int | None = None,
+    envelope_if_redacted: bool = False,
 ) -> tuple[Reentry, int | None]:
     """Scan one text under the per-text cap and the call's remaining characters; an
     external-origin turn also comes back inside the envelope."""
@@ -235,13 +243,17 @@ def _one(
     scanned, ids, spans, cached, digest = _scan_cached(text)
     if capped:
         scanned += CUT_MARKER
-    enveloped = turn_origin == EXTERNAL_TURN
+    enveloped = turn_origin == EXTERNAL_TURN or (envelope_if_redacted and spans > 0)
     if enveloped:
         if limit is not None:
             # The reader will show a one-line excerpt: cut the TEXT before the envelope goes
             # round it, so the closing tag is never the part that is cut off.
             scanned = " ".join(scanned.split())[:limit]
-        scanned = wrap(scanned, source=ENVELOPE_SOURCE, tool=reader or "transcript")
+        scanned = wrap(
+            scanned,
+            source=MEMORY_ENVELOPE_SOURCE if role == MEMORY_ROLE else ENVELOPE_SOURCE,
+            tool=reader or "transcript",
+        )
     return Reentry(scanned, ids, spans, len(text), capped, cached, enveloped, digest), remaining
 
 
@@ -310,16 +322,29 @@ def reenter_text(
     role: str,
     budget: int | None = None,
     turn_origin: str | None = None,
+    envelope_if_redacted: bool = False,
 ) -> Reentry:
     """``text`` as it should enter a prompt: a ``user`` text unchanged, anything else scanned.
 
     ``budget`` is the characters this call may scan (default :data:`MAX_CALL_CHARS`).
     ``reader`` names the code reading the text, ``origin`` where it was stored from
     (``"transcript"``, ``"summary"``...); both go to the audit row, with counts only.
+
+    ``envelope_if_redacted`` is for learned memory read back into a prompt (``active.md``,
+    ``episodic.md``, a lesson's body: issue #163): text the owner approved is scanned and
+    otherwise comes back as it is, but a text the scan had to redact is known to have taken
+    third-party words in, so it also comes back inside the untrusted-content envelope.
     """
     if not floor_enabled():
         return Reentry(text)
-    result, _ = _one(text, role, MAX_CALL_CHARS if budget is None else budget, turn_origin, reader)
+    result, _ = _one(
+        text,
+        role,
+        MAX_CALL_CHARS if budget is None else budget,
+        turn_origin,
+        reader,
+        envelope_if_redacted=envelope_if_redacted,
+    )
     _emit(reader, origin, [(role, result)])
     return result
 
@@ -332,6 +357,7 @@ def reenter_many(
     chronological: bool = True,
     origins: Sequence[str | None] | None = None,
     limit: int | None = None,
+    envelope_if_redacted: bool = False,
 ) -> list[Reentry]:
     """:func:`reenter_text` over ``(role, text)`` pairs, one call budget for all of them.
 
@@ -353,11 +379,48 @@ def reenter_many(
     for i in order:
         role, text = items[i]
         out[i], remaining = _one(
-            text, role, remaining, origins[i] if origins is not None else None, reader, limit
+            text,
+            role,
+            remaining,
+            origins[i] if origins is not None else None,
+            reader,
+            limit,
+            envelope_if_redacted,
         )
     results = [r for r in out if r is not None]
     _emit(reader, origin, [(items[i][0], r) for i, r in enumerate(results)])
     return results
+
+
+def reenter_memory(text: str, reader: str) -> str:
+    """Learned memory (``active.md``, ``episodic.md``, a lesson, an episodic pattern) on its way
+    into a prompt or a tool result: scanned, and enveloped when it had to be redacted (#163).
+
+    The owner approved this text, so it comes back as it is unless the scan finds something;
+    a lesson is a recipe the model is meant to follow, which is why it is not enveloped by
+    default. An empty text comes back empty.
+    """
+    if not text:
+        return text
+    return reenter_text(
+        text,
+        reader=reader,
+        origin="learned_memory",
+        role=MEMORY_ROLE,
+        envelope_if_redacted=True,
+    ).text
+
+
+def reenter_memory_lines(lines: Sequence[str], reader: str) -> tuple[str, ...]:
+    """:func:`reenter_memory` over several texts, with one audit row for all of them."""
+    results = reenter_many(
+        [(MEMORY_ROLE, line) for line in lines],
+        reader=reader,
+        origin="learned_memory",
+        chronological=False,
+        envelope_if_redacted=True,
+    )
+    return tuple(r.text for r in results)
 
 
 def one_line(result: Reentry, limit: int) -> str:
@@ -378,12 +441,15 @@ __all__ = [
     "EXTERNAL_TURN",
     "MAX_CALL_CHARS",
     "MAX_ITEM_CHARS",
+    "MEMORY_ROLE",
     "SPENT_MARKER",
     "Reentry",
     "ReentryAudit",
     "audit_recorder",
     "one_line",
     "reenter_many",
+    "reenter_memory",
+    "reenter_memory_lines",
     "reenter_text",
     "set_reentry_recorder",
 ]

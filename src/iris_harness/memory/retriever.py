@@ -10,7 +10,12 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, TypeVar
 
 from iris_harness.foundation.process_state import track_globals
-from iris_harness.kernel.governance.reentry import reenter_many, reenter_text
+from iris_harness.kernel.governance.reentry import (
+    reenter_many,
+    reenter_memory,
+    reenter_memory_lines,
+    reenter_text,
+)
 from iris_harness.llm.budget import trim_text
 
 from .store import LearningSignal, MemoryStore, UserFact
@@ -271,7 +276,7 @@ class MemoryRetriever:
         related = tuple(f"{t.role}: {r.text}" for t, r in zip(cross_turns, scanned, strict=True))
 
         # --- Episodic patterns (semantic-only — no keyword fallback) ---
-        episodic = tuple(self.index.query_episodic(query, n=self.max_episodic))
+        episodic = self._screen_episodic(self.index.query_episodic(query, n=self.max_episodic))
 
         return MemoryContext(
             recent_turns=tuple(recent_turns),
@@ -424,6 +429,11 @@ class MemoryRetriever:
             _log_degraded("fetch learning signals", exc, "recalling none")
             return []
 
+    @staticmethod
+    def _screen_episodic(patterns: Sequence[str]) -> tuple[str, ...]:
+        """Episodic patterns on their way into the prompt, scanned (issue #163)."""
+        return reenter_memory_lines(patterns, "retriever.episodic")
+
     def _attach_identity_context(
         self,
         context: MemoryContext,
@@ -451,18 +461,34 @@ class MemoryRetriever:
             if others:
                 headlines = "; ".join(f"{b.name} ({b.headline})" for b in others)
                 pointers.append(
-                    f"{len(others)} more lesson(s) may apply — {headlines}. "
-                    'Use memory_search with scope="behaviors" to read one.'
+                    reenter_memory(
+                        f"{len(others)} more lesson(s) may apply — {headlines}. "
+                        'Use memory_search with scope="behaviors" to read one.',
+                        "identity.lesson_pointer",
+                    )
                 )
             cap = self.max_identity_chars
             profile = _curated_profile(load_user_md() or "")
+            # active.md, episodic.md and a lesson are written from conversations (some of which
+            # held third-party text) and read back every turn: scan what will be shown, after
+            # the cut, so the scan sees exactly the text that reaches the model (#163).
             return replace(
                 context,
                 soul=load_soul_core(),
                 user_profile=trim_text(profile, max_chars=self.max_profile_chars) or None,
-                active=trim_text(load_active_md() or "", max_chars=cap) or None,
-                episodic_digest=trim_text(load_episodic_digest() or "", max_chars=cap) or None,
-                behavior=trim_text(matched.body, max_chars=cap) if matched is not None else None,
+                active=reenter_memory(
+                    trim_text(load_active_md() or "", max_chars=cap), "identity.active"
+                )
+                or None,
+                episodic_digest=reenter_memory(
+                    trim_text(load_episodic_digest() or "", max_chars=cap), "identity.episodic"
+                )
+                or None,
+                behavior=(
+                    reenter_memory(trim_text(matched.body, max_chars=cap), "identity.lesson")
+                    if matched is not None
+                    else None
+                ),
                 behavior_name=matched.name if matched is not None else None,
                 pointers=tuple(pointers),
             )

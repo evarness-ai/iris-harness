@@ -263,6 +263,18 @@ retriever adds, and the recent-turns block of the intent router's prompt. `kerne
   `SessionMemory.build_memory_context`, and the intent router's "Conversation so far" block
   (`format_recent_context`, scanned before its 200-character cut) is its only producer. The compaction summariser's input (assistant turns and the previous summary) goes through the same scan, because a summary the model writes is stored and a reworded instruction would defeat a scan at read time (reader `compactor`). The behavior miner's input (`mine_behavior_patterns`, reader `behavior_miner`) goes through the same scan. `recall_conversation` and `memory_search` run in the
   loop only (`iris mcp serve` and `api.tools` resolve plugin tools, which do not include them).
+- **Learned memory (issue #163).** `active.md`, `episodic.md` and a lesson's body are written
+  from conversations, some of which held third-party text, and come back into the prompt every
+  turn, so they are scanned at read as well: the retriever (`active`, the episodic digest, the
+  matched lesson, the lesson pointers and the semantic episodic patterns), `memory_search`
+  (`patterns` and `behaviors`), the intention-rollup context and the mission proposer. They are
+  scanned after the size cut, so the scan sees the text that reaches the model. The owner
+  approved this text, so it comes back as it is; text the scan had to redact also comes back
+  inside the untrusted-content envelope (`source="learned_memory"`). Clean learned memory is not
+  enveloped: a lesson is a recipe the model is meant to follow. The first line of defence is
+  still the miner's input (`mine_behavior_patterns`, #162); this is the second. Audit rows carry
+  origin `learned_memory`. The web screens that list these files for the owner to edit show the
+  stored text, since it is for the owner, not for a model.
 - **Limits.** A text over 16 KB is cut, and a read that has scanned 128 KB (newest texts
   first) replaces the older ones, each with a visible `[not scanned: ...]` marker; an
   unscanned tail is never passed on. A hash-keyed memo makes a 40-turn window cheap to

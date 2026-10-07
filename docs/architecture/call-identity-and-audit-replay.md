@@ -463,3 +463,122 @@ reachable by default; heartbeats/routines session scope; Telegram/gateway end to
 and the archive schema loss of `id` (not executed); cost limiter failure path; governor guard failure behaviour; multi-process
 migration races; real macOS Keychain never touched. Parquet/DuckDB reader union across schemas untested. The proposed design
 (sequence, spool, replay) is not implemented beyond the benchmark; the replay output in 5.5 is a design sketch.
+
+## 8. DEFERRED: tamper evidence for the audit ledger (stage 6, decision D5)
+
+**Status: not built.** The owner decided on 2026-10-07 to defer it. Stages 1-5 (call identity,
+lineage, sequence and gap rows, compaction markers, replay) ship without it. This section is the
+reference for whoever picks it up; nothing here is implemented, and every number was measured on a
+laptop before the decision. Tracked in the issue "Audit tamper evidence: per-writer HMAC chain
+(deferred decision D5)".
+
+### 8.1 The problem it would solve
+
+Everything stages 4-5 report (sequence holes, markers, SHA-256 of chunks, witnesses) is defeated
+by someone who can edit rows AND rewrite the sequence numbers, the markers and the chunk hashes
+consistently. A hash chain makes an edit, an insertion or a deletion in the middle of a writer's
+history detectable by anyone who holds the chain key.
+
+### 8.2 The design
+
+* **Chain.** Per writer (the unit the sequence already uses):
+  `chain_mac(N) = HMAC-SHA256(chain_key, canonical(row N) || chain_mac(N-1))`. `canonical(row)` is
+  the stored columns plus `payload_json` with sorted keys and fixed separators, excluding only `id`
+  and the two chain columns. `audit_log` would gain nullable `chain_prev` and `chain_mac` (hex), both
+  stored, so verification does not need the previous row to exist.
+* **Holes.** Where seq N-1 never reached the database (lost or spooled), the writer still knows its
+  own mac in memory: the next row stores `chain_prev` = that mac, and a spool line carries its mac. A
+  break the writer declared (a `gap` row) is the sequence's `lost_write`; an undeclared break is a
+  tamper finding.
+* **Compaction.** A marker is an ordinary row of the compactor's writer, so it is chained. The
+  Parquet schema and the marker would gain the two columns, and per writer `first_prev` and
+  `last_mac`, so continuity can be checked across hot and cold.
+* **Key derivation.** HKDF-SHA256 from the vault master key with a NEW `info`
+  (`iris/audit-chain/v1`), the mechanism of `audit/digest.py`'s digest key, so the chain key is
+  independent of the encryption key and the digest key. The key id (a short fingerprint) is recorded
+  on `writer.start` as `chain_alg=hmac-sha256/v1/<key-id>`; after a master-key rotation old segments
+  name their key.
+* **The writer's declared mode.** `writer.start` is the writer's first chained row; its payload says
+  `chain: <key-id>` or `chain: none`. A writer that declared a key and later stores a row with NULL
+  macs has broken its chain (stripping it is detectable). A writer that declared `none` is reported
+  as an **unchained writer**, never as intact.
+* **Verification.** `iris audit verify-chain [--session S | --writer W | --all]` and a library call
+  re-read hot and cold and recompute. Findings: `chain_break` (content changed, row inserted),
+  `chain_missing` (a row dropped from the middle), `chain_unchained_writer`, `chain_key_unavailable`.
+  It would fold into the stage 5 replay as a proven gap class only when the key is present; replay
+  output stays identifiers only.
+* **Proof bundle v2.** v1 is not touched: its schema file, its `verify` and its closed row set stay
+  as they are. v2 is a new `schema_version: 2` with its own schema file: ledger rows gain
+  `writer_id`, `writer_seq`, `chain_prev`, `chain_mac`, plus a `chain` section per writer
+  (`first_seq`, `last_seq`, `first_prev`, `last_mac`, `count`, `declared_breaks`, `key_id`, `alg`)
+  and the compaction markers' chunk list and hashes. HMAC is symmetric: v2 is verified by whoever
+  holds the audit key (the owner). A third party cannot verify an HMAC chain alone (see option B).
+
+### 8.3 What it proves, and what it cannot
+
+Proves: the rows of a writer's chain that exist were not altered, none was inserted, and none was
+removed from the middle, by anyone WITHOUT the chain key; together with the 4b markers, archived
+rows match what was moved; ordinary corruption (bit rot, a bad restore, a half-applied sync of the
+database file) is caught.
+
+Cannot prove:
+
+* **A user-level compromise with Keychain access.** The chain key derives from the same vault master
+  key the harness process uses, so any code running as the user that can read it can derive the key
+  and rewrite a writer's whole history, tail included. This is the threat model of the existing
+  digest key; it is not a defence against the owner's account being fully compromised.
+* **Tail truncation without an anchor.** The last N rows of a writer can be deleted and the chain of
+  what remains verifies. `writer.close` (itself chained) helps for a clean exit; a killed writer has
+  none.
+* **Rows never attempted** (section 5.3): no sequence slot, no chain link.
+* **An unchained writer** (`chain: none`) proves nothing.
+
+### 8.4 Options for an anchor
+
+* **A. HMAC chain only.** Cheapest. Defends against disk-level edits, restores, sync tools and any
+  process that can write `audit.db` but cannot read the key (a plugin sandbox, a backup agent). Does
+  not defend against tail truncation.
+* **A+B. Plus periodic signed checkpoints.** Every K rows or T minutes and at `writer.close`, an
+  Ed25519 signature over `(writer_id, seq, chain_mac, key_id)` goes to a separate append-only file
+  (`0600`, `audit-anchors.jsonl`) and optionally to the Keychain as one small item holding the latest
+  head per writer. Detects tail truncation back to the last checkpoint and lets a third party verify
+  with a public key. The signing key lives in the vault, so the same compromise limit applies.
+* **C. External witness** (a remote timestamp, or the head hash sent to the owner's own channel).
+  Strongest against local compromise; adds an egress and a dependency. Future work.
+
+### 8.5 Key handling
+
+The audit key resolves lazily, once per process (`audit/digest.py`), because a macOS Keychain prompt
+at process start hangs the process. Chaining every audit row would make processes that never
+governed a call (`iris approvals`, other CLIs that write audit rows) resolve it on their first
+write. The options:
+
+* **(i) Use the key only if it is already resolvable without a prompt** (already resolved in this
+  process, an environment variable, a file key); otherwise the writer declares `chain: none` for its
+  life. Never hangs; some writers are unchained, visible in `verify-chain` but not protected.
+* **(ii) Resolve the key at the first audit write in every process.** Full coverage; reintroduces the
+  Keychain-prompt hang for CLI commands.
+* **(iii) A separate chain key in a `0600` file under `IRIS_HOME/governance`.** No prompt; readable
+  by any process of the same user, weaker than the Keychain.
+
+**The owner's lean if it is ever built: (i).** The key is used only if it is already resolvable
+without a prompt; a writer that cannot get it declares `chain: none` and is reported as unchained.
+
+### 8.6 Migration
+
+* `add_columns_if_missing`, as in stage 3: nullable, no rewrite; the same race tests (a
+  release-shaped database, run twice, a real multi-interpreter race).
+* `audit_meta['chain']` records the first chained row id. Rows before it are the **pre-chain era**:
+  reported as a note, never a gap, and **never backfilled** (a backfill would make old rows look
+  protected when they were not).
+* The Parquet schema gains the two columns the way 4b added identity: old chunks read as NULL.
+* Key rotation: a new key id starts new writer segments (a `writer.start` under the new key). Old
+  segments stay verifiable only while the old derived key can be re-derived; if the old master key
+  is lost, old segments become unverifiable (still readable). State this in the user docs.
+
+### 8.7 Cost (measured)
+
+Canonical JSON plus HMAC-SHA256 of a typical row: **4.2 us per row**, against the 630-814 us a row
+costs to write (4.2), under 1%. Storage: about **130 bytes per row** (two 64-hex columns). Each
+writer keeps one 32-byte mac in memory; the chain is computed in the writer's own lock, in sequence
+order.

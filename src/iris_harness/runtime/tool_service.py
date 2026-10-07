@@ -155,6 +155,21 @@ class ToolService:
         # runs it on approval.
         return self._run(caller, tool, args, deferred=True)
 
+    def call_core_tool(self, caller: str, tool: ToolSpec, args: dict[str, Any]) -> ToolResult:
+        """Run ``tool`` for a ``core:<workflow>`` caller that holds the spec itself, through
+        governance (#155: the general lane's direct skill answer).
+
+        For a tool that is not a registered one (a skill tool): ``for_caller(...).call`` looks
+        tools up by name among the registered ones, and an approved call is run later by that
+        same lookup, so a skill tool's approval could never execute. Hence NOT deferred: a
+        call that needs the owner's approval is refused at ``PRE_TOOL_USE`` with the governance
+        message (audited, nothing runs), as for ``call_for_client``. Unlike it, this runs when no
+        kernel is bound: the lane's tools run ungoverned when the operator switched governance
+        off (the same explicit opt-out, said once at startup), so a refusal here would break
+        the lane for exactly the install that chose it.
+        """
+        return self._run(caller, tool, args, deferred=False)
+
     def call_for_client(self, caller: str, tool: ToolSpec, args: dict[str, Any]) -> ToolResult:
         """Run ``tool`` for a client outside IRIS (``mcp:<client>``), through governance.
 

@@ -59,6 +59,7 @@ from iris_harness.runtime.skill_matching import (
     SKILL_MATCH_MIN_SCORE,
     score_skill_package,
 )
+from iris_harness.runtime.skill_tool_specs import skill_tool_spec
 from iris_harness.runtime.turn_context import set_current_query, set_current_session_id
 from iris_harness.services.learning.store import LearningMetricsStore
 from iris_harness.tools.skills.registry import SkillRegistry
@@ -383,21 +384,7 @@ def _skills_to_react_tools(
                 continue
             seen.add(name)
 
-            def _make_call(cls: type[Any]) -> Callable[[dict[str, Any]], str]:
-                def _call(args: dict[str, Any]) -> str:
-                    return str(cls().invoke(args))
-
-                return _call
-
-            specs.append(
-                ToolSpec(
-                    name=name,
-                    description=tool_manifest.description,
-                    call=_make_call(tool_class),
-                    content=tool_manifest.content,
-                    plugin=f"skill:{package.manifest.name}",
-                )
-            )
+            specs.append(skill_tool_spec(package, tool_manifest, tool_class))
         if package.manifest.kind == "brief" and package.manifest.brief is not None:
             runner = make_brief_runner(skill_registry, package.manifest.name)
             brief_tool_name, _brief_tool_class, brief_description = make_brief_render_tool(

@@ -161,7 +161,7 @@ def _make_general_handler(
     A ``preferred_model`` task param lets the REPL session override the tier
     model for the duration of a conversation.
     """
-    _local_skills = make_local_skills(skill_registry)
+    _local_skills = make_local_skills(skill_registry, runtime_holder)
     _general_tools = make_general_tools(
         repo_root=repo_root,
         wiki=wiki,

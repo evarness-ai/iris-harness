@@ -18,6 +18,8 @@ from iris_harness.plugins_builtin.research.providers import (
     select_providers,
 )
 
+from .conftest import FakeClient
+
 # Every env var that gates a provider in select_providers(). Must list ALL of them so
 # the autouse fixture below makes these tests hermetic regardless of ambient env or any
 # key a real local environment happens to have set (e.g. EXA_API_KEY).
@@ -246,9 +248,14 @@ def test_searxng_and_brave_pass_the_language(monkeypatch: pytest.MonkeyPatch) ->
         return _FakeResponse(b'{"results": []}')
 
     monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    brave = BraveProvider()
+    client = FakeClient(body={"results": []})
+    brave._http = client  # type: ignore[assignment]
     SearxngProvider().search("q", max_results=5, language="en")
-    BraveProvider().search("q", max_results=5, search_type="news", language="en")
+    brave.search("q", max_results=5, search_type="news", language="en")
     SearxngProvider().search("q", max_results=5)
     assert "language=en" in urls[0]
-    assert "search_lang=en" in urls[1]
-    assert "language=" not in urls[2]
+    assert "language=" not in urls[1]
+    [(method, url, kwargs)] = client.calls
+    assert (method, url) == ("GET", "https://api.search.brave.com/res/v1/news/search")
+    assert kwargs["params"]["search_lang"] == "en"

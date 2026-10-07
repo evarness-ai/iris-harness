@@ -236,7 +236,7 @@ test_network_imports.py` pins the files):
 
 | Plugin | What it connects to | In this change |
 |---|---|---|
-| `research` | SearXNG (operator URL), `api.tavily.com`, `api.exa.ai`, `api.search.brave.com`, `duckduckgo.com`, and any page it fetches (urllib, Trafilatura, Crawl4AI) | `egress: {open_web: true}` declared; its SSRF checks stay; five files on the debt list |
+| `research` | `api.tavily.com`, `api.exa.ai`, `api.search.brave.com` and every page it fetches: through `api.http` (issue #172), under `egress: {open_web: true}`, with a ledger row per request and per redirect hop. Still raw: SearXNG (the operator's own, usually loopback, server, which the governed client refuses by design), `duckduckgo.com` (the `ddgs` library), Crawl4AI (its own browser; its first URL is address-checked in `extract.py`, which keeps `socket`) | two files on the debt list |
 | `gmail` | `gmail.googleapis.com`, `www.googleapis.com`, `oauth2.googleapis.com`, `accounts.google.com` (Google API client, OAuth) | the four hosts declared (`data: personal`); three files on the debt list |
 | `imap` | the owner's IMAP server over TCP (`imaplib`, `ssl`) | not an HTTP host, so nothing to declare; one file on the debt list |
 | `email_workflows` | job-posting fetch (`httpx`), discovery (`requests`), a demo that guards sockets | three files on the debt list; no declaration yet |

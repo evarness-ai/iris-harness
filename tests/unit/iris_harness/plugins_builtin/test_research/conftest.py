@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
+import httpx
 import pytest
 
 import iris_harness.plugins_builtin.research.extract as extract_mod
@@ -14,6 +16,33 @@ from iris_harness.services.research.providers import register_search_provider
 # A public address (example.com's). Tests that fetch a page resolve every host to it,
 # so the extractor's public-address check passes with no DNS.
 PUBLIC_ADDRESS = "93.184.215.14"
+
+
+class FakeClient:
+    """Stands in for the governed client a provider asks for (``provider._http``).
+
+    Answers every request with ``reply`` (a status and a body), or raises ``error``;
+    ``calls`` holds ``(method, url, kwargs)`` for each. The governed client itself, with
+    its declaration, its ledger and its address checks, is exercised in
+    ``test_governed_egress.py``."""
+
+    def __init__(self, *, status: int = 200, body: Any = None, error: Exception | None = None):
+        self.status = status
+        self.body = {} if body is None else body
+        self.error = error
+        self.calls: list[tuple[str, str, dict[str, Any]]] = []
+
+    def _answer(self, method: str, url: str, kwargs: dict[str, Any]) -> httpx.Response:
+        self.calls.append((method, url, kwargs))
+        if self.error is not None:
+            raise self.error
+        return httpx.Response(self.status, json=self.body)
+
+    def get(self, url: str, **kwargs: Any) -> httpx.Response:
+        return self._answer("GET", url, kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> httpx.Response:
+        return self._answer("POST", url, kwargs)
 
 
 @pytest.fixture(autouse=True)

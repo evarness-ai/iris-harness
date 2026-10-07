@@ -23,6 +23,7 @@ from iris_harness.foundation.auth import (
     DeviceVerifier,
     resolve_principal,
 )
+from iris_harness.foundation.logsafe import log_safe
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -184,14 +185,14 @@ def log_refused_host(value: str) -> None:
     """One WARNING per refused name: the host only, nothing else from the request."""
     name = host_name(value)
     if name in _REFUSED_LOGGED:
-        logger.debug("refused Host %r again", name)
+        logger.debug("refused Host %r again", log_safe(name))
         return
     if len(_REFUSED_LOGGED) < _REFUSED_LOG_CAP:
         _REFUSED_LOGGED.add(name)
     logger.warning(
         "refused a request for Host %r: not a name this server answers to "
         "(set IRIS_PUBLIC_URL, or add it to IRIS_ALLOWED_HOSTS)",
-        name,
+        log_safe(name),
     )
 
 

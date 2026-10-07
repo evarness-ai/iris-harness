@@ -25,6 +25,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from iris_harness.foundation.logsafe import log_safe
 from iris_harness.foundation.paths import repo_root
 from iris_harness.runtime import IrisRuntime
 
@@ -438,8 +439,11 @@ def install_session_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
             except WebCommandError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
             except Exception as exc:
-                logger.exception("slash command %s failed", name)
-                raise HTTPException(status_code=500, detail=f"{name} failed: {exc}") from exc
+                logger.exception("slash command %s failed", log_safe(name))
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"{name} failed ({type(exc).__name__}); see the server log",
+                ) from exc
             model, router_model = app.state.model_overrides.get(request.session_id)
             return {
                 "ok": True,

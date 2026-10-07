@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from iris_harness.foundation.logsafe import log_safe
 from iris_harness.foundation.persistence import connect
 from iris_harness.foundation.persistence.sqlite import ensure_columns
 from iris_harness.services.learning.models import Experiment, ExperimentStatus
@@ -563,7 +564,9 @@ class LearningMetricsStore:
                     (kind, subject, detail, session_id, datetime.now(UTC).isoformat()),
                 )
         except Exception:  # signal capture must never break a user action
-            logger.debug("user-behavior signal capture failed (kind=%s)", kind, exc_info=True)
+            logger.debug(
+                "user-behavior signal capture failed (kind=%s)", log_safe(kind), exc_info=True
+            )
 
     def list_user_behavior_signals(
         self, *, kind: str | None = None, limit: int = 100

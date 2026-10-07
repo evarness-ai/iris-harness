@@ -337,6 +337,12 @@ def _seed_email_db(db_path, rows: list[dict]) -> None:  # type: ignore[no-untype
     store.upsert_many(messages)
 
 
+def _sender_domain(embedding_text: str) -> str:
+    """The domain in the ``From: addr (domain)`` header of an embedding text."""
+    first_line = embedding_text.splitlines()[0]
+    return first_line.rsplit("(", 1)[1].rstrip(")")
+
+
 def test_bootstrap_categories_raises_when_no_emails(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     import pytest
 
@@ -384,9 +390,9 @@ def test_bootstrap_categories_runs_end_to_end_with_stubs(tmp_path, monkeypatch) 
 
         vecs = []
         for t in texts:
-            if "gap.com" in t:
+            if _sender_domain(t) == "gap.com":
                 v = np.array([1.0, 0.0], dtype=np.float32)
-            elif "shopmart.com" in t:
+            elif _sender_domain(t) == "shopmart.com":
                 v = np.array([0.0, 1.0], dtype=np.float32)
             else:
                 v = np.array([0.7071, 0.7071], dtype=np.float32)
@@ -451,7 +457,7 @@ def test_bootstrap_categories_no_naming_client_returns_unnamed(
             [
                 (
                     np.array([1.0, 0.0], dtype=np.float32)
-                    if "gap.com" in t
+                    if _sender_domain(t) == "gap.com"
                     else np.array([0.0, 1.0], dtype=np.float32)
                 )
                 for t in texts

@@ -30,7 +30,7 @@ def test_extract_from_answer_parses_fenced_block() -> None:
     assert lesson.category == "news-pdf"
     assert lesson.summary.startswith("Used gnews")
     assert "run_shell" in lesson.tools
-    assert "news.google.com" in lesson.sources
+    assert lesson.sources == ("news.google.com",)
     assert "fetch_news.py" in lesson.scripts
     assert "```lesson" not in cleaned
     assert "Done. Wrote" in cleaned

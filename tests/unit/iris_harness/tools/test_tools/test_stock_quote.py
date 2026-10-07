@@ -5,7 +5,9 @@ run_shell is injected so these tests never touch Docker or the network.
 
 from __future__ import annotations
 
+import re
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 
 from iris_harness.tools.stock_quote import stock_quote
 
@@ -32,7 +34,8 @@ def test_runs_fixed_yahoo_fetch_for_the_symbol() -> None:
         return _result('{"symbol":"MSFT","price":400.0,"currency":"USD"}')
 
     stock_quote("msft", run_shell=fake)
-    assert "query1.finance.yahoo.com" in seen["cmd"]
+    urls = re.findall(r"https?://[^\s'\"]+", seen["cmd"])
+    assert {urlsplit(u).hostname for u in urls} == {"query1.finance.yahoo.com"}
     assert "MSFT" in seen["cmd"]  # symbol is passed to the script
 
 

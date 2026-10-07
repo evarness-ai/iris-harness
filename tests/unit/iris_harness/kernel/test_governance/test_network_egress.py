@@ -6,6 +6,8 @@ Mirrors the acceptance criteria in
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit
+
 import pytest
 
 from iris_harness.kernel.governance import HookContext, HookPoint
@@ -262,7 +264,7 @@ async def test_ac7_query_params_stripped_in_audit() -> None:
     captured_url = decision.audit_metadata["url"]
     assert "supersecret" not in captured_url
     assert "token=" not in captured_url
-    assert "api.github.com" in captured_url
+    assert urlsplit(captured_url).hostname == "api.github.com"
 
 
 async def test_ac7_fragment_also_stripped() -> None:
@@ -463,7 +465,7 @@ def test_parse_url_strips_query_and_fragment() -> None:
     assert "secret" not in clean_url
     assert "token=" not in clean_url
     assert "#anchor" not in clean_url
-    assert "api.github.com" in clean_url
+    assert urlsplit(clean_url).hostname == "api.github.com"
 
 
 # ---------------------------------------------------------------------------

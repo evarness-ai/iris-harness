@@ -76,8 +76,9 @@ def test_db_file_perms_are_reasserted_on_every_open(tmp_path: Path, master_key: 
     """An operator who accidentally widens perms gets them tightened back."""
     db_path = tmp_path / "vault.db"
     store = VaultStore(db_path=db_path)
-    os.chmod(db_path, 0o644)  # operator goofs
-    assert stat.S_IMODE(os.stat(db_path).st_mode) == 0o644
+    widened = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
+    os.chmod(db_path, widened)  # operator goofs
+    assert stat.S_IMODE(os.stat(db_path).st_mode) == widened
 
     # Any read/write reasserts 0o600.
     store.add(handle="x", secret_value="y")

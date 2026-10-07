@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from urllib.parse import urlsplit
 
 from iris_harness.plugins_builtin.research.models import SearchResult
 from iris_harness.plugins_builtin.research.rank import (
@@ -11,6 +12,10 @@ from iris_harness.plugins_builtin.research.rank import (
     score_results,
     trust_for,
 )
+
+
+def _host(url: str) -> str | None:
+    return urlsplit(url).hostname
 
 
 def test_trust_for_known_and_unknown_domains() -> None:
@@ -128,7 +133,7 @@ def test_score_results_downranks_suppressed_source(tmp_path) -> None:
     # Baseline: the high-trust docs source ranks first.
     base = fresh()
     score_results("json", base, search_type="web", feedback_store=fb)
-    assert base[0].url.startswith("https://docs.python.org")
+    assert _host(base[0].url) == "docs.python.org"
 
     # Mark docs.python.org "not useful" for web → it sinks to the bottom.
     fb.record(
@@ -136,8 +141,8 @@ def test_score_results_downranks_suppressed_source(tmp_path) -> None:
     )
     after = fresh()
     score_results("json", after, search_type="web", feedback_store=fb)
-    assert after[0].url.startswith("https://unknown.example")
-    assert after[-1].url.startswith("https://docs.python.org")
+    assert _host(after[0].url) == "unknown.example"
+    assert _host(after[-1].url) == "docs.python.org"
 
 
 def test_score_results_suppression_is_lens_specific(tmp_path) -> None:
@@ -155,7 +160,7 @@ def test_score_results_suppression_is_lens_specific(tmp_path) -> None:
         _result("doc", "https://unknown.example/page", "parse json"),
     ]
     score_results("json", results, search_type="web", feedback_store=fb)
-    assert results[0].url.startswith("https://docs.python.org")  # web lens unaffected
+    assert _host(results[0].url) == "docs.python.org"  # web lens unaffected
 
 
 # ── the news lens has its own trust table ─────────────────────────────────────
@@ -223,4 +228,4 @@ def test_news_ranking_puts_the_wire_above_the_syndicator() -> None:
         ),
     ]
     score_results("breaking news today", results, search_type="news", now=now)
-    assert results[0].url.startswith("https://www.reuters.com")
+    assert _host(results[0].url) == "www.reuters.com"

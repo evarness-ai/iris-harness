@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 
+from iris_harness.foundation.logsafe import log_safe
 from iris_harness.memory.identity import append_user_fact_to_md, drop_user_fact_from_md
 from iris_harness.memory.semantic_index import SemanticIndex
 from iris_harness.memory.store import MemoryStore, UserFact
@@ -200,7 +201,9 @@ class FactCoordinator:
                 None,
             )
         except Exception:
-            logger.exception("failed to read the facts for %r; derived homes unchanged", key)
+            logger.exception(
+                "failed to read the facts for %r; derived homes unchanged", log_safe(key)
+            )
             return
         if projection is None:
             self._drop_index(key)
@@ -223,7 +226,7 @@ class FactCoordinator:
         try:
             append_user_fact_to_md(key, value, confidence)
         except Exception:
-            logger.exception("failed to project fact %r into USER.md", key)
+            logger.exception("failed to project fact %r into USER.md", log_safe(key))
 
     def _drop_projection(self, key: str) -> None:
         if not self._project_md:
@@ -231,4 +234,4 @@ class FactCoordinator:
         try:
             drop_user_fact_from_md(key)
         except Exception:
-            logger.exception("failed to drop fact %r from USER.md", key)
+            logger.exception("failed to drop fact %r from USER.md", log_safe(key))

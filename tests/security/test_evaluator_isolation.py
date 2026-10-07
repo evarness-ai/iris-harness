@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import stat
 import sys
 from pathlib import Path
 
@@ -68,6 +69,12 @@ def test_readonly_db_rejects_normal_write(readonly_db: Path) -> None:
     assert wrote is False, "agent process succeeded in writing to a 0o400 evaluator DB"
 
 
+# rw for owner, group and other, built from flags (the point is a too-wide mode).
+_WORLD_WRITABLE = (
+    stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IWGRP | stat.S_IROTH | stat.S_IWOTH
+)
+
+
 def test_isolation_helper_returns_readonly_connection(readonly_db: Path) -> None:
     """The defense-in-depth helper opens the DB in ``mode=ro`` even if
     the FS perms are misconfigured. A SELECT must succeed; an INSERT
@@ -91,7 +98,7 @@ def test_isolation_helper_works_even_with_writable_file(tmp_path: Path) -> None:
     sqlite3.connect(db_path).executescript("CREATE TABLE t (id INTEGER); INSERT INTO t VALUES (1);")
     # Intentionally world-writable to prove the URI mode=ro guard works
     # even when the filesystem layer is misconfigured.
-    os.chmod(db_path, 0o666)  # noqa: S103
+    os.chmod(db_path, _WORLD_WRITABLE)
 
     conn = isolation_db_open_readonly(str(db_path))
     try:

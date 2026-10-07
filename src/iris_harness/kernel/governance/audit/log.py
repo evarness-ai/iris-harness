@@ -138,6 +138,14 @@ class AuditRow:
     kind: str | None = None
 
 
+#: ``hook_point`` of a compaction marker row.
+COMPACTION_HOOK = "audit.compaction"
+
+
+class CompactionConflict(RuntimeError):
+    """A compaction's rows are no longer exactly the ones its chunks hold; nothing was deleted."""
+
+
 class AuditLog:
     """Append-only audit store with simple filtered queries."""
 
@@ -221,6 +229,65 @@ class AuditLog:
         sequence.mark_started(self.db_path, writer)
         self._after_write()
         return "db", row_id
+
+    def write_compaction(
+        self,
+        payload: Mapping[str, Any],
+        *,
+        archived: Sequence[tuple[int, str | None]],
+    ) -> int:
+        """Write a ``compaction`` marker and delete the rows it accounts for, in ONE transaction.
+
+        ``archived`` is ``(id, record_id)`` of every hot row now held by an fsynced chunk. The
+        marker is inserted first (taking the write lock), then every listed row is checked to
+        still exist unchanged, then deleted by id -- never by a time range, because a spooled
+        row draining late with an old timestamp must not be deleted unarchived. A mismatch or
+        a failure rolls everything back: the chunks stay orphans for the next run to adopt or
+        quarantine, and no row is lost. The marker is not spooled (it is only worth anything
+        atomic with the delete); its sequence number is a hole when the transaction fails.
+        """
+        writer, seq = sequence.allocate(self.db_path)
+        claimed: list[sequence.GapRange] = []
+        extra: list[int] = []
+        try:
+            with self._connect() as conn:
+                _insert_meta(
+                    conn,
+                    writer,
+                    seq=seq,
+                    kind=sequence.KIND_COMPACTION,
+                    hook_point=COMPACTION_HOOK,
+                    reason="audit rows moved from the ledger to the cold archive",
+                    payload=payload,
+                )
+                claimed = self._write_preamble(conn, writer, extra)
+                conn.execute(
+                    "CREATE TEMP TABLE _compact_keys(id INTEGER PRIMARY KEY, record_id TEXT)"
+                )
+                conn.executemany("INSERT INTO _compact_keys VALUES (?, ?)", list(archived))
+                (matched,) = conn.execute(
+                    "SELECT COUNT(*) FROM _compact_keys k JOIN audit_log a "
+                    "ON a.id = k.id AND a.record_id IS k.record_id"
+                ).fetchone()
+                if matched != len(archived):
+                    raise CompactionConflict(
+                        f"{len(archived) - matched} of {len(archived)} archived rows changed"
+                    )
+                deleted = conn.execute(
+                    "DELETE FROM audit_log WHERE id IN (SELECT id FROM _compact_keys)"
+                ).rowcount
+                if deleted != len(archived):
+                    raise CompactionConflict(f"deleted {deleted} rows, archived {len(archived)}")
+                conn.commit()
+        except BaseException as exc:
+            sequence.restore_gaps(self.db_path, writer, claimed)
+            sequence.note_failure(self.db_path, writer, seq, exc, spooled=False, own=True)
+            for lost_seq in extra:
+                sequence.note_failure(self.db_path, writer, lost_seq, exc, spooled=False, own=True)
+            raise
+        sequence.mark_started(self.db_path, writer)
+        self._after_write()
+        return len(archived)
 
     def _write_preamble(
         self, conn: sqlite3.Connection, writer: sequence.Writer, allocated: list[int]

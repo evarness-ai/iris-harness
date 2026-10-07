@@ -167,6 +167,19 @@ def test_schema_matches_design_order_and_dictionary_columns() -> None:
         "severity",
         "reason",
         "payload_json",
+        # identity and completeness columns (issue #134), appended after the original thirteen
+        "id",
+        "record_id",
+        "session_id",
+        "turn_id",
+        "call_id",
+        "parent_call_id",
+        "attempt",
+        "replay_of",
+        "resumed_from_run",
+        "writer_id",
+        "writer_seq",
+        "kind",
     ]
     for field_name in (
         "agent_type",
@@ -176,6 +189,7 @@ def test_schema_matches_design_order_and_dictionary_columns() -> None:
         "classification",
         "tier",
         "severity",
+        "kind",
     ):
         assert pyarrow.types.is_dictionary(schema.field(field_name).type)
 

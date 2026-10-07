@@ -5,6 +5,7 @@ and DuckDB query/export helpers over hot+cold audit data.
 """
 
 from iris_harness.kernel.governance.audit.archive.compact import AuditCompactor, CompactResult
+from iris_harness.kernel.governance.audit.archive.markers import VerifyReport, verify_archive
 from iris_harness.kernel.governance.audit.archive.query import AuditQueryEngine, ExportFormat
 from iris_harness.kernel.governance.audit.archive.writer import (
     ArchivePartition,
@@ -20,4 +21,6 @@ __all__ = [
     "CompactResult",
     "AuditQueryEngine",
     "ExportFormat",
+    "VerifyReport",
+    "verify_archive",
 ]

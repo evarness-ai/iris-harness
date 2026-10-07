@@ -282,6 +282,13 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- The compaction summariser reads stored text through the re-entry scan (issue #161). The
+  summary the model writes is stored, so a reworded instruction would defeat a scan at read
+  time; the assistant turns and the previous summary now go through the scan on the way INTO
+  the summariser (the owner's own turns stay verbatim, nothing is enveloped, the summary's
+  provenance is still tracked by its flag). One fix point, `_summary_prompt`, covers `compact`,
+  `summarize_all` and the legacy dict API. Audited as reader `compactor`, counts only.
+
 - The general lane's direct skill answer is a governed call (issue #155, second part). When a
   request matches a skill, the lane answers it before any model by running the skill's first
   tool; that call used to run in-process with no `PRE_TOOL_USE` / `POST_TOOL_USE`, no approval

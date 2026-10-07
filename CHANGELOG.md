@@ -261,6 +261,22 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- The legacy general lane (`IRIS_AGENTIC_CORE_ENABLED` off, or `shadow` where the lane's answer is
+  the one read) runs every tool through the governed runner (issue #155, #134 D7). Its
+  `memory_search`, `memory_graph`, `wiki_search`, `propose_skill_from_sandbox` and every skill
+  tool, `fetch_web_content` included, used to run through a private dispatch table with no
+  `PRE_TOOL_USE` / `POST_TOOL_USE`, no external-content floor and no audit row, so an injected
+  instruction in a fetched page reached the next prompt, the session log, the answer and the memory
+  stores raw. The table is gone: the lane's tool set is built from the loop's own builders and each
+  tool carries the loop's declaration (`effect`, `confirm`, `content`). What changes for a
+  flag-off or shadow install: a page or wiki result reaches the model inside the untrusted-content
+  envelope with the instruction redacted and leaves audit rows; `memory_search` is the loop's
+  scoped search (`facts`, `patterns`, `behaviors`, `sessions`); and `propose_skill_from_sandbox`,
+  a write that needs the owner's approval, is refused in this lane (it has no checkpoint to pause
+  on) instead of writing a draft unasked. With governance switched off
+  (`IRIS_GOVERNANCE_ENABLED`) the lane's tools still run ungoverned, as the operator's explicit
+  opt-out; one startup warning says so.
+
 - The email judge's user message is no longer wrapped in the untrusted-content envelope
   (undoing that part of the issue #148 change). Measured on a real mailbox, 100 emails judged
   by the local `email_judge` model before and after the wrapping: about 5 stably changed bucket

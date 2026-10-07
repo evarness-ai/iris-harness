@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The sandbox egress proxy (`egress_proxy.py`) now listens on `127.0.0.1` by default, not `0.0.0.0`. The sidecar the harness starts is unaffected: it is started with `IRIS_EGRESS_BIND=0.0.0.0` because the sandbox reaches it from a sibling container. Anyone who runs `egress_proxy.py` by hand or from their own compose file and relied on it listening on every interface must set `IRIS_EGRESS_BIND=0.0.0.0` (or a specific address). A value that is not an IP address is refused, and a non-loopback bind logs one warning.
+- `POST /memory/export` takes `name`, a single folder name, instead of `out_dir`, an absolute path, and writes that folder under the new `IRIS_EXPORT_DIR` (default `~/.iris/exports`, created owner-only). A name with a separator, `..` or more than 64 characters, one that resolves outside the folder through a symlink, or one that is an existing file is refused with 400. A caller that sent `out_dir` now gets 422: send `name` instead. To export straight into an Obsidian vault, set `IRIS_EXPORT_DIR` to the vault's parent folder and name the vault's folder, or use `iris memory export --to PATH`, which is unchanged and writes wherever you type.
 
 ### Added
 

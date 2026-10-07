@@ -3,7 +3,7 @@
 When ``audit.db`` cannot be written (locked, disk full, read-only) a row that does not guard
 an effect is not dropped: it is appended here, one JSON line, and put into the database
 later. A row that does guard an effect is refused only when the spool cannot take it either
-(``AuditLog.record_durable``, the kernel).
+(``AuditLog.record`` returns 0 for a spooled row; the kernel reads it).
 
 Permission model: the spool is a sibling of the database it belongs to, in the same
 directory, created ``0600`` like the database file (the directory is the governance data
@@ -207,8 +207,9 @@ def _rewrite(path: Path, records: list[dict[str, Any]]) -> None:
         for record in records:
             os.write(
                 fd,
-                (json.dumps(record, default=str, sort_keys=True, separators=(",", ":")) + "\n")
-                .encode("utf-8"),
+                (
+                    json.dumps(record, default=str, sort_keys=True, separators=(",", ":")) + "\n"
+                ).encode("utf-8"),
             )
         os.fsync(fd)
     finally:

@@ -97,9 +97,58 @@ def unrecorded_egress_provider() -> list[HealthCheck]:
     ]
 
 
+AUDIT_WRITES_TARGET = "Audit ledger"
+
+
+def audit_writes_provider() -> list[HealthCheck]:
+    """A ``register_check_provider`` callable: audit rows the ledger would not take (#134).
+
+    RED when a row was kept nowhere (the database and the local spool both refused it, so the
+    ledger has a hole this process cannot repair; calls that guard an effect are refused while
+    that holds). YELLOW while rows wait in the spool for the database, or lines were set
+    aside as malformed. Silent when neither. The lost count is this process's (it clears on
+    restart; the hole itself stays on the ledger as a gap in the writer's sequence); the
+    spool is on disk.
+    """
+    from iris_harness.foundation.paths import audit_db_path
+    from iris_harness.kernel.governance.audit.write_health import write_health
+
+    state = write_health(audit_db_path())
+    if state["writes_lost"]:
+        return [
+            HealthCheck(
+                target=AUDIT_WRITES_TARGET,
+                kind=CheckKind.GOVERNANCE,
+                state=HealthState.RED,
+                detail=(
+                    f"{state['writes_lost']} audit row(s) could not be written to the ledger or the "
+                    f"local spool (last cause: {state['last_error_class'] or 'unknown'}). Write, "
+                    "destructive, cloud-model and outbound calls are refused while this holds."
+                ),
+                action="check the audit database (disk space, permissions, IRIS_GOVERNANCE_AUDIT_DB_PATH)",
+            )
+        ]
+    if state["spool_pending"] or state["spool_rejected"]:
+        return [
+            HealthCheck(
+                target=AUDIT_WRITES_TARGET,
+                kind=CheckKind.GOVERNANCE,
+                state=HealthState.YELLOW,
+                detail=(
+                    f"{state['spool_pending']} audit row(s) wait in the local spool for the ledger; "
+                    f"{state['spool_rejected']} malformed spool line(s) were set aside."
+                ),
+                action="they are written back on the next successful audit write or restart",
+            )
+        ]
+    return []
+
+
 __all__ = [
+    "AUDIT_WRITES_TARGET",
     "TARGET",
     "UNRECORDED_TARGET",
+    "audit_writes_provider",
     "ExternalTools",
     "model_guard_provider",
     "unrecorded_egress_provider",

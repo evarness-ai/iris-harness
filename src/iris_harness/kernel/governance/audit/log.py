@@ -176,7 +176,7 @@ class AuditLog:
         keep the row either.
         """
         _, row_id = self._write(
-            dict(
+            dict(  # noqa: C408
                 run_id=run_id,
                 step_id=step_id,
                 agent_type=agent_type,
@@ -194,50 +194,7 @@ class AuditLog:
         )
         return row_id
 
-    def record_durable(
-        self,
-        *,
-        run_id: str,
-        step_id: int | None,
-        agent_type: str,
-        hook_point: str,
-        plugin: str,
-        decision: str,
-        severity: str,
-        reason: str,
-        classification: str | None = None,
-        tier: str | None = None,
-        cost_usd: float | None = None,
-        payload: dict[str, Any] | None = None,
-        ts: datetime | None = None,
-    ) -> Durability:
-        """:meth:`record`, reporting where the row went: ``"db"`` or ``"spool"``.
-
-        The kernel uses this to refuse an effect whose ledger row was kept nowhere. Raises
-        when neither the database nor the spool took the row.
-        """
-        durability, _ = self._write(
-            dict(
-                run_id=run_id,
-                step_id=step_id,
-                agent_type=agent_type,
-                hook_point=hook_point,
-                plugin=plugin,
-                decision=decision,
-                severity=severity,
-                reason=reason,
-                classification=classification,
-                tier=tier,
-                cost_usd=cost_usd,
-                payload=payload,
-                ts=ts,
-            )
-        )
-        return durability
-
-    def _write(
-        self, row: dict[str, Any], *, kind: str | None = None
-    ) -> tuple[Durability, int]:
+    def _write(self, row: dict[str, Any], *, kind: str | None = None) -> tuple[Durability, int]:
         """Number the row, write it (with the writer's start and any gap rows), or spool it."""
         writer, seq = sequence.allocate(self.db_path)
         row["ts"] = row.get("ts") or datetime.now(UTC)
@@ -256,7 +213,7 @@ class AuditLog:
                 )
                 claimed = self._write_preamble(conn, writer, extra)
                 conn.commit()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any database failure spools
             sequence.restore_gaps(self.db_path, writer, claimed)
             for lost_seq in extra:  # a gap row's own number: a hole too, but not a lost event
                 sequence.note_failure(self.db_path, writer, lost_seq, exc, spooled=False, own=True)
@@ -318,7 +275,7 @@ class AuditLog:
                 spool.spool_path_for(self.db_path),
                 _spool_record(row, record_id, writer.writer_id, seq, kind),
             )
-        except Exception as spool_exc:  # noqa: BLE001 - the spool is the last resort
+        except Exception as spool_exc:
             sequence.note_failure(self.db_path, writer, seq, exc, spooled=False)
             logger.error(
                 "audit_log: row %s/%d lost: the database (%s) and the spool (%s) both failed",
@@ -330,7 +287,10 @@ class AuditLog:
             raise exc from spool_exc
         sequence.note_failure(self.db_path, writer, seq, exc, spooled=True)
         logger.warning(
-            "audit_log: row %s/%d kept in the spool: %s", writer.writer_id, seq, exc.__class__.__name__
+            "audit_log: row %s/%d kept in the spool: %s",
+            writer.writer_id,
+            seq,
+            exc.__class__.__name__,
         )
         return "spool"
 
@@ -402,7 +362,7 @@ class AuditLog:
                         ids.append(None)
                         try:
                             self._spool_or_raise(fields, record_id, writer, seq, None, exc)
-                        except Exception:  # noqa: BLE001 - reported as None, hole recorded
+                        except Exception:
                             logger.debug("batch row %d not spooled", n, exc_info=True)
                     finally:
                         conn.execute("RELEASE audit_row")
@@ -794,7 +754,7 @@ def _close_writer(db_key: str, writer: sequence.Writer) -> None:
     log = AuditLog(db_path=Path(db_key))
     last = writer.next_seq - 1
     log._write(
-        dict(
+        dict(  # noqa: C408
             run_id=f"audit:{writer.writer_id}",
             step_id=None,
             agent_type="audit",

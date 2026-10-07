@@ -41,6 +41,17 @@ function StateCard() {
                 {data.audit_db}
               </span>
             </div>
+            {data.write_health && !data.write_health.ok && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Tag kind="warn">
+                  {data.write_health.writes_lost > 0 ? "audit rows lost" : "audit spool pending"}
+                </Tag>
+                <span className="font-mono text-[11px] text-fg-subtle">
+                  {data.write_health.spool_pending} in spool, {data.write_health.spool_rejected}{" "}
+                  malformed, {data.write_health.writes_lost} lost
+                </span>
+              </div>
+            )}
             <FlagGrid flags={data.flags} />
             <p className="text-[11px] text-fg-subtle">
               Read-only. Enforce flips are an operator action (env vars / the enforce runbook), never

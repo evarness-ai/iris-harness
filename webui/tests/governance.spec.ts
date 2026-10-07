@@ -233,6 +233,36 @@ test("Governance shows who called, how it was answered and where it ran", async 
   await assertNoLeak(page);
 });
 
+test("Governance says when audit rows wait in the spool or were lost (#134)", async ({ page }) => {
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const type = request.resourceType();
+    if (type !== "fetch" && type !== "xhr") return route.continue();
+    const pathname = new URL(request.url()).pathname;
+    let body: unknown = fixtureFor(pathname);
+    if (pathname.endsWith("/governance/state")) {
+      body = {
+        enabled: true,
+        audit_db: "/tmp/audit.db",
+        audit_count: 3,
+        write_health: {
+          ok: false,
+          spool_pending: 2,
+          spool_rejected: 1,
+          writes_spooled: 2,
+          writes_lost: 0,
+          last_error_class: "OperationalError",
+        },
+        flags: [],
+      };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+  await page.goto("/governance", { waitUntil: "networkidle" });
+  await expect(page.locator("body")).toContainText("audit spool pending");
+  await expect(page.locator("body")).toContainText("2 in spool, 1 malformed, 0 lost");
+});
+
 test("the caller filter asks the server for MCP clients only", async ({ page }) => {
   const seen: string[] = [];
   await serve(page, seen);

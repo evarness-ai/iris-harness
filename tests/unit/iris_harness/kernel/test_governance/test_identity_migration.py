@@ -260,7 +260,8 @@ def test_the_boundary_is_written_once_by_the_process_that_added_the_columns(
     conn = sqlite3.connect(db)
     meta = conn.execute("SELECT key, value FROM audit_meta").fetchall()
     conn.close()
-    assert [k for k, _ in meta] == ["identity"]
+    # One boundary per migration step: the identity columns, then the writer sequence (#134 s4).
+    assert [k for k, _ in meta] == ["identity", "sequence"]
     boundary = json.loads(meta[0][1])
     assert boundary["schema"] == 2 and boundary["first_identity_row_id"] == 3  # 2 old rows
     # The old rows say "pre-identity era" by having no record_id, and still know their session.
@@ -426,9 +427,13 @@ def test_several_interpreters_opening_one_release_db_at_once_all_succeed(
     columns = _columns(tmp_path / "race.sqlite", table)
     assert set(identity) <= set(columns)
     assert len(columns) == len(set(columns))  # each added exactly once
-    if store == "audit_log":  # exactly one process wrote the boundary
+    if store == "audit_log":  # exactly one process wrote each boundary
+        assert {"writer_id", "writer_seq", "kind"} <= set(columns)
         conn = sqlite3.connect(tmp_path / "race.sqlite")
-        assert conn.execute("SELECT COUNT(*) FROM audit_meta").fetchone() == (1,)
+        assert conn.execute("SELECT key FROM audit_meta ORDER BY key").fetchall() == [
+            ("identity",),
+            ("sequence",),
+        ]
         conn.close()
 
 

@@ -101,8 +101,8 @@ _close_hook: Callable[[str, Writer], None] | None = None
 _installed = False
 
 
-def _key(db_path: object) -> str:
-    return os.path.abspath(os.fspath(db_path))  # type: ignore[call-overload]
+def _key(db_path: str | os.PathLike[str]) -> str:
+    return os.path.abspath(os.fspath(db_path))
 
 
 def _install() -> None:
@@ -130,7 +130,7 @@ def _after_fork_in_child() -> None:
     _lock.release()
 
 
-def writer_for(db_path: object) -> Writer:
+def writer_for(db_path: str | os.PathLike[str]) -> Writer:
     """This process's writer for ``db_path`` (created on first use)."""
     key = _key(db_path)
     with _lock:
@@ -141,7 +141,7 @@ def writer_for(db_path: object) -> Writer:
         return writer
 
 
-def allocate(db_path: object) -> tuple[Writer, int]:
+def allocate(db_path: str | os.PathLike[str]) -> tuple[Writer, int]:
     """Take the next sequence number. Called BEFORE the write is attempted."""
     with _lock:
         writer = writer_for(db_path)
@@ -150,14 +150,14 @@ def allocate(db_path: object) -> tuple[Writer, int]:
         return writer, seq
 
 
-def mark_started(db_path: object, writer: Writer) -> None:
+def mark_started(db_path: str | os.PathLike[str], writer: Writer) -> None:
     with _lock:
         if _writers.get(_key(db_path)) is writer:
             writer.started = True
 
 
 def note_failure(
-    db_path: object,
+    db_path: str | os.PathLike[str],
     writer: Writer,
     seq: int,
     exc: BaseException,
@@ -184,7 +184,7 @@ def note_failure(
             _lost += 1
 
 
-def claim_gaps(db_path: object, writer: Writer) -> list[GapRange]:
+def claim_gaps(db_path: str | os.PathLike[str], writer: Writer) -> list[GapRange]:
     """Take the missing sequence numbers of ``writer`` to record, as runs of consecutive numbers.
 
     The numbers leave the writer: a concurrent write cannot record the same gap twice. A
@@ -222,7 +222,7 @@ def claim_gaps(db_path: object, writer: Writer) -> list[GapRange]:
     return out
 
 
-def restore_gaps(db_path: object, writer: Writer, gaps: list[GapRange]) -> None:
+def restore_gaps(db_path: str | os.PathLike[str], writer: Writer, gaps: list[GapRange]) -> None:
     """Hand back gaps whose ``gap`` row did not commit, so the next write records them."""
     with _lock:
         if _writers.get(_key(db_path)) is writer:
@@ -253,7 +253,7 @@ def _close_all() -> None:
     for key, writer in items:
         try:
             hook(key, writer)
-        except Exception:  # noqa: BLE001 - exit must not fail on a missing ledger
+        except Exception:
             logger.debug("audit writer.close not written for %s", key, exc_info=True)
 
 

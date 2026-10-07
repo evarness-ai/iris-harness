@@ -68,7 +68,7 @@ class AuditCompactor:
                 """
                 SELECT *
                 FROM audit_log
-                WHERE ts < ?
+                WHERE ts < ? AND kind IS NULL
                 ORDER BY ts ASC, id ASC
                 """,
                 (cutoff_iso,),

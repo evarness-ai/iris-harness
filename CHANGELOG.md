@@ -11,6 +11,22 @@ First public release of the IRIS harness.
 
 ### Added
 
+- The audit ledger can show what is missing (issue #134, stage 4a). Every process that writes to
+  `audit.db` is a writer with its own id and numbers its rows before writing them
+  (`writer_id`, `writer_seq`), so a write that fails leaves a hole in the sequence. A row the
+  database refuses is kept in a local spool (`audit-spool.jsonl`, beside the database, `0600`) and
+  put into the ledger on the next successful write or restart; the next row that lands also records a
+  `gap` row (the missing numbers and the failure class, never a message). A call that guards an
+  effect (a write or destructive tool, a cloud-tier model call, an outbound request) is refused
+  when neither the database nor the spool could keep its row. `writer.start` / `writer.close` rows
+  bound each writer's life; a writer with no close ended without saying so. A spool line can add
+  a missing row but cannot rewrite one that exists, and malformed lines are set aside and counted.
+  The lost and waiting counts show in System Health (red when a row was kept nowhere),
+  `iris system status`, `GET /governance/state` and `GET /governance/audit` (`write_health`), and
+  the Governance screen. A database an earlier release created gets the columns when it is opened
+  (several processes opening it at once are safe); old rows are never backfilled. The archive
+  compaction leaves the ledger's own rows in place until the marker work lands (stage 4b).
+
 - A stored conversation summary records whether it absorbed third-party text (issue #145,
   summaries). `conversation_summaries.has_external` is 1 once any external-origin turn was folded
   into the summary (and stays 1: a paraphrase cannot be un-marked), 0 when every folded turn is known

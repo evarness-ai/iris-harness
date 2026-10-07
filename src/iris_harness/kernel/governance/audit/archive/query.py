@@ -130,5 +130,6 @@ class AuditQueryEngine:
                 SELECT id, ts, run_id, step_id, agent_type, hook_point, plugin, decision,
                        classification, tier, cost_usd, severity, reason, payload_json
                 FROM audit_log
+                WHERE kind IS NULL
                 """).fetchall()
         return [tuple(row) for row in rows]

@@ -357,6 +357,13 @@ First public release of the IRIS harness.
 - An MCP call a `PreToolUse` hook answers with `require_approval` no longer reaches the
   server: the bridge refused only `deny` before the call, though the post step already refused
   both (issue #181).
+- The timing test for the linear-time classifier no longer flakes on a loaded runner (issue #156
+  follow-up). Its absolute one-second bound failed once at 1.2 s on a hosted runner for a case that
+  takes about 0.05 s on a laptop. The bound is now a generous eight seconds (the old quadratic
+  patterns took 20-50 s), and linearity is proven by a runner-independent check: doubling the input
+  must not much more than double the time, best of three on each side, which a quadratic pattern
+  fails whatever the machine; a second test shows the check catches the original email regex.
+
 - `iris docs sync` (`sync_all`) removes a registered file that is gone from disk: its chunks
   and index entries are dropped and the file domain is told (`removed`), the same as
   `iris docs remove`. Before, a deleted file stayed searchable and the file domain kept

@@ -10,7 +10,6 @@ is left exactly where it is.
 
 from __future__ import annotations
 
-import fcntl
 import os
 import sqlite3
 from collections import defaultdict
@@ -43,6 +42,11 @@ from iris_harness.kernel.governance.audit.log import (
     _row_to_audit,
 )
 from iris_harness.kernel.governance.audit.sequence import KIND_COMPACTION
+
+try:  # POSIX only; on a platform without it the lock degrades to the single-process case.
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX
+    fcntl = None  # type: ignore[assignment]
 
 #: Where a chunk that cannot be adopted goes, under the archive root. No reader's glob sees it.
 QUARANTINE_DIR = ".orphans"
@@ -120,7 +124,8 @@ class AuditCompactor:
         """One compaction at a time per archive, so a chunk mid-run is never taken for an orphan."""
         fd = os.open(self._archive.root / LOCK_NAME, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(fd, fcntl.LOCK_EX)
             yield
         finally:
             os.close(fd)  # closing releases the lock

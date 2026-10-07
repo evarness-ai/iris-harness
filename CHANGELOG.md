@@ -441,6 +441,15 @@ First public release of the IRIS harness.
   this change: `iris run resume` (`main.py`) still builds its own `SideEffectLedger`
   instead of the shared handle, and MCP-bridge calls get no write-ahead record (they declare
   no effect today, and calls with no call id need a key scheme first; see #134).
+- A wildcard egress declaration over a public suffix is refused (issue #175). `*.co.uk`,
+  `*.com.au` and the like passed because no public-suffix list shipped, so a plugin could
+  declare every registrant under them. The harness now vendors Mozilla's Public Suffix List,
+  ICANN section only (`kernel/governance/public_suffix_icann.dat`, MPL-2.0, the notice, version
+  and source commit kept in its header; refreshed by `scripts/refresh_public_suffixes.py`), and
+  a wildcard whose base is a public suffix fails manifest validation, so the plugin does not
+  mount; `*.example.co.uk` and `*.github.io`-style declarations (the PRIVATE section is not
+  vendored) are accepted. A manifest that declared such a wildcard needs the domain it means.
+
 - A ReAct step's `pre_llm_call` audit row names the model and provider the step
   actually called: the step resolves its model once and the row and the call share
   it, where the row used to carry a snapshot from when the loop was built and the call

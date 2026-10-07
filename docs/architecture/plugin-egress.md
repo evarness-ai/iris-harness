@@ -125,8 +125,17 @@ Names that mean this machine or the local network are refused as a request's tar
 for `open_web: true` (and cannot be declared): `localhost`, `*.localhost`, `*.local`,
 `*.internal`, `*.localdomain`, with or without a trailing dot.
 
-Known gap: the repo ships no public-suffix list, so a wildcard over a multi-label public
-suffix (`*.co.uk`) is accepted. Review such a declaration by eye until a list is added.
+A wildcard over a public suffix (`*.co.uk`, `*.com.au`, `*.ck`) is refused at manifest load: it
+would cover every registrant under the suffix, which `*.example.co.uk` does not. The suffixes
+are Mozilla's Public Suffix List, **ICANN section only**, vendored in
+`kernel/governance/public_suffix_icann.dat` (MPL-2.0; the file keeps the notice, version and
+source commit in its header) and refreshed with `scripts/refresh_public_suffixes.py`. The
+PRIVATE section (hosting providers such as `github.io`) is left out on purpose, so
+`*.github.io`-style declarations are accepted and the owner reads them. A stale list is
+fail-closed only in the sense that nothing already refused becomes allowed: a suffix created
+since the last refresh is simply not known yet. The header of the file says which list version
+it is; `python scripts/refresh_public_suffixes.py --check` (exit 1) says whether it differs from
+the live list, and running it without `--check` refreshes it.
 
 ## What a request may reach, and how much it may take
 
@@ -299,7 +308,7 @@ host was never contacted by a plugin; it is proof the governed client never cont
 | The lookup's integrity | A resolver that lies about a public name is the operator's DNS concern. The returned addresses ARE checked, and the lookup's duration IS bounded: it runs on a daemon thread inside the request's total deadline (a thread stuck in the C resolver cannot be cancelled; it ends when the resolver returns, and at most 8 can be stuck at once, after which a lookup fails closed at once) |
 | Memory just past the cap | Decoding is bounded to 64 KiB per step, so memory is about the cap plus one step |
 | Ledger completeness | A request through the client with no `pre_egress` row is not sent; a request that does not go through the client leaves no row. A `post_egress` row that fails to write is logged and not retried |
-| A wildcard over a multi-label public suffix (`*.co.uk`) | No public-suffix list ships |
+| A wildcard over a public suffix (`*.co.uk`) | Refused at manifest load (the vendored ICANN list); a suffix newer than the last refresh is not known; the PRIVATE section (`github.io`) is not refused |
 
 OS-level enforcement (a launch wrapper, proxy environment, sandbox profile or network
 namespace) belongs to the MCP rung, which isolates the process. #111-#114 build on this

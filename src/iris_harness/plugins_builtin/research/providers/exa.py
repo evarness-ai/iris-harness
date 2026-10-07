@@ -8,15 +8,13 @@ freshness window maps to ``startPublishedDate``.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import urllib.request
 from datetime import UTC, datetime, timedelta
 
 from iris_harness.plugins_builtin.research.models import Freshness, SearchHit, SearchType
-from iris_harness.plugins_builtin.research.providers.base import SearchProvider
-from iris_harness.sdk.logging import log_egress
+from iris_harness.plugins_builtin.research.providers.base import SearchProvider, json_body
+from iris_harness.sdk.http import EgressDenied
 
 logger = logging.getLogger(__name__)
 
@@ -76,24 +74,13 @@ class ExaProvider(SearchProvider):
                 start = datetime.now(UTC) - timedelta(days=days)
                 body["startPublishedDate"] = start.isoformat()
 
-            request = urllib.request.Request(  # fixed HTTPS endpoint
+            response = self.client().post(
                 _ENDPOINT,
-                data=json.dumps(body).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "x-api-key": self._api_key,
-                },
-                method="POST",
+                json=body,
+                headers={"x-api-key": self._api_key},
+                timeout=_TIMEOUT_S,
             )
-            log_egress(
-                destination="api.exa.ai",
-                method="POST",
-                kind="search",
-                purpose="exa",
-            )
-            with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:  # noqa: S310
-                payload = response.read()
-            data = json.loads(payload)
+            data = json_body(response)
 
             results: list[SearchHit] = []
             for hit in data.get("results", []):
@@ -113,6 +100,9 @@ class ExaProvider(SearchProvider):
                 if len(results) >= max_results:
                     break
             return results
+        except EgressDenied as exc:
+            logger.warning("exa search not sent: %s", exc)
+            return []
         except Exception as exc:  # noqa: BLE001 - provider must never raise
             logger.debug("exa search failed: %s", exc)
             return []

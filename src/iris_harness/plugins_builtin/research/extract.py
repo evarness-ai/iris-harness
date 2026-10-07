@@ -3,7 +3,8 @@
 Crawls result URLs and fills :attr:`SearchResult.content` with clean markdown. Two
 backends, selected by ``IRIS_RESEARCH_CRAWLER`` at call time:
 
-* ``trafilatura`` (default) — synchronous urllib fetch + Trafilatura extraction.
+* ``trafilatura`` (default) — a fetch through the governed HTTP client + Trafilatura
+  extraction.
 * ``crawl4ai`` (opt-in) — drives the async ``AsyncWebCrawler``; never a hard dep, so
   a missing/failing install degrades to ``None`` rather than raising.
 
@@ -14,28 +15,39 @@ Failure is always local: one page that 404s, times out, or yields no main conten
 leaves its ``content`` as ``None`` and never aborts the batch.
 
 Every URL here comes from a search result, which is to say from the internet, so it is
-checked before it is fetched (:func:`_check_public_url`): only http/https, and only a
-host that resolves to public addresses. Without the check a result pointing at
-``file:///etc/passwd``, ``http://localhost:8003/`` or a cloud metadata address
-(169.254.169.254) was fetched from inside the server and its text handed to the model.
-Redirects are re-checked on every hop and capped.
+checked before it is fetched: only http/https, and only a host that resolves to public
+addresses. Without the check a result pointing at ``file:///etc/passwd``,
+``http://localhost:8003/`` or a cloud metadata address (169.254.169.254) was fetched from
+inside the server and its text handed to the model.
+
+The default backend fetches through the governed HTTP client (``iris_harness.sdk.http``,
+issue #172): the client resolves the name once, refuses a loopback, private, link-local,
+metadata or otherwise internal address, and connects to the address it checked (so a DNS
+answer that changes between the check and the connect no longer matters), and every
+request is checked against the plugin's ``egress`` declaration and recorded in the ledger.
+The client does not follow redirects; this module does, one governed request per hop,
+re-checking the scheme of each (an https page that redirects to http is refused),
+capped at :data:`_MAX_REDIRECTS`. A fetch outside a
+governed tool call is refused, never sent ungoverned. The Crawl4AI backend drives its own
+browser and cannot be governed that way: its first URL is checked here with
+:func:`_check_public_url` (which is why ``socket`` stays on the first-party debt list).
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import ipaddress
 import logging
 import os
 import socket
-import urllib.request
 from collections.abc import Callable
-from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import trafilatura
 
 from iris_harness.plugins_builtin.research.models import SearchResult
+from iris_harness.sdk.http import EgressDenied, current_http
 from iris_harness.sdk.logging import log_egress
 
 logger = logging.getLogger(__name__)
@@ -62,6 +74,7 @@ _ALLOWED_SCHEMES = frozenset({"http", "https"})
 # Fewer than urllib's default of 10: a page that needs more hops than this is not worth
 # the time, and each hop is another address to trust.
 _MAX_REDIRECTS = 5
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 
 
 class UnsafeURLError(ValueError):
@@ -115,46 +128,58 @@ def _check_public_url(url: str) -> None:
             raise UnsafeURLError(f"{host} resolves to a non-public address")
 
 
-class _CheckedRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Follows a redirect only to a URL that passes :func:`_check_public_url`.
-
-    A public page can redirect to ``http://127.0.0.1/``; checking only the first URL
-    would let it."""
-
-    max_redirections = _MAX_REDIRECTS
-
-    def redirect_request(
-        self, req: Any, fp: Any, code: int, msg: str, headers: Any, newurl: str
-    ) -> urllib.request.Request | None:
-        _check_public_url(newurl)
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+def _check_scheme(url: str) -> None:
+    """Raise :exc:`UnsafeURLError` unless ``url`` is http(s): a redirect to ``file://`` or
+    ``ftp://`` is refused before any request is made."""
+    scheme = urlparse(url).scheme.lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        raise UnsafeURLError(f"scheme {scheme!r} is not fetched")
 
 
-def _open_url(request: urllib.request.Request, timeout: float) -> Any:
-    """Open ``request`` with the redirect check. A seam so tests fake the response."""
-    opener = urllib.request.build_opener(_CheckedRedirectHandler())
-    return opener.open(request, timeout=timeout)
+def _fetch(url: str, timeout: float) -> bytes | None:
+    """The body of ``url`` through the governed client, following at most
+    :data:`_MAX_REDIRECTS` redirects; ``None`` for an error status.
+
+    Each hop is its own governed request: the client resolves, checks and pins the address
+    (a redirect to loopback, a private range or the metadata address is refused there and
+    recorded) and checks the host against the plugin's declaration. The scheme of every hop
+    is checked here first. The body is read up to the client's size cap.
+    """
+    http = current_http()
+    for _ in range(_MAX_REDIRECTS + 1):
+        _check_scheme(url)
+        response = http.get(url, headers={"User-Agent": _USER_AGENT}, timeout=timeout)
+        if response.status_code in _REDIRECT_STATUSES:
+            location = response.headers.get("location")
+            if not location:
+                raise UnsafeURLError("a redirect with no location")
+            target = urljoin(url, location)
+            if (
+                urlparse(url).scheme.lower() == "https"
+                and urlparse(target).scheme.lower() == "http"
+            ):
+                raise UnsafeURLError("a redirect from https to http is not followed")
+            url = target
+            continue
+        if response.status_code >= 300:
+            return None
+        return response.content
+    raise UnsafeURLError(f"more than {_MAX_REDIRECTS} redirects")
 
 
 def _fetch_and_extract(url: str, timeout: float) -> str | None:
     """Fetch ``url`` and return its main content as trimmed markdown, or ``None``.
 
-    Runs synchronously (intended for a thread-pool executor). Uses urllib so the
-    timeout is actually enforced, then hands the raw HTML to Trafilatura. Returns
-    ``None`` on any failure or when extraction yields nothing.
+    Runs synchronously (intended for a thread-pool executor that carries the tool call's
+    context, see :func:`extract_into`). The fetch is governed (:func:`_fetch`), then the raw
+    HTML goes to Trafilatura. Returns ``None`` on any failure or when extraction yields
+    nothing.
     """
     try:
-        _check_public_url(url)
-        request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})  # noqa: S310
-        log_egress(
-            destination=urlparse(url).netloc,
-            method="GET",
-            kind="crawl",
-            purpose="trafilatura",
-        )
-        with _open_url(request, timeout) as response:
-            raw = response.read()
-        html = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
+        raw = _fetch(url, timeout)
+        if raw is None:
+            return None
+        html = raw.decode("utf-8", errors="replace")
         markdown = trafilatura.extract(
             html,
             output_format="markdown",
@@ -162,6 +187,9 @@ def _fetch_and_extract(url: str, timeout: float) -> str | None:
             include_comments=False,
             favor_recall=True,
         )
+    except EgressDenied as exc:
+        logger.warning("content fetch not sent: %s", exc)
+        return None
     except Exception:  # extraction must never raise into the batch
         logger.debug("content extraction failed for %s", url, exc_info=True)
         return None
@@ -228,7 +256,13 @@ async def extract_into(
 
     extractor = _select_extractor()
     loop = asyncio.get_running_loop()
-    tasks = [loop.run_in_executor(None, extractor, result.url, timeout) for result in targets]
+    # The governed client acts only inside the tool call's scope, which lives in a context
+    # variable that run_in_executor does not carry: give each worker its own copy of this
+    # call's context (a Context can be entered by one thread at a time).
+    tasks = [
+        loop.run_in_executor(None, contextvars.copy_context().run, extractor, result.url, timeout)
+        for result in targets
+    ]
     extracted = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result, outcome in zip(targets, extracted, strict=True):

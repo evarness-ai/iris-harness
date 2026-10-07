@@ -54,25 +54,8 @@ async def test_extract_into_empty_list() -> None:
 
 def test_fetch_and_extract_truncates(monkeypatch) -> None:
     long_markdown = "x" * 10_000
-
-    class _FakeResponse:
-        def read(self) -> bytes:
-            return b"<html><body>ignored</body></html>"
-
-        def __enter__(self) -> _FakeResponse:
-            return self
-
-        def __exit__(self, *exc: object) -> None:
-            return None
-
-    def fake_urlopen(request, timeout):  # type: ignore[no-untyped-def]
-        return _FakeResponse()
-
-    def fake_extract(html, **kwargs):  # type: ignore[no-untyped-def]
-        return long_markdown
-
-    monkeypatch.setattr(extract_mod, "_open_url", fake_urlopen)
-    monkeypatch.setattr(extract_mod.trafilatura, "extract", fake_extract)
+    monkeypatch.setattr(extract_mod, "_fetch", lambda url, timeout: b"<html>ignored</html>")
+    monkeypatch.setattr(extract_mod.trafilatura, "extract", lambda html, **kwargs: long_markdown)
 
     out = _fetch_and_extract("https://example.com/long", timeout=8.0)
 
@@ -82,29 +65,22 @@ def test_fetch_and_extract_truncates(monkeypatch) -> None:
 
 
 def test_fetch_and_extract_returns_none_on_empty(monkeypatch) -> None:
-    class _FakeResponse:
-        def read(self) -> bytes:
-            return b"<html></html>"
-
-        def __enter__(self) -> _FakeResponse:
-            return self
-
-        def __exit__(self, *exc: object) -> None:
-            return None
-
-    def fake_urlopen(request, timeout):  # type: ignore[no-untyped-def]
-        return _FakeResponse()
-
-    monkeypatch.setattr(extract_mod, "_open_url", fake_urlopen)
+    monkeypatch.setattr(extract_mod, "_fetch", lambda url, timeout: b"<html></html>")
     monkeypatch.setattr(extract_mod.trafilatura, "extract", lambda html, **kwargs: None)
 
     assert _fetch_and_extract("https://example.com/empty", timeout=8.0) is None
 
 
+def test_fetch_and_extract_returns_none_on_an_error_status(monkeypatch) -> None:
+    monkeypatch.setattr(extract_mod, "_fetch", lambda url, timeout: None)
+
+    assert _fetch_and_extract("https://example.com/missing", timeout=8.0) is None
+
+
 def test_fetch_and_extract_returns_none_on_exception(monkeypatch) -> None:
-    def boom(request, timeout):  # type: ignore[no-untyped-def]
+    def boom(url, timeout):  # type: ignore[no-untyped-def]
         raise OSError("network down")
 
-    monkeypatch.setattr(extract_mod, "_open_url", boom)
+    monkeypatch.setattr(extract_mod, "_fetch", boom)
 
     assert _fetch_and_extract("https://example.com/err", timeout=8.0) is None

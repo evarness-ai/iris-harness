@@ -75,11 +75,7 @@ def test_the_list_names_what_it_checks() -> None:
 # which no HTTP host list describes.
 _FIRST_PARTY_DEBT = {
     ("src/iris_harness/plugins_builtin/research/extract.py", "socket"),
-    ("src/iris_harness/plugins_builtin/research/extract.py", "urllib.request"),
-    ("src/iris_harness/plugins_builtin/research/providers/brave.py", "urllib.request"),
-    ("src/iris_harness/plugins_builtin/research/providers/exa.py", "urllib.request"),
     ("src/iris_harness/plugins_builtin/research/providers/searxng.py", "urllib.request"),
-    ("src/iris_harness/plugins_builtin/research/providers/tavily.py", "urllib.request"),
     ("src/iris_personal/plugins/email_workflows/demo/run.py", "socket"),
     ("src/iris_personal/plugins/email_workflows/discovery.py", "requests"),
     ("src/iris_personal/plugins/email_workflows/job_watch.py", "httpx"),
@@ -89,6 +85,19 @@ _FIRST_PARTY_DEBT = {
     ("src/iris_personal/plugins/imap/connection.py", "imaplib"),
     ("src/iris_personal/plugins/imap/connection.py", "ssl"),
 }
+
+
+def test_the_debt_list_shrank_by_the_four_urllib_pairs_issue_172_moved() -> None:
+    """Brave, Exa, Tavily and the page fetch now go through the governed client. What is left
+    in the research plugin is SearXNG (the operator's own, usually loopback, server: the
+    governed client refuses internal addresses by design) and ``extract.py``'s ``socket``
+    (the Crawl4AI backend's address check, since it drives its own browser)."""
+    research = sorted(p for p in _FIRST_PARTY_DEBT if "/research/" in p[0])
+    assert research == [
+        ("src/iris_harness/plugins_builtin/research/extract.py", "socket"),
+        ("src/iris_harness/plugins_builtin/research/providers/searxng.py", "urllib.request"),
+    ]
+    assert len(_FIRST_PARTY_DEBT) == 10
 
 
 def _pairs(paths: list[Path]) -> set[tuple[str, str]]:

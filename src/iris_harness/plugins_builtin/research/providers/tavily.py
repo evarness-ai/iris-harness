@@ -6,15 +6,13 @@ is the hits' order (the engine does its own scoring). POSTs JSON to the search e
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import urllib.request
 from datetime import datetime
 
 from iris_harness.plugins_builtin.research.models import Freshness, SearchHit, SearchType
-from iris_harness.plugins_builtin.research.providers.base import SearchProvider
-from iris_harness.sdk.logging import log_egress
+from iris_harness.plugins_builtin.research.providers.base import SearchProvider, json_body
+from iris_harness.sdk.http import EgressDenied
 
 logger = logging.getLogger(__name__)
 
@@ -65,21 +63,8 @@ class TavilyProvider(SearchProvider):
                 if days is not None:
                     body["days"] = days
 
-            request = urllib.request.Request(  # fixed HTTPS endpoint
-                _ENDPOINT,
-                data=json.dumps(body).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            log_egress(
-                destination="api.tavily.com",
-                method="POST",
-                kind="search",
-                purpose="tavily",
-            )
-            with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:  # noqa: S310
-                payload = response.read()
-            data = json.loads(payload)
+            response = self.client().post(_ENDPOINT, json=body, timeout=_TIMEOUT_S)
+            data = json_body(response)
 
             results: list[SearchHit] = []
             for hit in data.get("results", []):
@@ -98,6 +83,9 @@ class TavilyProvider(SearchProvider):
                 if len(results) >= max_results:
                     break
             return results
+        except EgressDenied as exc:
+            logger.warning("tavily search not sent: %s", exc)
+            return []
         except Exception as exc:  # noqa: BLE001 - provider must never raise
             logger.debug("tavily search failed: %s", exc)
             return []

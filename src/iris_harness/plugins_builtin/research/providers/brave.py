@@ -6,16 +6,13 @@ search type, with Brave's ``freshness`` shorthand (pd/pw/pm/py) for recency.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import urllib.parse
-import urllib.request
 from datetime import datetime
 
 from iris_harness.plugins_builtin.research.models import Freshness, SearchHit, SearchType
-from iris_harness.plugins_builtin.research.providers.base import SearchProvider
-from iris_harness.sdk.logging import log_egress
+from iris_harness.plugins_builtin.research.providers.base import SearchProvider, json_body
+from iris_harness.sdk.http import EgressDenied
 
 logger = logging.getLogger(__name__)
 
@@ -67,23 +64,13 @@ class BraveProvider(SearchProvider):
                 params["freshness"] = fresh
 
             endpoint = _NEWS_ENDPOINT if is_news else _WEB_ENDPOINT
-            url = f"{endpoint}?{urllib.parse.urlencode(params)}"
-            request = urllib.request.Request(  # noqa: S310 - fixed HTTPS endpoint
-                url,
-                headers={
-                    "X-Subscription-Token": api_key,
-                    "Accept": "application/json",
-                },
+            response = self.client().get(
+                endpoint,
+                params=params,
+                headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
+                timeout=_TIMEOUT_S,
             )
-            log_egress(
-                destination="api.search.brave.com",
-                method="GET",
-                kind="search",
-                purpose="brave",
-            )
-            with urllib.request.urlopen(request, timeout=_TIMEOUT_S) as response:  # noqa: S310
-                payload = response.read()
-            data = json.loads(payload)
+            data = json_body(response)
 
             if is_news:
                 rows = data.get("results", [])
@@ -109,6 +96,9 @@ class BraveProvider(SearchProvider):
                 if len(results) >= max_results:
                     break
             return results
+        except EgressDenied as exc:
+            logger.warning("brave search not sent: %s", exc)
+            return []
         except Exception as exc:  # noqa: BLE001 - provider must never raise
             logger.debug("brave search failed: %s", exc)
             return []

@@ -441,6 +441,21 @@ First public release of the IRIS harness.
   each pass carry the full marker), every span is still redacted, and the span and pattern counts in the ledger row stay exact. A `source` or
   `tool` label with a newline or other control or invisible character can no longer inject a log line or
   ledger value: `redact_text` and the tool-result floor hook clean and cap both (200 characters).
+- The research plugin's keyed providers and page fetch go through the governed HTTP client
+  (issue #172). Brave, Exa and Tavily, and the page fetch behind `fetch_content`, used to open
+  their own connections; each request is now checked against the plugin's `egress` declaration,
+  made to the address the client checked (a changing DNS answer no longer matters) and recorded
+  as a PRE and a POST ledger row. Redirects are followed one governed request per hop, capped at
+  5, with each hop's scheme checked first; a redirect to a loopback, private, link-local or
+  metadata address is refused and never connected to, and so is a redirect from https to http
+  (http to https and http to http are followed). The fetch carries the tool call's context
+  onto its worker threads, and a fetch with no tool call running is refused, not sent. Behaviour
+  changes: a bare IP address in a URL is denied (even `open_web` contacts host names only), the
+  timeout is the request's total budget rather than per operation, and a page body is read up
+  to 10 MiB. The extracted text of a golden set of pages is byte-identical to before. SearXNG
+  (the operator's own server), the DuckDuckGo library and the Crawl4AI browser are unchanged.
+  The raw-network debt list shrinks by four pairs.
+
 - The side-effect ledger is one shared handle per database, not one per kernel, and a ledger
   key that already holds a row is no longer ignored silently (issue #102). A destructive or
   pinned call whose key is taken is denied before it runs; a call's post-run record that

@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 from iris_harness.foundation.observability.session_log import bind_context, current_turn_id
 from iris_harness.kernel.governance.reentry import reenter_many, reenter_text
 from iris_harness.llm.budget import estimate_tokens
-from iris_harness.memory.compactor import CompactedHistory, ConversationTurn
+from iris_harness.memory.compactor import CompactedHistory, ConversationTurn, summary_flag
 from iris_harness.memory.retention import is_ephemeral_session
 from iris_harness.memory.retriever import MemoryContext
 from iris_harness.runtime.turn_capture import _is_conversation_scoped
@@ -114,6 +114,9 @@ class SessionMemory:
         self._host = host
         self.conversations: dict[str, list[ConversationTurn]] = {}
         self._session_summaries: dict[str, str] = {}
+        # The provenance flag of each cached summary (#145): True built from external-origin
+        # turns, False known not, None unknown. A summary with no entry reads as unknown.
+        self._summary_flags: dict[str, bool | None] = {}
         # Context-health telemetry (ADR-0081): the last conversation-compaction event per
         # session. In-memory; transient by nature.
         self._last_compaction: dict[str, dict[str, Any]] = {}
@@ -166,6 +169,7 @@ class SessionMemory:
         """Drop a session's in-memory state; the next access reloads what was persisted."""
         self.conversations.pop(session_id, None)
         self._session_summaries.pop(session_id, None)
+        self._summary_flags.pop(session_id, None)
         self._last_compaction.pop(session_id, None)
         self._loaded_sessions.discard(session_id)
         # A playground/eval session is re-marked ephemeral on its next turn; a session the
@@ -185,6 +189,11 @@ class SessionMemory:
             summary = self._host.memory_store.load_conversation_summary(session_id)
             if summary:
                 self._session_summaries[session_id] = summary
+                self._summary_flags[session_id] = (
+                    self._host.memory_store.load_conversation_summary_flags([session_id]).get(
+                        session_id
+                    )
+                )
             # Reload what the window can hold, not a fixed 10 rows: with the prompt's
             # transcript now filled by token budget, a restart used to hand it a third
             # of the history it had a moment earlier.
@@ -285,8 +294,14 @@ class SessionMemory:
         )
         recent = tuple(f"{t.role}: {r.text}" for t, r in zip(window, shown, strict=True))
         if summary:
+            # A summary that absorbed external-origin turns comes back inside the envelope,
+            # as well as scanned (#145); an unknown or known-not one is scanned only.
             summary = reenter_text(
-                summary, reader="session_summary", origin="summary", role="summary"
+                summary,
+                reader="session_summary",
+                origin="summary",
+                role="summary",
+                turn_origin="external" if self._summary_flags.get(session_id) is True else None,
             ).text
         pointers: list[str] = []
         if summary:
@@ -531,9 +546,20 @@ class SessionMemory:
             if len(buf) > _COMPACTION_ARCHIVE_BUFFER_MAX:
                 del buf[:-_COMPACTION_ARCHIVE_BUFFER_MAX]
         if compacted.summary:
+            # Whether the rolled summary absorbed third-party text: the previous flag, rolled
+            # forward over the turns folded into it (sticky, #145).
+            previous_summary = self._session_summaries.get(session_id, "")
+            flag = summary_flag(
+                self._summary_flags.get(session_id) if previous_summary else None,
+                had_summary=bool(previous_summary),
+                folded=compacted.archived_turns,
+            )
             self._session_summaries[session_id] = compacted.summary
+            self._summary_flags[session_id] = flag
             try:
-                self._host.memory_store.save_conversation_summary(session_id, compacted.summary)
+                self._host.memory_store.save_conversation_summary(
+                    session_id, compacted.summary, has_external=flag
+                )
             except Exception:
                 logger.exception("failed to persist summary for session %s", session_id)
 
@@ -558,16 +584,23 @@ class SessionMemory:
         """
         store = self._host.memory_store
         previous = store.load_conversation_summary(session_id) or ""
-        raw = store.load_recent_turns(session_id, limit=_CLOSE_MAX_TURNS)
-        turns = [ConversationTurn(role=role, content=content) for role, content in raw]
+        raw = store.load_recent_turns_with_origin(session_id, limit=_CLOSE_MAX_TURNS)
+        turns = [
+            ConversationTurn(role=role, content=content, origin=origin)
+            for role, content, origin in raw
+        ]
         if not turns:
             return {"closed": False, "reason": "no turns", "session_id": session_id}
         summary = self._host.compactor.summarize_all(turns, previous_summary=previous)
         if not summary.strip() or summary == previous:
             return {"closed": False, "reason": "no summary produced", "session_id": session_id}
-        store.save_conversation_summary(session_id, summary)
+        # The previous flag comes from the store: this reads a session that is not loaded.
+        previous_flag = store.load_conversation_summary_flags([session_id]).get(session_id)
+        flag = summary_flag(previous_flag, had_summary=bool(previous), folded=turns)
+        store.save_conversation_summary(session_id, summary, has_external=flag)
         if session_id in self._session_summaries:
             self._session_summaries[session_id] = summary
+            self._summary_flags[session_id] = flag
         return {"closed": True, "session_id": session_id, "turns": len(turns)}
 
     def compact_now(self, session_id: str = "default") -> dict[str, Any]:

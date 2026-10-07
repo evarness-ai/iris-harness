@@ -11,6 +11,15 @@ First public release of the IRIS harness.
 
 ### Added
 
+- A stored conversation summary records whether it absorbed third-party text (issue #145,
+  summaries). `conversation_summaries.has_external` is 1 once any external-origin turn was folded
+  into the summary (and stays 1: a paraphrase cannot be un-marked), 0 when every folded turn is known
+  not to be external, and NULL (unknown) for every summary written before the column. A flagged
+  summary comes back into a prompt inside the untrusted-content envelope, as well as scanned, from the
+  session summary, `memory_search` over sessions and `recall_conversation`'s summary fallback;
+  unflagged and unknown summaries are scanned as before. A database an earlier release created gets
+  the column when it is opened (several processes opening it at once are safe).
+
 - A stored assistant turn records where it came from (issue #145, steps 2-3). The loop notes
   whether the run read third-party text (a `content: external` tool's result) before answering,
   and `conversations.turn_origin` stores `external` or `internal` on the assistant row (NULL

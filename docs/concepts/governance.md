@@ -278,8 +278,8 @@ retriever adds, and the recent-turns block of the intent router's prompt. `kerne
 **Known limits.** Phrase-level only, like the floor: a paraphrase, another language, a
 homoglyph spelling, and a summary the model wrote that rewords an instruction all pass. The
 recalled text of a turn the harness cannot show was third-party is redacted, not marked.
-Not covered yet: the compactor's summarizer input and the summaries it writes (a
-follow-up), the behavior miner, intention roll-up and notices injected into the window.
+Not covered yet: the compactor's summarizer input, the behavior miner, intention roll-up and
+notices injected into the window.
 
 **Where a stored turn came from (issue #145, steps 2-3).** The loop records, on the
 assistant row (`conversations.turn_origin`), whether the run read third-party text (a
@@ -295,6 +295,20 @@ whatever. The mark is on the whole run, not the sentence: a turn that read a pag
 answered from its own knowledge is enveloped too (the safe direction). Stored rows are never
 rewritten, and the cross-session index still embeds the text; the mark is applied when the
 text is read back.
+
+**Summaries carry the same mark.** `conversation_summaries.has_external` is 1 when a summary
+absorbed at least one external-origin turn, 0 only when every turn it was built from is known not
+to be (the owner's own turns, and assistant turns recorded `internal`), and NULL (unknown) for
+every summary written before the column and for any whose inputs included an unlabelled turn.
+The flag is sticky: a model-written paraphrase of third-party text cannot be told apart from the
+model's own words, so a flagged summary is never un-marked. Cooling a session keeps the summary and
+its flag. Only 1 comes back inside the envelope (the session summary in the prompt, `memory_search`
+over sessions, and `recall_conversation`'s summary fallback); 0 and NULL are scanned as before. The
+pointer titles made from a summary stay scanned and un-enveloped (a few words), the owner's own
+views of a summary are shown as they are, and the memory graph reads a summary for the owner's Map and
+for entity names that sections of it list (the `memory_graph` tool returns names and relations, not
+the summary's text), so it stays out. The model that writes the summary still reads the external
+text as its input: that is the compactor's own call, not a re-entry.
 
 ## The audit ledger
 

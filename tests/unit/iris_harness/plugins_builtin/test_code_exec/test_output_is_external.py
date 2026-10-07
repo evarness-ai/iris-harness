@@ -413,7 +413,6 @@ def test_a_long_line_with_no_newline_is_flushed_in_bounded_chunks_and_the_stradd
 
 
 def test_100k_one_char_feeds_stay_linear() -> None:
-    import time
 
     from iris_harness.plugins_builtin.code_exec.handler import _ProseRedactor
 
@@ -433,52 +432,13 @@ def _feed_one_char_at_a_time(n: int) -> None:
     p.flush()
 
 
-# Runner-independent: doubling the input must not much more than double the time. Each size is
-# chosen so a linear run takes 40-60 ms; best of five on each side removes a noisy neighbour (a
-# busy xdist worker, a loaded hosted runner); the additive slack covers the rest. A quadratic
-# scan gives about 4x at 2N whatever the machine.
-_RATIO = 3.0
-_SLACK_SECONDS = 0.25
-_REPEATS = 5
+# Runner-independent: the time at 4N against the time at N (``scaling`` in tests/conftest.py).
+def test_one_char_feeds_scale_linearly(scaling: Any) -> None:
+    scaling.assert_linear("one-character feeds", _feed_one_char_at_a_time, lambda n: n, 100_000)
 
 
-def _best_of(run: Any, text: Any, repeats: int) -> float:
-    best = float("inf")
-    for _ in range(repeats):
-        start = time.perf_counter()
-        run(text)
-        best = min(best, time.perf_counter() - start)
-    return best
-
-
-def _scales_linearly(
-    run: Any, build: Any, n: int, repeats: int = _REPEATS
-) -> tuple[bool, float, float]:
-    small = _best_of(run, build(n), repeats)
-    large = _best_of(run, build(2 * n), repeats)
-    return large <= _RATIO * small + _SLACK_SECONDS, small, large
-
-
-def _quadratic(text: str) -> int:
-    """A stand-in for a quadratic scan: every position looks at every later position."""
-    hits = 0
-    for i in range(len(text)):
-        for j in range(i, len(text)):
-            hits += text[j] == "x"
-    return hits
-
-
-def test_one_char_feeds_scale_linearly() -> None:
-    ok, small, large = _scales_linearly(_feed_one_char_at_a_time, lambda n: n, 300_000)
-
-    assert ok, f"{small:.3f}s at N, {large:.3f}s at 2N (limit {_RATIO}x + slack)"
-
-
-def test_the_feed_scaling_check_does_catch_a_quadratic_scan() -> None:
-    """The detector must bite. One run per side: a quadratic ratio needs no noise filtering."""
-    ok, small, large = _scales_linearly(_quadratic, lambda n: "a" * n, 8_000, repeats=1)
-
-    assert not ok, f"a quadratic scan passed as linear ({small:.3f}s -> {large:.3f}s)?"
+def test_the_feed_scaling_check_does_catch_a_quadratic_scan(scaling: Any) -> None:
+    scaling.assert_detects_quadratic()
 
 
 def test_no_chunk_boundary_leaks_the_phrase() -> None:

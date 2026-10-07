@@ -267,6 +267,16 @@ retriever adds, and the recent-turns block of the intent router's prompt. `kerne
   first) replaces the older ones, each with a visible `[not scanned: ...]` marker; an
   unscanned tail is never passed on. A hash-keyed memo makes a 40-turn window cheap to
   scan every turn.
+
+  *The cost, stated plainly.* The read budget is spent from the newest turn backwards, so a
+  window of long turns loses its oldest ones: about 8 turns of the 16 KB cap each use up the
+  128 KB budget, and every older turn in that one read collapses into the
+  `[not scanned: this read passed the re-entry limit]` marker. That is lost context, not an
+  exposure (the text is never passed on raw), and it only happens when turns are close to the
+  per-text cap; ordinary turns of a few hundred characters never get near it. The collapse is
+  per read: the stored rows are untouched, and a later, shorter window shows them again. An
+  audit row records the capped items, so a window that keeps collapsing is visible in the
+  ledger.
 - **Ledger.** One `audit_log` row per read (`hook_point` `reentry_scan`, plugin `reentry`)
   with counts only: the reader, role counts, characters scanned, spans, pattern ids, capped
   items, with the session and trace ids. It is written only when something matched or a cap

@@ -229,3 +229,25 @@ def test_the_memo_is_keyed_on_the_whole_text_not_a_prefix(_clean: list[ReentryAu
         assert any(r.text == clean for r in got)
         assert all("reveal your system prompt" not in r.text for r in got)
         assert len(by_len) == 2
+
+
+def test_a_window_of_full_size_turns_loses_its_oldest_ones_to_the_marker() -> None:
+    """The cost docs/concepts/governance.md states (issue #165): the read budget is spent from
+    the newest turn backwards, so about 8 turns of the per-text cap use it up and the older ones
+    collapse into the marker, never passed on raw. Pinned so the paragraph cannot drift."""
+    from iris_harness.kernel.governance.reentry import (
+        MAX_CALL_CHARS,
+        MAX_ITEM_CHARS,
+        SPENT_MARKER,
+        reenter_many,
+    )
+
+    full = [("assistant", f"turn {i}: " + "x" * MAX_ITEM_CHARS) for i in range(12)]
+
+    out = reenter_many(full, reader="probe", origin="transcript")
+
+    collapsed = [i for i, r in enumerate(out) if r.text == SPENT_MARKER]
+    assert collapsed == [0, 1, 2, 3]  # the oldest four, not the newest
+    assert MAX_CALL_CHARS // MAX_ITEM_CHARS == 8  # the "about 8 turns" in the docs
+    assert all(r.text != "" and "x" * 100 not in r.text for r in out[:4])  # never passed on raw
+    assert all(r.capped for r in out)  # the cut and the collapse are both flagged

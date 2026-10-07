@@ -168,6 +168,7 @@ def _make_general_handler(
         semantic_index=semantic_index,
         runtime_holder=runtime_holder,
         local_skills=_local_skills,
+        skill_registry=skill_registry,
     )
     _general_invoke = make_general_invoke(tier_router=tier_router, general_tools=_general_tools)
     from iris_harness.llm.client import (

@@ -105,6 +105,7 @@ from iris_harness.runtime.replies import DeterministicReplies
 from iris_harness.runtime.rollout_flags import (
     _agentic_core_rollout_mode,
     _filemanager_agent_enabled,
+    _warn_if_lane_serves_ungoverned,
 )
 from iris_harness.runtime.routine_authoring import (
     RoutineAuthoring,
@@ -659,6 +660,7 @@ def build_runtime(
     react_handler: Callable[[AgentTask], HandlerResult] | None = None
     react_stream_handler: Callable[[AgentTask], Iterator[StreamChunk]] | None = None
     rollout_mode = _agentic_core_rollout_mode()
+    _warn_if_lane_serves_ungoverned(rollout_mode, governance_kernel)
     if rollout_mode in {"on", "shadow"}:
         react_handler, react_stream_handler = _make_react_handler(
             tier_router,

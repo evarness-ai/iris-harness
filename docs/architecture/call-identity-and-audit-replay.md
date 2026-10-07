@@ -92,7 +92,7 @@ Table: which stores carry which (Y = column, P = only inside json payload, - = a
 |---|---|---|---|---|
 | ReAct loop -> `_execute_tool` -> `runner.execute` | loop run | iteration | runner `hex[:12]` | no (session, run, step only) |
 | general-lane plugin tool `_run_plugin_tool` | per-turn tool-loop uuid | None -> 0 | runner-minted | no |
-| general-lane builtin tools (memory_search, wiki_search, local skills...) [READ only] | n/a | n/a | model/provider id (`react_N`, collides across turns) | these never fire PRE/POST_TOOL_USE at all: no audit row. Reachability in default config NOT verified |
+| general-lane builtin and skill tools (memory_search, wiki_search, local skills...) | per-turn tool-loop uuid | None -> 0 | runner-minted (since #155; they used to run with no PRE/POST_TOOL_USE and no audit row, under the model/provider id) | no. The lane serves only with `IRIS_AGENTIC_CORE_ENABLED` off or `shadow`, never by default |
 | `ToolService._run` (plugin `api.tools.call`, `core:<workflow>`, `call_for_client`) | fresh uuid per call | None | runner-minted | no: `caller=plugin:x` only [RUN: child run 3b349fd7 vs parent fb0273a3] |
 | approved code-caller call `_run_approved` | `row.run_id` (the original child run) | None -> 0 | NEW runner id; held attempt's id lost | approval_id in audit rows; no tool_call link [RUN p4] |
 | approved loop call `_settle_pending_approval` | same loop run | `start_iteration-1` (same step as the held attempt) | NEW id; held attempt's id lost | approval_id only [RUN] |
@@ -338,8 +338,9 @@ Payload-only: no schema change and no migration (the audit payload is schema-fre
   `threading.Thread` or `loop.run_in_executor`; a governed call started there has no parent (the egress scope has the same
   limit). The lineage registry is bounded (8192 calls): an evicted lineage leaves the fields off a row, nothing is invented.
 - Not stamped: retries (`iris run resume` re-exec, the loop's repeated-action guard) until stage 4; calls that never reach
-  `GovernedToolRunner` (D7: general-lane builtin tools and `kernel=None`) get no call id, no parent and no turn link.
-  Whether the general lane is reachable in the default config is not verified.
+  `GovernedToolRunner` get no call id, no parent and no turn link: since #155 that is only a run with governance switched
+  off (`kernel=None`, the operator's explicit opt-out, with one startup warning when the legacy general lane then serves).
+  The general lane's own tools now go through the runner like the loop's (D7, first half, closed).
 
 ## 7. Verified vs not verified
 Verified by running (current main fbfb7e8, scripted model, temp IRIS_HOME, throwaway vault key): the two scenarios and their

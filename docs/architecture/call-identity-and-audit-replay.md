@@ -370,6 +370,33 @@ Payload-only: no schema change and no migration (the audit payload is schema-fre
 - Not in stage 3: cost ledger and checkpoints (#193), the Parquet archive (stage 4: a compacted row keeps its identity
   in `payload_json`, but loses `record_id` and the columns until the archive schema grows them), the session log.
 
+### 6.3 Stage 4a as built (writer sequence, spool, fail-closed tier)
+
+* **Sequence.** `audit/sequence.py` keeps one writer per (process, database file): a ULID
+  `writer_id` and a counter taken BEFORE the write is attempted, under one lock; a fork re-mints
+  both. `audit_log` gains `writer_id`, `writer_seq` and `kind` (NULL for a hook firing's row;
+  `gap`, `writer`, `compaction` for the store's own), with a unique partial index on
+  `(writer_id, writer_seq)`, and `audit_meta['sequence']` marks the first sequenced row id.
+  Older rows have NULL in all three and are never backfilled.
+* **Writer rows.** `writer.start` (seq 0) is written in the writer's first transaction; `writer.close`
+  (the last seq it used) at exit, best effort. A killed process leaves no close.
+* **Failure.** A write the database refuses is appended to `<db stem>-spool.jsonl` (flock + fsync, `0600`,
+  closed field set) and counted; if the spool cannot take it either the original error is raised
+  and the row is counted lost. The next write that lands inserts one `gap` row per run of missing
+  numbers (first, last, count, failure classes, how many were spooled and how many lost) in its
+  own transaction, then drains the spool. The drain is `INSERT OR IGNORE`: a line whose
+  `record_id` or `(writer_id, writer_seq)` already exists changes nothing, malformed lines go to
+  `<spool>.rejected`. The spool is a sibling of the database in the same directory and mode.
+* **Fail closed.** `kernel._audit` reports `db`, `spool` or `lost`. An allow is withdrawn only when
+  the row was `lost` at `PRE_EGRESS`, at `PRE_TOOL_USE` of a `write`/`destructive` call (an undeclared
+  MCP tool is destructive; a capability write method carries `tool_effect` too), or at
+  `PRE_LLM_CALL` toward `tier_3`. A spooled row counts as written. A kernel with no ledger is unchanged.
+* **Surfaces.** `audit/write_health.py` is the one source: System Health row (red when lost, yellow
+  while the spool waits), `iris system status`, `GET /governance/state` and `/governance/audit`
+  (`write_health`), the Governance screen.
+* **Not yet (4b).** Compaction still drops the identity columns from the archive and has no marker;
+  until it does, it skips the store's own rows so a `writer`/`gap` row is never archived unaccounted.
+
 ## 7. Verified vs not verified
 Verified by running (current main fbfb7e8, scripted model, temp IRIS_HOME, throwaway vault key): the two scenarios and their
 dumps; ids contiguous; `tool_call_id` absent from audit payloads; held-attempt id absent; nested call fresh run; ledger collision

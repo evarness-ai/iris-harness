@@ -476,7 +476,18 @@ export interface GovernanceState {
   enabled: boolean;
   audit_db: string;
   audit_count: number;
+  write_health?: AuditWriteHealth;
   flags: GovFlag[];
+}
+
+/** How the ledger's own writes are doing (counts only; issue #134). */
+export interface AuditWriteHealth {
+  ok: boolean;
+  spool_pending: number;
+  spool_rejected: number;
+  writes_spooled: number;
+  writes_lost: number;
+  last_error_class: string | null;
 }
 
 export interface AuditEntry {

@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from iris_harness.foundation.env import env_flag
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.audit.view import audit_view, redaction_view
+from iris_harness.kernel.governance.audit.write_health import write_health
 from iris_harness.kernel.governance.external_content import (
     EXTERNAL_CONTENT_FLOOR_FLAG,
     floor_enabled,
@@ -172,6 +173,7 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
             "enabled": _env_flag("IRIS_GOVERNANCE_ENABLED", default=True),
             "audit_db": str(audit.db_path),
             "audit_count": audit_count,
+            "write_health": write_health(audit.db_path),
             "flags": [
                 *_flag_payload(_GOVERNANCE_FLAGS),
                 *_side_effect_ledger_flags(),
@@ -219,6 +221,7 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
                 "count": 0,
                 "total": 0,
                 "audit_db": str(audit.db_path),
+                "write_health": write_health(audit.db_path),
                 "callers": [],
                 "entries": [],
             }

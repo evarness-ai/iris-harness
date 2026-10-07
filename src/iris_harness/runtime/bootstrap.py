@@ -336,6 +336,7 @@ def _mount_plugins(runtime: IrisRuntime, in_process: Sequence[InProcessPlugin] =
     # third-party text. Silent when the posture is fine.
     from iris_harness.runtime.external_tools import mounted_external_tools
     from iris_harness.services.health.governance import (
+        audit_writes_provider,
         model_guard_provider,
         unrecorded_egress_provider,
     )
@@ -345,6 +346,8 @@ def _mount_plugins(runtime: IrisRuntime, in_process: Sequence[InProcessPlugin] =
     )
     # Issue #175: a governed request whose outcome row could not be written is counted.
     register_check_provider("egress_ledger", unrecorded_egress_provider)
+    # Issue #134: audit rows the ledger would not take (spooled, or kept nowhere).
+    register_check_provider("audit_writes", audit_writes_provider)
 
 
 def _reassert_loop_intents(runtime: IrisRuntime) -> None:

@@ -26,10 +26,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from iris_harness.foundation.ids import new_ulid
 from iris_harness.foundation.persistence.sqlite import add_columns_if_missing
+from iris_harness.kernel.governance.audit import sequence, spool
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,27 @@ _IDENTITY_INDEXES: tuple[str, ...] = (
 #: ``audit_meta`` key for the boundary of the pre-identity era (see ``_record_boundary``).
 IDENTITY_META_KEY = "identity"
 IDENTITY_SCHEMA_VERSION = 2
+
+#: The completeness columns (issue #134, stage 4): which writer wrote the row and its place in
+#: that writer's sequence, and ``kind`` for the rows the store writes about itself (``gap``,
+#: ``writer``, ``compaction``; NULL for the row of a hook firing). Nullable like the identity
+#: columns: a row written before a database was migrated has NULL in all three.
+SEQUENCE_COLUMNS: dict[str, str] = {
+    "writer_id": "TEXT",
+    "writer_seq": "INTEGER",
+    "kind": "TEXT",
+}
+_SEQUENCE_INDEXES: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_audit_writer_seq ON audit_log(writer_id, writer_seq) "
+    "WHERE writer_id IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS idx_audit_kind ON audit_log(kind) WHERE kind IS NOT NULL",
+)
+#: ``audit_meta`` key for the boundary of the pre-sequence era (see ``_record_sequence_boundary``).
+SEQUENCE_META_KEY = "sequence"
+SEQUENCE_SCHEMA_VERSION = 1
+
+#: Where a row went: the database, or (when it would not take it) the local spool.
+Durability = Literal["db", "spool"]
 
 
 # Override slot (``None``: resolved on every use, never frozen at import -- a process
@@ -110,6 +132,10 @@ class AuditRow:
     attempt: int | None = None
     replay_of: str | None = None
     resumed_from_run: str | None = None
+    # Completeness (issue #134, stage 4). None on a row written before the sequence existed.
+    writer_id: str | None = None
+    writer_seq: int | None = None
+    kind: str | None = None
 
 
 class AuditLog:
@@ -119,6 +145,8 @@ class AuditLog:
         self.db_path = db_path or _default_audit_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
+        sequence.set_close_hook(_close_writer)
+        self.drain_spool()
 
     def record(
         self,
@@ -137,15 +165,18 @@ class AuditLog:
         payload: dict[str, Any] | None = None,
         ts: datetime | None = None,
     ) -> int:
-        """Append one row. Returns the assigned ``id``.
+        """Append one row. Returns the assigned ``id`` (``0`` when the spool took the row).
 
         Audit writes must not fail because of an exotic payload. JSON
         encoding uses ``default=str`` and falls back to ``{}`` on a
         rare encoding error (logged at WARN).
+
+        When the database will not take the row it goes to the local spool instead (see
+        ``audit.spool``) and the call returns ``0``; it raises only when the spool cannot
+        keep the row either.
         """
-        with self._connect() as conn:
-            row_id = _insert(
-                conn,
+        _, row_id = self._write(
+            dict(  # noqa: C408
                 run_id=run_id,
                 step_id=step_id,
                 agent_type=agent_type,
@@ -160,8 +191,138 @@ class AuditLog:
                 payload=payload,
                 ts=ts,
             )
-            conn.commit()
-            return row_id
+        )
+        return row_id
+
+    def _write(self, row: dict[str, Any], *, kind: str | None = None) -> tuple[Durability, int]:
+        """Number the row, write it (with the writer's start and any gap rows), or spool it."""
+        writer, seq = sequence.allocate(self.db_path)
+        row["ts"] = row.get("ts") or datetime.now(UTC)
+        record_id = new_ulid()
+        claimed: list[sequence.GapRange] = []
+        extra: list[int] = []
+        try:
+            with self._connect() as conn:
+                row_id = _insert(
+                    conn,
+                    **row,
+                    record_id=record_id,
+                    writer_id=writer.writer_id,
+                    writer_seq=seq,
+                    kind=kind,
+                )
+                claimed = self._write_preamble(conn, writer, extra)
+                conn.commit()
+        except Exception as exc:  # silent-ok: spooled and logged in _spool_or_raise  # noqa: BLE001
+            sequence.restore_gaps(self.db_path, writer, claimed)
+            for lost_seq in extra:  # a gap row's own number: a hole too, but not a lost event
+                sequence.note_failure(self.db_path, writer, lost_seq, exc, spooled=False, own=True)
+            return self._spool_or_raise(row, record_id, writer, seq, kind, exc), 0
+        sequence.mark_started(self.db_path, writer)
+        self._after_write()
+        return "db", row_id
+
+    def _write_preamble(
+        self, conn: sqlite3.Connection, writer: sequence.Writer, allocated: list[int]
+    ) -> list[sequence.GapRange]:
+        """In the row's transaction: the writer's ``writer.start`` and the gaps it owes.
+
+        ``allocated`` collects the sequence numbers taken for gap rows, so a write that then
+        fails can report them as holes. A gap that cannot be written is handed back.
+        """
+        if not writer.started:
+            _insert_meta(
+                conn,
+                writer,
+                seq=sequence.START_SEQ,
+                kind=sequence.KIND_WRITER,
+                hook_point=sequence.WRITER_START,
+                reason="this process began writing to the ledger",
+                payload={"pid": os.getpid()},
+            )
+        gaps = sequence.claim_gaps(self.db_path, writer)
+        try:
+            for gap in gaps:
+                _, gap_seq = sequence.allocate(self.db_path)
+                allocated.append(gap_seq)
+                _insert_meta(
+                    conn,
+                    writer,
+                    seq=gap_seq,
+                    kind=sequence.KIND_GAP,
+                    hook_point="audit.gap",
+                    reason="audit rows of this writer did not reach the ledger when written",
+                    payload=gap.as_payload(),
+                    severity="error" if gap.lost else "warning",
+                )
+        except BaseException:
+            sequence.restore_gaps(self.db_path, writer, gaps)
+            raise
+        return gaps
+
+    def _spool_or_raise(
+        self,
+        row: Mapping[str, Any],
+        record_id: str,
+        writer: sequence.Writer,
+        seq: int,
+        kind: str | None,
+        exc: BaseException,
+    ) -> Durability:
+        """The database failed: keep the row in the spool, or re-raise when it cannot."""
+        try:
+            spool.append(
+                spool.spool_path_for(self.db_path),
+                _spool_record(row, record_id, writer.writer_id, seq, kind),
+            )
+        except Exception as spool_exc:
+            sequence.note_failure(self.db_path, writer, seq, exc, spooled=False)
+            logger.error(
+                "audit_log: row %s/%d lost: the database (%s) and the spool (%s) both failed",
+                writer.writer_id,
+                seq,
+                exc.__class__.__name__,
+                spool_exc.__class__.__name__,
+            )
+            raise exc from spool_exc
+        sequence.note_failure(self.db_path, writer, seq, exc, spooled=True)
+        logger.warning(
+            "audit_log: row %s/%d kept in the spool: %s",
+            writer.writer_id,
+            seq,
+            exc.__class__.__name__,
+        )
+        return "spool"
+
+    def _after_write(self) -> None:
+        if spool.spool_path_for(self.db_path).exists():
+            self.drain_spool()
+
+    def drain_spool(self) -> int:
+        """Put the rows waiting in the spool into the database. Never raises; returns how many."""
+        path = spool.spool_path_for(self.db_path)
+        if not path.exists():
+            return 0
+        try:
+            return spool.drain(path, self._apply_spooled)
+        except Exception as exc:  # noqa: BLE001 - a broken spool must not break a write
+            logger.warning("audit_log: spool drain failed: %s", exc.__class__.__name__)
+            return 0
+
+    def _apply_spooled(self, records: list[dict[str, Any]]) -> bool:
+        """Insert spooled rows idempotently. ``False`` leaves the spool as it was."""
+        try:
+            with self._connect() as conn:
+                for rec in records:
+                    _insert_spooled(conn, rec)
+                conn.commit()
+        except sqlite3.Error as exc:
+            logger.warning("audit_log: spooled rows not replayed yet: %s", exc.__class__.__name__)
+            return False
+        return True
+
+    def spool_state(self) -> spool.SpoolState:
+        return spool.state(spool.spool_path_for(self.db_path))
 
     def record_many(self, rows: Sequence[Mapping[str, Any]]) -> list[int | None]:
         """Append several rows in one connection, each succeeding or failing on its own.
@@ -170,21 +331,50 @@ class AuditLog:
         (an exotic value SQLite refuses) is rolled back alone and reported as ``None`` in
         the result, in order; the others are kept. That is per-row failure semantics: a
         failed row is neither hidden nor does it take the rest with it. (Atomic-per-firing is
-        a separate decision, #134 stage 4.)
+        a separate decision.) Each row is numbered like a single write, and a failed row
+        leaves its hole.
         """
         ids: list[int | None] = []
-        with self._connect() as conn:
-            for n, row in enumerate(rows):
-                conn.execute("SAVEPOINT audit_row")
-                try:
-                    ids.append(_insert(conn, **row))
-                except (sqlite3.Error, TypeError, ValueError) as exc:
-                    conn.execute("ROLLBACK TO audit_row")
-                    logger.warning("audit_log: row %d of a batch failed to write: %s", n, exc)
-                    ids.append(None)
-                finally:
-                    conn.execute("RELEASE audit_row")
-            conn.commit()
+        writer = sequence.writer_for(self.db_path)
+        claimed: list[sequence.GapRange] = []
+        extra: list[int] = []
+        try:
+            with self._connect() as conn:
+                claimed = self._write_preamble(conn, writer, extra)
+                for n, row in enumerate(rows):
+                    _, seq = sequence.allocate(self.db_path)
+                    fields = dict(row)
+                    fields["ts"] = fields.get("ts") or datetime.now(UTC)
+                    record_id = new_ulid()
+                    conn.execute("SAVEPOINT audit_row")
+                    try:
+                        ids.append(
+                            _insert(
+                                conn,
+                                **fields,
+                                record_id=record_id,
+                                writer_id=writer.writer_id,
+                                writer_seq=seq,
+                            )
+                        )
+                    except (sqlite3.Error, TypeError, ValueError) as exc:
+                        conn.execute("ROLLBACK TO audit_row")
+                        logger.warning("audit_log: row %d of a batch failed to write: %s", n, exc)
+                        ids.append(None)
+                        try:
+                            self._spool_or_raise(fields, record_id, writer, seq, None, exc)
+                        except Exception:
+                            logger.debug("batch row %d not spooled", n, exc_info=True)
+                    finally:
+                        conn.execute("RELEASE audit_row")
+                conn.commit()
+        except Exception as exc:
+            sequence.restore_gaps(self.db_path, writer, claimed)
+            for lost_seq in extra:
+                sequence.note_failure(self.db_path, writer, lost_seq, exc, spooled=False, own=True)
+            raise
+        sequence.mark_started(self.db_path, writer)
+        self._after_write()
         return ids
 
     def query(
@@ -198,13 +388,17 @@ class AuditLog:
         since: datetime | str | None = None,
         until: datetime | str | None = None,
         limit: int | None = None,
+        include_store_rows: bool = False,
     ) -> tuple[AuditRow, ...]:
         """Return rows matching the filter, ordered by ``ts`` ascending.
+
+        The store's own rows (``writer.start`` / ``writer.close``, ``gap``, ``compaction``)
+        are left out unless ``include_store_rows``: they describe the ledger, not a decision.
 
         ``caller`` matches the payload's ``caller`` exactly, or, when it ends in ``:``,
         by that namespace (``mcp:`` is every MCP client, ``plugin:`` every plugin's code).
         """
-        clauses: list[str] = []
+        clauses: list[str] = [] if include_store_rows else ["kind IS NULL"]
         params: list[Any] = []
         if run_id is not None:
             clauses.append("run_id = ?")
@@ -254,9 +448,12 @@ class AuditLog:
             ).fetchall()
         return tuple(sorted(str(value) for (value,) in rows if isinstance(value, str) and value))
 
-    def count(self) -> int:
+    def count(self, *, include_store_rows: bool = False) -> int:
+        sql = "SELECT COUNT(*) FROM audit_log"
+        if not include_store_rows:
+            sql += " WHERE kind IS NULL"
         with self._connect() as conn:
-            (n,) = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
+            (n,) = conn.execute(sql).fetchone()
         return int(n)
 
     @contextmanager
@@ -298,7 +495,10 @@ class AuditLog:
                     parent_call_id   TEXT,
                     attempt          INTEGER,
                     replay_of        TEXT,
-                    resumed_from_run TEXT
+                    resumed_from_run TEXT,
+                    writer_id        TEXT,
+                    writer_seq       INTEGER,
+                    kind             TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_audit_run_ts ON audit_log(run_id, ts);
                 CREATE INDEX IF NOT EXISTS idx_audit_decision_ts ON audit_log(decision, ts);
@@ -317,6 +517,13 @@ class AuditLog:
             IDENTITY_COLUMNS,
             indexes=_IDENTITY_INDEXES,
             on_added=_record_boundary,
+        )
+        add_columns_if_missing(
+            self.db_path,
+            "audit_log",
+            SEQUENCE_COLUMNS,
+            indexes=_SEQUENCE_INDEXES,
+            on_added=_record_sequence_boundary,
         )
 
 
@@ -379,23 +586,30 @@ def _insert(
     tier: str | None = None,
     cost_usd: float | None = None,
     payload: Mapping[str, Any] | None = None,
-    ts: datetime | None = None,
+    ts: datetime | str | None = None,
+    record_id: str | None = None,
+    writer_id: str | None = None,
+    writer_seq: int | None = None,
+    kind: str | None = None,
+    or_ignore: bool = False,
 ) -> int:
     payload_dict = dict(payload or {})
     ids = _identity_values(payload_dict)
+    stamp = ts.isoformat() if isinstance(ts, datetime) else (ts or datetime.now(UTC).isoformat())
     cur = conn.execute(
-        """
-        INSERT INTO audit_log(
+        f"""
+        INSERT {"OR IGNORE " if or_ignore else ""}INTO audit_log(
             ts, run_id, step_id, agent_type, hook_point, plugin,
             decision, classification, tier, cost_usd, severity,
             reason, payload_json,
             record_id, session_id, turn_id, call_id, parent_call_id,
-            attempt, replay_of, resumed_from_run
+            attempt, replay_of, resumed_from_run,
+            writer_id, writer_seq, kind
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,  # noqa: S608 - the only interpolation is the fixed OR IGNORE keyword
         (
-            (ts or datetime.now(UTC)).isoformat(),
+            stamp,
             run_id,
             step_id,
             agent_type,
@@ -408,7 +622,7 @@ def _insert(
             severity,
             reason,
             _safe_json(payload_dict),
-            new_ulid(),
+            record_id or new_ulid(),
             ids["session_id"],
             ids["turn_id"],
             ids["call_id"],
@@ -416,9 +630,144 @@ def _insert(
             ids["attempt"],
             ids["replay_of"],
             ids["resumed_from_run"],
+            writer_id,
+            writer_seq,
+            kind,
         ),
     )
-    return int(cur.lastrowid or 0)
+    return int(cur.lastrowid or 0) if cur.rowcount else 0
+
+
+def _insert_meta(
+    conn: sqlite3.Connection,
+    writer: sequence.Writer,
+    *,
+    seq: int,
+    kind: str,
+    hook_point: str,
+    reason: str,
+    payload: Mapping[str, Any],
+    severity: str = "info",
+) -> None:
+    """A row the store writes about itself (the writer's start or close, a gap).
+
+    ``OR IGNORE``: two threads of one process may both write ``writer.start``; the unique
+    ``(writer_id, writer_seq)`` index keeps one.
+    """
+    _insert(
+        conn,
+        run_id=f"audit:{writer.writer_id}",
+        step_id=None,
+        agent_type="audit",
+        hook_point=hook_point,
+        plugin="audit",
+        decision="allow",
+        severity=severity,
+        reason=reason,
+        payload={"writer_id": writer.writer_id, **payload},
+        record_id=new_ulid(),
+        writer_id=writer.writer_id,
+        writer_seq=seq,
+        kind=kind,
+        or_ignore=True,
+    )
+
+
+def _spool_record(
+    row: Mapping[str, Any], record_id: str, writer_id: str, seq: int, kind: str | None
+) -> dict[str, Any]:
+    """The closed set of fields a spool line carries (see ``audit.spool``)."""
+    ts = row.get("ts")
+    return {
+        "record_id": record_id,
+        "writer_id": writer_id,
+        "writer_seq": seq,
+        "kind": kind,
+        "ts": ts.isoformat() if isinstance(ts, datetime) else str(ts),
+        "run_id": row["run_id"],
+        "step_id": row.get("step_id"),
+        "agent_type": row["agent_type"],
+        "hook_point": row["hook_point"],
+        "plugin": row["plugin"],
+        "decision": row["decision"],
+        "classification": row.get("classification"),
+        "tier": row.get("tier"),
+        "cost_usd": row.get("cost_usd"),
+        "severity": row["severity"],
+        "reason": row["reason"],
+        "payload": json.loads(_safe_json(dict(row.get("payload") or {}))),
+    }
+
+
+def _insert_spooled(conn: sqlite3.Connection, rec: Mapping[str, Any]) -> None:
+    """Replay one validated spool line. A row the ledger already holds is left untouched."""
+    _insert(
+        conn,
+        run_id=rec["run_id"],
+        step_id=rec["step_id"],
+        agent_type=rec["agent_type"],
+        hook_point=rec["hook_point"],
+        plugin=rec["plugin"],
+        decision=rec["decision"],
+        severity=rec["severity"],
+        reason=rec["reason"],
+        classification=rec["classification"],
+        tier=rec["tier"],
+        cost_usd=rec["cost_usd"],
+        payload=rec["payload"],
+        ts=rec["ts"],
+        record_id=rec["record_id"],
+        writer_id=rec["writer_id"],
+        writer_seq=rec["writer_seq"],
+        kind=rec["kind"],
+        or_ignore=True,
+    )
+
+
+def _record_sequence_boundary(conn: sqlite3.Connection, added: list[str]) -> None:
+    """Write the pre-sequence boundary, in the transaction that added the columns.
+
+    Rows up to the largest ``id`` now present were written before rows were numbered; a row
+    without a ``writer_seq`` after it came from a writer that does not number (an older
+    release still running). Old rows are not touched.
+    """
+    if "writer_seq" not in added:
+        return
+    (last_id,) = conn.execute("SELECT COALESCE(MAX(id), 0) FROM audit_log").fetchone()
+    boundary = {
+        "schema": SEQUENCE_SCHEMA_VERSION,
+        "first_sequenced_row_id": int(last_id) + 1,
+        "migrated_at": datetime.now(UTC).isoformat(),
+    }
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS audit_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO audit_meta(key, value) VALUES (?, ?)",
+        (SEQUENCE_META_KEY, json.dumps(boundary, sort_keys=True)),
+    )
+
+
+def _close_writer(db_key: str, writer: sequence.Writer) -> None:
+    """``atexit``: write ``writer.close`` (with the last number used) if the ledger is there."""
+    if not os.path.exists(db_key):
+        return
+    log = AuditLog(db_path=Path(db_key))
+    last = writer.next_seq - 1
+    log._write(
+        dict(  # noqa: C408
+            run_id=f"audit:{writer.writer_id}",
+            step_id=None,
+            agent_type="audit",
+            hook_point=sequence.WRITER_CLOSE,
+            plugin="audit",
+            decision="allow",
+            severity="info",
+            reason="this process finished writing to the ledger",
+            payload={"writer_id": writer.writer_id, "last_seq": last, "pid": os.getpid()},
+        ),
+        kind=sequence.KIND_WRITER,
+    )
 
 
 def _row_to_audit(row: sqlite3.Row) -> AuditRow:
@@ -440,6 +789,7 @@ def _row_to_audit(row: sqlite3.Row) -> AuditRow:
         reason=str(row["reason"]),
         payload_json=str(row["payload_json"]),
         **_identity_of(row),
+        **{name: (row[name] if name in set(row.keys()) else None) for name in SEQUENCE_COLUMNS},
     )
 
 

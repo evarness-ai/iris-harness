@@ -40,6 +40,7 @@ class IrisStatus:
     heartbeat_count: int  # enabled heartbeats
     database_sizes: dict[str, int]  # db filename → bytes
     filemanager_roots: int
+    audit_writes: dict[str, object] = field(default_factory=dict)  # audit.write_health
 
 
 @dataclass(frozen=True)
@@ -153,12 +154,16 @@ def iris_status(
 
     filemanager_roots = _count_file_roots(root_registry)
 
+    from iris_harness.foundation.paths import audit_db_path
+    from iris_harness.kernel.governance.audit.write_health import write_health
+
     return IrisStatus(
         accounts=accounts,
         skill_count=skill_count,
         heartbeat_count=heartbeat_count,
         database_sizes=database_sizes,
         filemanager_roots=filemanager_roots,
+        audit_writes=write_health(audit_db_path()),
     )
 
 

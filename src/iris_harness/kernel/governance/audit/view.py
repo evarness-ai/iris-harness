@@ -15,6 +15,7 @@ from typing import Any
 
 from iris_harness.foundation.observability.audit_view import public_payload, tier_locality
 from iris_harness.kernel.governance.audit.log import AuditLog, AuditRow
+from iris_harness.kernel.governance.audit.write_health import write_health
 from iris_harness.kernel.governance.display_mask import mask_text
 
 #: The most rows one read returns.
@@ -60,6 +61,7 @@ def audit_view(
         "count": len(recent),
         "total": log.count(),
         "audit_db": str(log.db_path),
+        "write_health": write_health(log.db_path),
         "callers": list(log.callers()),
         "entries": [audit_entry(r) for r in recent],
     }

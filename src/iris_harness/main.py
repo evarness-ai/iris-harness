@@ -392,6 +392,13 @@ def cmd_system_status() -> None:
     if iris.database_sizes:
         dbs = ", ".join(f"{name} {size // 1024}KB" for name, size in iris.database_sizes.items())
         console.print(f"  [dim]databases:[/dim] {dbs}")
+    audit = iris.audit_writes
+    if audit and not audit.get("ok", True):
+        console.print(
+            f"  [bold red]audit ledger[/bold red]   {audit['spool_pending']} row(s) in the spool, "
+            f"{audit['spool_rejected']} malformed line(s) set aside, "
+            f"{audit['writes_lost']} write(s) lost this process"
+        )
 
 
 mcp_app = typer.Typer(

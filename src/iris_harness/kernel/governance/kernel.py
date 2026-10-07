@@ -24,7 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Any
+from typing import Any, Literal
 
 from iris_harness.kernel.governance.audit import AuditLog
 from iris_harness.kernel.governance.call_context import is_run_resumed, lineage_of
@@ -36,6 +36,7 @@ from iris_harness.kernel.governance.hooks.tool_payload import (
     REPLAY_OF,
     RESUMED_FROM_RUN,
     SIDE_EFFECT_ID,
+    TOOL_EFFECT,
     TURN_ID,
     call_id_of,
 )
@@ -113,6 +114,23 @@ class HookRegistrationLockedError(RuntimeError):
 
 class KernelNotInitializedError(RuntimeError):
     """Raised when ``fire()`` is called before ``init_lock()``."""
+
+
+def _guards_an_effect(hook_point: HookPoint, ctx: HookContext) -> bool:
+    """Whether an allow at ``hook_point`` is the last check before something happens outside.
+
+    The points that fail closed when their ledger row was kept nowhere (#134 stage 4): an
+    outbound request; a tool or capability call declared ``write`` or ``destructive`` (an MCP
+    tool that declared nothing is destructive, so it is here); a model call toward the cloud
+    tier. A read, and every other point, is not.
+    """
+    if hook_point is HookPoint.PRE_EGRESS:
+        return True
+    if hook_point is HookPoint.PRE_TOOL_USE:
+        return ctx.metadata.get(TOOL_EFFECT) in ("write", "destructive")
+    if hook_point is HookPoint.PRE_LLM_CALL:
+        return ctx.tier == "tier_3"
+    return False
 
 
 class GovernanceKernel:
@@ -217,7 +235,9 @@ class GovernanceKernel:
                 self._audit(hook_point, hook.name, exc_decision, current_ctx)
                 return exc_decision, current_ctx
 
-            audited = self._audit(hook_point, hook.name, decision, current_ctx) and audited
+            audited = (
+                self._audit(hook_point, hook.name, decision, current_ctx) != "lost" and audited
+            )
 
             updates: dict[str, Any] = {}
             if decision.set_classification is not None:
@@ -245,14 +265,21 @@ class GovernanceKernel:
             if decision.outcome in ("deny", "require_approval"):
                 return decision.model_copy(update={"decided_by": hook.name}), current_ctx
 
-        if not audited and hook_point is HookPoint.PRE_EGRESS and decision.outcome == "allow":
-            # A request is sent only with its pre_egress row on the ledger (#103): when the
-            # write failed, the allow is withdrawn. This is the one point where a failed
-            # audit write changes a decision; every other hook point keeps "never raises".
+        if (
+            not audited
+            and decision.outcome in ("allow", "transform")
+            and _guards_an_effect(hook_point, current_ctx)
+        ):
+            # An effect happens only with its pre row kept (#103, #134 stage 4): when the
+            # database AND the local spool both refused the row, the allow is withdrawn. A
+            # row the spool took counts as written (durable, replayed idempotently). These
+            # are the points where a failed audit write changes a decision: an outbound
+            # request, a write or destructive tool, a model call toward the cloud tier;
+            # every other hook point keeps "never raises" and spools.
             return (
                 HookDecision(
                     outcome="deny",
-                    reason="the ledger write for this request failed, so it is not sent",
+                    reason="the ledger write for this call failed, so it does not run",
                     severity="error",
                     decided_by="kernel",
                 ),
@@ -272,10 +299,14 @@ class GovernanceKernel:
         plugin: str,
         decision: HookDecision,
         ctx: HookContext,
-    ) -> bool:
-        """Persist one row per hook firing. Never raises; ``False`` when the write failed."""
+    ) -> Literal["db", "spool", "lost"]:
+        """Persist one row per hook firing. Never raises.
+
+        Says where the row went: ``"db"``, ``"spool"`` (the database refused it and the local
+        spool kept it), or ``"lost"`` (neither could).
+        """
         if self._audit_log is None:
-            return True  # no ledger configured: nothing was lost
+            return "db"  # no ledger configured: nothing was lost
         try:
             payload: dict[str, Any] = dict(decision.audit_metadata)
             for key in _AUDITED_PAYLOAD_KEYS:
@@ -353,7 +384,7 @@ class GovernanceKernel:
                 payload[TURN_ID] = turn_id
             else:
                 payload.pop(TURN_ID, None)
-            self._audit_log.record(
+            row_id = self._audit_log.record(
                 run_id=ctx.run_id,
                 step_id=ctx.step_id,
                 agent_type=ctx.agent_type,
@@ -366,7 +397,9 @@ class GovernanceKernel:
                 tier=ctx.tier,
                 payload=payload,
             )
-            return True
+            # ``record`` returns 0 for a row the spool took (a real row id starts at 1).
+            spooled = isinstance(row_id, int) and not isinstance(row_id, bool) and row_id == 0
+            return "spool" if spooled else "db"
         except Exception as exc:  # noqa: BLE001 - audit failure must not break enforcement
             logger.warning(
                 "audit_log: write failed for %s/%s: %s",
@@ -374,7 +407,7 @@ class GovernanceKernel:
                 plugin,
                 exc,
             )
-            return False
+            return "lost"
 
     def fire_sync(
         self, hook_point: HookPoint, ctx: HookContext

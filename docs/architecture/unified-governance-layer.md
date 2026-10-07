@@ -507,6 +507,18 @@ For tools that make outbound HTTP (`research`, `web_fetch`, GitHub API, custom H
 
 - MCP server config (`mcp-servers.yaml`) gains a `governance.allowed_for_personas` field
 - `PreToolUse` on `coding/mcp/*` routes checks the (persona, MCP server, tool) tuple against the allowlist
+- **Declaring what a tool does (`governance.tools`).** An MCP server declares no effect of its own, and its own hints (`destructiveHint`) are the server's claim, so the bridge never trusts them. The operator declares it per tool:
+
+  ```yaml
+  servers:
+    - name: files
+      governance:
+        tools:
+          delete_file: {effect: destructive}   # read | write | destructive
+          list_files: {effect: read}
+  ```
+
+  A declared tool carries that effect into `PreToolUse` and `PostToolUse`, so it meets the same hooks a plugin tool does. A `destructive` one is refused before the server is reached unless the caller passes `approved_by`, the id of an approved queue row that pinned exactly this call (route `mcp/<server>/<tool>` and its arguments); with one it gets a pending write-ahead ledger row (key `<run_id>:0:<call_id>`, the call id minted by the bridge) before it runs, settled after, so `iris run resume` sees a call whose transport failed. Unknown effect values and empty tool names are rejected when the config is loaded. A tool not listed declares nothing and behaves as before: no effect, no approval gate, no write-ahead row.
 - v1.1 will add cryptographic signature verification of MCP server packages (covered in a separate `mcp-server-signing.md` doc)
 
 ### 8.6 Sandbox posture

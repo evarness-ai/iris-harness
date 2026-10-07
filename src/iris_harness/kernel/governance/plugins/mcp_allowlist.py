@@ -39,9 +39,9 @@ from __future__ import annotations
 import logging
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
 
@@ -62,12 +62,39 @@ class MCPPersonaGrant(BaseModel):
     tools: tuple[str, ...] = Field(default_factory=tuple)
 
 
+class MCPToolGovernance(BaseModel):
+    """What the operator declares about one tool of an MCP server.
+
+    An MCP server declares no effect of its own, and its own hints (``destructiveHint``) are
+    the server's claim, not the operator's, so the bridge never trusts them. The operator
+    says what a tool does here; the bridge then treats the call like a plugin tool of that
+    effect (a ``destructive`` one waits for an itemised approval and leaves a write-ahead
+    ledger row before it runs).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    effect: Literal["read", "write", "destructive"]
+
+
 class MCPServerGovernance(BaseModel):
     """Governance block for one MCP server (``governance:`` key in YAML)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     allowed_for_personas: tuple[MCPPersonaGrant, ...] = Field(default_factory=tuple)
+    # Tool name -> what the operator declares it does. A tool not listed declares nothing
+    # and is handled as before: no effect, no write-ahead row.
+    tools: dict[str, MCPToolGovernance] = Field(default_factory=dict)
+
+    @field_validator("tools")
+    @classmethod
+    def _tool_names_are_not_empty(
+        cls, value: dict[str, MCPToolGovernance]
+    ) -> dict[str, MCPToolGovernance]:
+        if any(not name.strip() for name in value):
+            raise ValueError("an MCP tool name in governance.tools must not be empty")
+        return value
 
 
 # ---------------------------------------------------------------------------

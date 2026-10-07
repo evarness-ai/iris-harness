@@ -16,8 +16,8 @@ attribute of an imported package (``import urllib`` then ``urllib.request.urlope
 calls ``asyncio.open_connection`` / ``start_server``. It does not see
 ``importlib.import_module`` with a computed name, a name passed around as a value, an event
 loop's own ``create_connection``, a dependency that opens its own connection,
-``subprocess``, or any library this list does not name (``paramiko``, ``aiosmtplib``,
-``boto3``, ``openai``, ``pymongo``, ``redis`` and many more); and an in-process plugin can
+``subprocess``, or any library this list does not name (an SDK that wraps a socket under
+another name: ``botocore``, ``psycopg``, ``kafka`` and many more); and an in-process plugin can
 always open a socket some other way. A file that does not parse is reported as such rather
 than skipped. It is a tripwire on the honest path, not a sandbox.
 """
@@ -32,10 +32,12 @@ from pathlib import Path
 #: Modules (and dotted submodules) that open network connections without the harness.
 NETWORK_MODULES: tuple[str, ...] = (
     "aiohttp",
+    "aiosmtplib",
     "asyncio.open_connection",
     "asyncio.open_unix_connection",
     "asyncio.start_server",
     "asyncio.start_unix_server",
+    "boto3",
     "ftplib",
     "googleapiclient",
     "grpc",
@@ -47,8 +49,12 @@ NETWORK_MODULES: tuple[str, ...] = (
     "httpx",
     "imaplib",
     "multiprocessing.connection",
+    "openai",
+    "paramiko",
     "poplib",
     "pycurl",
+    "pymongo",
+    "redis",
     "requests",
     "smtplib",
     "socket",

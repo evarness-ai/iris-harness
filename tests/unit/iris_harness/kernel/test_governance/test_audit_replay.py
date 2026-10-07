@@ -429,7 +429,17 @@ def _src(db: Path, tmp_path: Path, **kw: Any) -> ReplaySources:
     return ReplaySources(audit_db=db, session_log_dir=tmp_path / "logs", **kw)
 
 
-def _writer_rows(db: Path, writer: str, *, pid: int | None = None, close: bool = False) -> None:
+def _writer_rows(
+    db: Path,
+    writer: str,
+    *,
+    pid: int | None = None,
+    started: float | None = None,
+    close: bool = False,
+) -> None:
+    body: dict[str, Any] = {"pid": pid if pid is not None else _own_pid()}
+    if started is not None:
+        body["started"] = started
     _put(
         db,
         session=None,
@@ -438,7 +448,7 @@ def _writer_rows(db: Path, writer: str, *, pid: int | None = None, close: bool =
         seq=0,
         kind="writer",
         run=f"audit:{writer}",
-        payload={"pid": pid if pid is not None else _own_pid()},
+        payload=body,
     )
     if close:
         _put(
@@ -879,6 +889,87 @@ def test_the_cli_exit_code_is_one_for_a_gap_and_zero_otherwise(tmp_path: Path) -
     assert (
         runner.invoke(app, ["audit", "replay", "--session", "../x", "--db", str(db)]).exit_code == 2
     )
+
+
+def test_the_time_cap_stops_a_sqlite_statement_part_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A SQLite statement does not return to Python, so only the progress handler can stop it.
+
+    A few thousand pre-identity rows (the session lookup reads every payload) and a spent
+    budget: the statement is aborted before it returns a single row. Without the handler the
+    lookup would finish, return the session's rows, and only a later check would notice.
+    """
+    from iris_harness.kernel.governance.audit import replay as replay_module
+
+    db = _db(tmp_path)
+    conn = sqlite3.connect(db)
+    stamp = datetime.now(UTC).isoformat()
+    rows = [(stamp, json.dumps({"session_id": "other", "n": n})) for n in range(5000)]
+    rows += [(stamp, json.dumps({"session_id": "s1", "n": n})) for n in range(3)]
+    conn.executemany(
+        "INSERT INTO audit_log(ts, run_id, agent_type, hook_point, plugin, decision, severity,"
+        " reason, payload_json) VALUES (?, 'r', 'chat', 'pre_llm_call', 'p', 'allow', 'info',"
+        " 'x', ?)",
+        rows,
+    )
+    conn.commit()
+    conn.close()
+    sources = _src(db, tmp_path)
+    monkeypatch.setattr(replay_module, "_PROGRESS_OPS", 50)
+
+    full = replay_session("s1", sources=sources, include_archive=False)
+    capped = replay_session("s1", sources=sources, include_archive=False, max_seconds=0.0)
+
+    assert full.complete and len(full.records) == 3
+    assert not capped.complete and capped.gaps == ()
+    assert capped.records == ()  # aborted inside the statement: no row came back
+    assert "truncated" in {n.code for n in capped.notes}
+
+
+def test_a_recycled_pid_is_not_the_writer(tmp_path: Path) -> None:
+    import psutil
+
+    mine = psutil.Process().create_time()
+    db = _db(tmp_path)
+    _writer_rows(db, "W-REUSED", pid=_own_pid(), started=mine - 86_400)  # another, older process
+    _put(db, writer="W-REUSED", seq=1, call="C1")
+    reused = replay_session("s1", sources=_src(db, tmp_path), include_archive=False)
+    assert "writer_ended_without_close" in {n.code for n in reused.notes}
+    assert "writer_open" not in {n.code for n in reused.notes}
+
+    db2 = tmp_path / "second.db"
+    AuditLog(db_path=db2)
+    _writer_rows(db2, "W-LIVE", pid=_own_pid(), started=mine)  # this very process
+    _put(db2, writer="W-LIVE", seq=1, call="C1")
+    live = replay_session("s1", sources=_src(db2, tmp_path), include_archive=False)
+    assert {"writer_open", "in_flight"} <= {n.code for n in live.notes}
+
+
+def test_writer_start_records_when_the_process_began(tmp_path: Path) -> None:
+    import psutil
+
+    db = tmp_path / "audit.db"
+    log = AuditLog(db_path=db)
+    log.record(
+        run_id="r",
+        step_id=None,
+        agent_type="chat",
+        hook_point="pre_llm_call",
+        plugin="p",
+        decision="allow",
+        severity="info",
+        reason="x",
+        payload={},
+    )
+    (body,) = (
+        sqlite3.connect(db)
+        .execute("SELECT payload_json FROM audit_log WHERE hook_point = 'writer.start'")
+        .fetchone()
+    )
+    payload = json.loads(body)
+    assert payload["pid"] == _own_pid()
+    assert abs(payload["started"] - psutil.Process().create_time()) < 1.0
 
 
 def test_every_gap_class_has_a_test_in_this_module() -> None:

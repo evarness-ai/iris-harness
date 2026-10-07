@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running are notes, not gaps. The command exits 1 on a gap (`--no-fail` for scripts) and the
   endpoint is capped (rows and seconds) and says when it cut the read short. `Harness.audit_gaps()`
   still returns a list of strings and is empty for a healthy turn; it now also lists what the
-  replay proves lost. The egress witness is not part of this stage.
+  replay proves lost. `writer.start` rows now carry the process's start time so a recycled pid is
+  not mistaken for a running writer (older rows fall back to the pid alone). The egress witness is
+  not part of this stage.
 
 ## [0.1.0] - 2026-10-07
 

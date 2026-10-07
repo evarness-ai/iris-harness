@@ -477,7 +477,12 @@ Payload-only: no schema change and no migration (the audit payload is schema-fre
   `writer_open`; `in_flight` (an open call whose writer process is still running); `unsettled_call`
   (no settle row and no witness: a read capability call that raised legitimately fires no settle);
   `cold_tier_not_read`; `store_absent`; `cold_window_unbounded`; `truncated`.
-* **Bounds.** `max_rows` caps each read; `max_seconds` interrupts the cold scan. A cut read proves
+* **Writer liveness.** `writer.start` now records the process's creation time (`started`, psutil)
+  beside its pid, so a recycled pid is told from the writer. A `writer.start` row written before
+  that field existed falls back to the pid alone, which reads a recycled pid as running: the call
+  then stays an `in_flight` note instead of an `open_call` gap (never a false gap).
+* **Bounds.** `max_rows` caps each read; `max_seconds` interrupts the cold scan and, through a
+  SQLite progress handler on every read connection, a statement that is scanning a large ledger. A cut read proves
   nothing missing, so gap detection is skipped and the result says `complete: false` (the API:
   `truncated: true`). Session ids are validated (they name a file in the session log directory).
 * **Surfaces.** `iris audit replay --session S [--turn T | --run R] [--json] [--no-archive]

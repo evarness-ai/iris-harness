@@ -220,6 +220,23 @@ def replay_session(
         raise ValueError("not a session id")  # it names a file in the session log directory
     src = sources or ReplaySources.default()
     budget = _Budget(max_rows, max_seconds)
+    try:
+        return _replay(session_id, turn, run, src, include_archive, budget)
+    except sqlite3.OperationalError:
+        if not budget.cut:  # not the budget stopping a statement: a real failure
+            raise
+        note = Note("truncated", "replay", "the time cap stopped a read; gaps were not judged")
+        return Replay(session_id, (), (), (), (note,), complete=False)
+
+
+def _replay(
+    session_id: str,
+    turn: str | None,
+    run: str | None,
+    src: ReplaySources,
+    include_archive: bool,
+    budget: _Budget,
+) -> Replay:
     notes: list[Note] = []
     gaps: list[Gap] = []
 
@@ -301,11 +318,20 @@ def _window(stamps: Iterable[str]) -> tuple[datetime | None, datetime | None]:
     return min(parsed) - margin, max(parsed) + margin
 
 
-def _connect_ro(path: Path) -> sqlite3.Connection | None:
+#: VM instructions between two looks at the clock. A statement that scans a large table does
+#: not return to Python, so the wall-clock budget can only stop it from inside SQLite.
+_PROGRESS_OPS = 10_000
+
+
+def _connect_ro(path: Path, budget: _Budget | None = None) -> sqlite3.Connection | None:
     if not path.exists():
         return None
     conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
     conn.row_factory = sqlite3.Row
+    if budget is not None and budget.deadline is not None:
+        # Returning non-zero aborts the running statement ("interrupted"); the budget is
+        # marked cut, and ``replay_session`` turns that into an incomplete result.
+        conn.set_progress_handler(lambda: 1 if budget.expired() else 0, _PROGRESS_OPS)
     return conn
 
 
@@ -320,7 +346,7 @@ def _row_dict(row: sqlite3.Row, present: set[str], tier: str) -> dict[str, Any]:
 
 
 def _hot_session_rows(db: Path, session_id: str, budget: _Budget) -> list[dict[str, Any]]:
-    conn = _connect_ro(db)
+    conn = _connect_ro(db, budget)
     if conn is None:
         return []
     with closing(conn):
@@ -516,7 +542,7 @@ def _writer_rows(
 ) -> list[dict[str, Any]]:
     """Rows of one writer from both tiers; the cold part only when the archive was read."""
     out: list[dict[str, Any]] = []
-    conn = _connect_ro(ctx.src.audit_db)
+    conn = _connect_ro(ctx.src.audit_db, ctx.budget)
     if conn is not None:
         with closing(conn):
             if "writer_id" in _columns_of(conn, "audit_log"):
@@ -667,7 +693,37 @@ def _archive_gaps(ctx: _Context) -> list[Gap]:
     ]
 
 
-def _pid_alive(pid: int) -> bool:
+#: A recycled pid's process was born later than the writer: more than this many seconds apart
+#: is a different process.
+_START_TOLERANCE_S = 2.0
+
+
+def _pid_alive(pid: int, started: float | None = None) -> bool:
+    """Is the process that wrote ``writer.start`` still running?
+
+    With the start time the row recorded, a recycled pid (another process now has the number)
+    is told from the writer: the creation times differ. A row from before the start time was
+    recorded falls back to the pid alone, which reads a recycled pid as alive (the call then
+    stays an ``in_flight`` note instead of an ``open_call`` gap: never a false gap).
+    """
+    try:
+        import psutil
+    except ImportError:  # pragma: no cover - psutil is a core dependency
+        psutil = None
+    if psutil is not None:
+        try:
+            proc = psutil.Process(pid)
+            if proc.status() == psutil.STATUS_ZOMBIE:
+                return False
+            if started is not None:
+                return bool(abs(proc.create_time() - started) < _START_TOLERANCE_S)
+            return True
+        except psutil.NoSuchProcess:
+            return False
+        except psutil.AccessDenied:
+            return True
+        except psutil.Error:
+            return False
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -695,16 +751,19 @@ def _writer_states(ctx: _Context, writers: Iterable[str]) -> dict[str, str]:
             states[writer] = "closed"
             continue
         pid = None
+        started: float | None = None
         for f in found:
             if f["hook_point"] == sequence.WRITER_START:
                 try:
-                    pid = int(json.loads(f["payload_json"]).get("pid"))
+                    body = json.loads(f["payload_json"])
+                    pid = int(body.get("pid"))
+                    started = float(body["started"]) if body.get("started") is not None else None
                 except (ValueError, TypeError):
                     pid = None
         if pid is None:
             states[writer] = "unknown"
         else:
-            states[writer] = "live" if _pid_alive(pid) else "gone"
+            states[writer] = "live" if _pid_alive(pid, started) else "gone"
     return states
 
 
@@ -889,7 +948,7 @@ def _run_exists(ctx: _Context, run_id: str) -> bool:
 def _ledger_rows(ctx: _Context, runs: set[str]) -> list[dict[str, Any]]:
     if ctx.src.ledger_db is None or not runs:
         return []
-    conn = _connect_ro(ctx.src.ledger_db)
+    conn = _connect_ro(ctx.src.ledger_db, ctx.budget)
     if conn is None:
         ctx.notes.append(Note("store_absent", "side_effect_ledger", "no ledger file"))
         return []
@@ -904,7 +963,7 @@ def _ledger_rows(ctx: _Context, runs: set[str]) -> list[dict[str, Any]]:
 def _approval_rows(ctx: _Context, session_id: str) -> list[dict[str, Any]]:
     if ctx.src.approvals_db is None:
         return []
-    conn = _connect_ro(ctx.src.approvals_db)
+    conn = _connect_ro(ctx.src.approvals_db, ctx.budget)
     if conn is None:
         ctx.notes.append(Note("store_absent", "approvals", "no approval queue file"))
         return []

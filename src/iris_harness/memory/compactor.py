@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -92,6 +92,28 @@ class ConversationTurn:
     # Where an assistant turn came from (#145 step two): ``"external"`` when the run read
     # third-party text before answering, None when unknown. The owner's own turns have none.
     origin: str | None = None
+
+
+def summary_flag(
+    previous_flag: bool | None,
+    *,
+    had_summary: bool,
+    folded: Sequence[ConversationTurn],
+) -> bool | None:
+    """The provenance flag of a summary rolled forward over ``folded`` turns (#145).
+
+    ``True`` once any folded turn is external-origin or the summary already was: sticky, because
+    a model-written paraphrase of third-party text cannot be told apart from the model's own
+    words, so it is never un-marked (over-marking is the safe direction). ``False`` only when
+    nothing earlier is in doubt (no previous summary, or one known ``False``) and every folded
+    turn is known not to be external: the owner's own turns, and assistant turns the loop
+    recorded as ``internal``. Anything else is ``None``, unknown, which is not enveloped.
+    """
+    if previous_flag is True or any(t.origin == "external" for t in folded):
+        return True
+    previous_known = (not had_summary) or previous_flag is False
+    folded_known = all(t.role == "user" or t.origin == "internal" for t in folded)
+    return False if previous_known and folded_known else None
 
 
 @dataclass(frozen=True)

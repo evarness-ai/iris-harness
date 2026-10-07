@@ -152,6 +152,9 @@ _LATER_COLUMNS: dict[str, dict[str, str]] = {
     "user_facts": {"confirmed": "INTEGER NOT NULL DEFAULT 0"},
     "fact_proposals": {"seen_count": "INTEGER NOT NULL DEFAULT 1"},
     "conversations": {"turn_origin": "TEXT"},
+    # #145: whether a summary was built from at least one external-origin turn (1), only from
+    # turns known not to be (0), or unknown (NULL: every summary written before the column).
+    "conversation_summaries": {"has_external": "INTEGER"},
 }
 
 
@@ -995,8 +998,16 @@ class MemoryStore:
         return {str(r[0]): r[1] for r in rows}
 
     @with_locked_retry
-    def save_conversation_summary(self, session_id: str, summary: str) -> None:
-        """Upsert the compacted summary for a session."""
+    def save_conversation_summary(
+        self, session_id: str, summary: str, *, has_external: bool | None = None
+    ) -> None:
+        """Upsert the compacted summary for a session.
+
+        ``has_external`` is the summary's provenance flag (#145): True when it absorbed at
+        least one external-origin turn, False when every turn it was built from is known not to
+        be, None when that is not known. The flag travels with the row, so it survives cooling
+        (which keeps the summary and drops the turns) and goes with it when the row is deleted.
+        """
         if not summary:
             return
         self.ensure_schema()
@@ -1004,13 +1015,14 @@ class MemoryStore:
         with sqlite_conn(self.db_path) as conn:
             conn.execute(
                 """
-                INSERT INTO conversation_summaries(session_id, summary, updated_at)
-                VALUES(?, ?, ?)
+                INSERT INTO conversation_summaries(session_id, summary, updated_at, has_external)
+                VALUES(?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     summary=excluded.summary,
-                    updated_at=excluded.updated_at
+                    updated_at=excluded.updated_at,
+                    has_external=excluded.has_external
                 """,
-                (session_id, summary, now),
+                (session_id, summary, now, None if has_external is None else int(has_external)),
             )
             conn.commit()
 
@@ -1024,6 +1036,19 @@ class MemoryStore:
         with sqlite_conn(self.db_path) as conn:
             row = conn.execute("SELECT ts FROM conversations WHERE id = ?", (key,)).fetchone()
             return row[0] if row else None
+
+    def load_conversation_summary_flags(self, session_ids: Sequence[str]) -> dict[str, bool | None]:
+        """``has_external`` of each session's summary, one query: True / False / None
+        (unknown). A session with no summary row is left out of the result."""
+        ids = [s for s in dict.fromkeys(session_ids) if s]
+        if not ids:
+            return {}
+        self.ensure_schema()
+        marks = ", ".join("?" for _ in ids)
+        sql = f"SELECT session_id, has_external FROM conversation_summaries WHERE session_id IN ({marks})"  # noqa: S608 - placeholders only
+        with sqlite_conn(self.db_path) as conn:
+            rows = conn.execute(sql, ids).fetchall()
+        return {str(r[0]): (None if r[1] is None else bool(r[1])) for r in rows}
 
     def load_conversation_summary(self, session_id: str) -> str:
         """Return the stored summary for a session, or empty string if none."""

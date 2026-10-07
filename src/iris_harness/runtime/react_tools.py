@@ -117,6 +117,18 @@ def builtin_react_tools(
             _log_tool_failure("recall turn origins", exc)
             return {}
 
+    def _summary_origins(session_ids: list[str]) -> dict[str, str | None]:
+        """``"external"`` for each session whose summary absorbed third-party text (#145), one
+        query; anything else (known not, unknown, unreadable) is left out and is not enveloped."""
+        if memory_store is None or not session_ids:
+            return {}
+        try:
+            flags = memory_store.load_conversation_summary_flags(session_ids)
+        except Exception as exc:  # noqa: BLE001 — the scan still applies without a flag
+            _log_tool_failure("recall summary flags", exc)
+            return {}
+        return {sid: "external" for sid, flag in flags.items() if flag is True}
+
     def _semantic_turns(
         query: str, n: int, session_id: str
     ) -> list[tuple[str, str, str, str | None]]:
@@ -176,6 +188,12 @@ def builtin_react_tools(
                 if _recallable(sid) and sid not in seen:
                     seen.add(sid)
                     picked.append((sid, "summary", text, None))
+        # A summary that absorbed third-party text is marked, as an external-origin turn is.
+        marks = _summary_origins([sid for sid, role, _t, _o in picked if role == "summary"])
+        picked = [
+            (sid, role, text, marks.get(sid) if role == "summary" else origin)
+            for sid, role, text, origin in picked
+        ]
         # Stored text coming back into a prompt: assistant turns and summaries are scanned
         # before they are shortened, so a phrase cannot be cut in half to slip past (#145).
         scanned = reenter_many(
@@ -289,14 +307,17 @@ def builtin_react_tools(
                 if session_id:
                     summaries = [s for s in summaries if s[0] == session_id]
             if summaries:
+                marks = _summary_origins([sid for sid, _text in summaries])
                 shown = reenter_many(
                     [("summary", text) for _sid, text in summaries],
                     reader="recall_conversation",
                     origin="summary",
                     chronological=False,
+                    origins=[marks.get(sid) for sid, _text in summaries],
+                    limit=400,
                 )
                 lines = "\n".join(
-                    f"- [{sid}] summary: {' '.join(r.text.split())[:400]}"
+                    f"- [{sid}] summary: {one_line(r, 400)}"
                     for (sid, _text), r in zip(summaries, shown, strict=True)
                 )
                 return (

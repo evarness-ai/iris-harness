@@ -80,7 +80,9 @@ APPROVAL_HOOK = "approval_queue"
 # The plugin the suite mounts to call a provided capability as a consumer would.
 CONSUMER = "conformance-consumer"
 
-ConformanceCheck = Literal["mount", "coverage", "audit", "caller", "approval", "example", "egress"]
+ConformanceCheck = Literal[
+    "mount", "coverage", "audit", "caller", "approval", "example", "egress", "content"
+]
 # The rows the governed HTTP client writes (issue #103).
 PRE_EGRESS = "pre_egress"
 
@@ -91,7 +93,9 @@ class Violation:
 
     ``check`` is the rule broken (``mount``, ``coverage``, ``audit``, ``caller``,
     ``approval``, or ``example`` -- the example call itself failed, so nothing was
-    proven; ``egress`` -- the call was refused a host the manifest does not declare),
+    proven; ``egress`` -- the call was refused a host the manifest does not declare;
+    ``content`` -- a tool declared ``content: external`` whose result a code caller gets
+    without ``external`` set or without the envelope from ``for_model()``),
     ``subject`` the tool or ``capability:<name>.<method>`` it is about, and
     ``detail`` what was seen.
     """
@@ -256,6 +260,27 @@ def _expects_hold(h: Harness, name: str) -> bool:
     return info.effect == "destructive" or (info.effect == "write" and info.confirm != "never")
 
 
+def _declares_external(h: Harness, name: str) -> bool:
+    """Whether the tool's manifest says ``content: external`` (read off the live registry)."""
+    tool = next((t for t in h._runtime.plugin_registry.tools() if t.name == name), None)
+    return tool is not None and tool.content == "external"
+
+
+def _content_violations(h: Harness, name: str, result: Any) -> list[Violation]:
+    """An external tool's result must say so, and ``for_model()`` must wrap it (issue #147).
+
+    The floor leaves a code caller's text unwrapped on purpose; ``ToolResult.for_model()`` is
+    how a plugin hands it to a model, so the contract is checked here rather than trusted.
+    """
+    if not _declares_external(h, name):
+        return []
+    if not result.external:
+        return [Violation("content", name, "declared content: external, but the result says not")]
+    if not result.for_model().startswith("<external_content "):
+        return [Violation("content", name, "for_model() did not wrap the result in the envelope")]
+    return []
+
+
 def _tool_call(
     h: Harness, caller: str, name: str, args: Mapping[str, Any], *, approve: bool
 ) -> list[Violation]:
@@ -273,6 +298,8 @@ def _tool_call(
     if not result.held:
         if not result.ok or _failures(h, caller) > failures:
             out.append(Violation("example", name, f"the example call failed: {result.text}"))
+            return out
+        out += _content_violations(h, name, result)
         return out
     if not expects_hold:
         out.append(

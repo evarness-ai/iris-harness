@@ -24,12 +24,10 @@ import contextvars
 import logging
 
 from iris_harness.kernel.governance.external_content import (
-    ENVELOPE_TAG,
     floor_enabled,
     redact_text,
     scan,
-    unwrap,
-    wrap,
+    wrap_scanned,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,8 +43,7 @@ def wrap_external_content(text: str, *, source: str, tool: str | None = None) ->
     here (an envelope's own claimed source never survives). A literal closing tag inside
     ``text`` is escaped, so the text cannot end the envelope early. No model, no network.
     """
-    bare = unwrap(text) if text.lstrip().startswith(f"<{ENVELOPE_TAG} ") else text
-    return wrap(scan(bare).text, source=source, tool=tool or source)
+    return wrap_scanned(text, source=source, tool=tool or source)
 
 
 #: Ledger rows one scope (a run, or a session when nobody opens one) may write through

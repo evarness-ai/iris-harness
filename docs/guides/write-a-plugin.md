@@ -66,13 +66,26 @@ instruction-like text redacted (the always-on floor; the optional model guard ad
 classifier). See [governance](../concepts/governance.md#the-external-content-floor).
 
 Code that calls an `external` tool through `api.tools` gets the redaction but not the
-envelope (it may show the text to the owner). If you put that text into a prompt of your own,
-mark it with the same implementation the kernel uses:
+envelope (it may show the text to the owner). `result.text` is the owner-facing form. When
+you put the result into a prompt of your own, use `result.for_model()`: it wraps the text in
+the envelope when the tool is `external` (`result.external` says so) and returns it unchanged
+when it is not, so you do not need to know which kind of tool you called:
+
+```python
+result = api.tools.call("read_email", {"message_id": mid})
+prompt = f"Summarise:\n{result.for_model()}"
+```
+
+The conformance suite (`iris_harness.testing`) checks, for every `external` tool you give an
+example call, that its result says it is external and that `for_model()` wraps it. Nothing
+checks what you do with `result.text`, so hand a model `for_model()`, not `text`. For text
+that did not come from a tool call (a page or mailbox you read yourself), wrap it with the
+same implementation the kernel uses:
 
 ```python
 from iris_harness.sdk.content import wrap_external_content
 
-prompt = f"Summarise:\n{wrap_external_content(result.text, source='my_plugin', tool='fetch')}"
+prompt = f"Summarise:\n{wrap_external_content(page_text, source='my_plugin', tool='fetch')}"
 ```
 
 For text you show the owner, return to a channel or log (not hand to a model), use

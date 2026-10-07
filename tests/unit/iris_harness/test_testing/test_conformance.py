@@ -628,3 +628,56 @@ def test_a_held_capability_call_with_no_recorded_hold_is_reported(
     violations = check_conformance(_pins_plugin([]), capabilities=PIN_EXAMPLES)
     assert [(v.check, v.subject) for v in violations] == [("approval", "capability:test.pins.pin")]
     assert "no pre_tool_use row records the hold" in violations[0].detail
+
+
+# ------------------------------------------------------------- an external tool's result (#147)
+EXTERNAL_MANIFEST: dict[str, Any] = {
+    "name": "inbox",
+    "provides": ["tool"],
+    "tools": {"read_mail": {"effect": "read", "content": "external"}},
+}
+
+
+def _external_plugin() -> Any:
+    def read_mail(args: dict[str, Any]) -> str:
+        return "Sam: lunch?"
+
+    def setup(api: PluginAPI) -> None:
+        api.register_tool("read_mail", "Read the mail.", read_mail)
+
+    return plugin(setup, manifest=EXTERNAL_MANIFEST)
+
+
+def test_a_conforming_external_tool_has_no_content_violation() -> None:
+    assert check_conformance(_external_plugin(), tools={"read_mail": {}}) == []
+
+
+def test_an_external_tool_whose_result_does_not_say_so_is_a_content_violation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import dataclasses
+
+    from iris_harness.runtime import tool_service
+
+    real = tool_service.ToolService._run
+
+    def forgetful(self: Any, *a: Any, **k: Any) -> ToolResult:
+        return dataclasses.replace(real(self, *a, **k), external=False)
+
+    monkeypatch.setattr(tool_service.ToolService, "_run", forgetful)
+
+    violations = check_conformance(_external_plugin(), tools={"read_mail": {}})
+
+    assert [(v.check, v.subject) for v in violations] == [("content", "read_mail")]
+    assert "result says not" in violations[0].detail
+
+
+def test_an_external_tool_whose_for_model_does_not_wrap_is_a_content_violation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ToolResult, "for_model", lambda self: self.text)
+
+    violations = check_conformance(_external_plugin(), tools={"read_mail": {}})
+
+    assert [(v.check, v.subject) for v in violations] == [("content", "read_mail")]
+    assert "did not wrap" in violations[0].detail

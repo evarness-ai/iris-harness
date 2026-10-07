@@ -140,4 +140,5 @@ def test_the_conformance_check_names_are_frozen() -> None:
         "approval",
         "example",
         "egress",
+        "content",
     }

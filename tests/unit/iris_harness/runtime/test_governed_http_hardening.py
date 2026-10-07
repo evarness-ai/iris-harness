@@ -596,6 +596,58 @@ def test_a_failed_pre_egress_ledger_write_stops_the_request(
         assert sent == []
 
 
+class _GoesDownAtThePostRow(AuditLog):
+    """Writes every row until the first ``post_egress`` one, which fails; then the ledger is down."""
+
+    down = False
+
+    def record(self, **kwargs: Any) -> int | None:
+        if self.down or kwargs.get("hook_point") == "post_egress":
+            type(self).down = True
+            raise OSError("disk full")
+        return super().record(**kwargs)
+
+
+def test_a_failed_post_egress_write_returns_the_response_counts_it_and_refuses_the_next_request(
+    tmp_path: Path, server: _Server, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The request already happened: the response is returned (an error would report a POST that
+    took effect as failed, and a retry would repeat it), the loss is counted and logged with the
+    call id, and the same ledger being down refuses every later request (issue #175)."""
+    from iris_harness.kernel.governance.plugin_egress import unrecorded_outcomes
+
+    _GoesDownAtThePostRow.down = False
+    log = _GoesDownAtThePostRow(db_path=tmp_path / "down.db")
+    before = unrecorded_outcomes()
+    with (
+        _bound(build_default_kernel(audit_log=log), server.port),
+        fake_http({f"http://{NAME}:{server.port}/ok": {"text": "done"}}) as sent,
+    ):
+        reply = GovernedHttp("p").post(f"http://{NAME}:{server.port}/ok", json={"a": 1})
+        assert reply.status_code == 200 and reply.text == "done"
+        assert len(sent) == 1
+        assert unrecorded_outcomes() == before + 1
+        lost = [r for r in caplog.records if "egress outcome not recorded" in r.getMessage()]
+        assert len(lost) == 1 and lost[0].levelname == "ERROR"
+        pre = [r for r in log.query() if r.hook_point == "pre_egress"]
+        assert pre and pre[0].call_id and pre[0].call_id in lost[0].getMessage()
+        assert NAME in lost[0].getMessage()
+        with pytest.raises(EgressDenied, match="ledger write"):
+            GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok")
+        assert len(sent) == 1  # the second request was never sent
+    _GoesDownAtThePostRow.down = False
+
+
+def test_a_healthy_ledger_counts_nothing(
+    wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None
+) -> None:
+    from iris_harness.kernel.governance.plugin_egress import unrecorded_outcomes
+
+    before = unrecorded_outcomes()
+    assert GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok").status_code == 200
+    assert unrecorded_outcomes() == before
+
+
 # -- S1, S2: the client acts for the running tool's plugin, and only inside a call ------
 
 

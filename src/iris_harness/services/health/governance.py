@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from iris_harness.kernel.governance.plugin_egress import unrecorded_outcomes
 from iris_harness.kernel.governance.threat.availability import (
     PROMPT_GUARD_FLAG,
     model_guard_state,
@@ -66,4 +67,40 @@ def model_guard_provider(external_tools: ExternalTools) -> Callable[[], list[Hea
     return provider
 
 
-__all__ = ["TARGET", "ExternalTools", "model_guard_provider"]
+UNRECORDED_TARGET = "Egress ledger"
+
+
+def unrecorded_egress_provider() -> list[HealthCheck]:
+    """A ``register_check_provider`` callable: governed requests that completed with no
+    ``post_egress`` row on the ledger (issue #175). Silent while the count is zero.
+
+    The request had already happened when its outcome row failed to write, so the response was
+    returned; the ledger is the thing that is broken, and the next request is refused until it
+    is back (a request is sent only with its ``pre_egress`` row written). The count is this
+    process's: it clears on restart, the log line names each call.
+    """
+    lost = unrecorded_outcomes()
+    if not lost:
+        return []
+    return [
+        HealthCheck(
+            target=UNRECORDED_TARGET,
+            kind=CheckKind.GOVERNANCE,
+            state=HealthState.RED,
+            detail=(
+                f"{lost} governed request(s) completed but their outcome could not be written "
+                "to the audit ledger. Plugin requests are refused while the ledger cannot be "
+                "written. The log names each call."
+            ),
+            action="check the audit database (disk space, permissions, IRIS_GOVERNANCE_AUDIT_DB_PATH)",
+        )
+    ]
+
+
+__all__ = [
+    "TARGET",
+    "UNRECORDED_TARGET",
+    "ExternalTools",
+    "model_guard_provider",
+    "unrecorded_egress_provider",
+]

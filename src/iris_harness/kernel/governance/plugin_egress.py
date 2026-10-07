@@ -17,6 +17,7 @@ client. An in-process plugin can still open its own socket (docs/architecture/pl
 from __future__ import annotations
 
 import ipaddress
+import logging
 import re
 import threading
 from collections.abc import Callable, Iterator, Mapping
@@ -26,6 +27,8 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from iris_harness.foundation.process_state import track_globals
+
+logger = logging.getLogger(__name__)
 
 #: The data classes a host may be declared to receive. Never ``secret``: a secret does not
 #: leave the owner's machines to a plugin's host (``config/governance/egress.yaml``).
@@ -272,6 +275,8 @@ def _rank(data_class: str) -> int:
 
 _lock = threading.Lock()
 _policy: PluginEgressPolicy | None = None
+# Requests that completed whose ``post_egress`` ledger row could not be written (issue #175).
+_unrecorded = 0
 
 
 def register_egress_policy(policy: PluginEgressPolicy | None) -> None:
@@ -345,6 +350,32 @@ def egress_scope(scope: EgressScope) -> Iterator[None]:
         _scope.reset(token)
 
 
+def note_unrecorded_outcome(host: str, call_id: str | None) -> None:
+    """Count a governed request that completed but whose outcome row never reached the ledger.
+
+    A failed PRE row means the request is not sent; by the time the POST row is written the
+    request has happened and the response is in hand, so the response is still returned (an
+    error here would report a POST that took effect as failed, and a retry would repeat it).
+    The loss is made visible instead: this counter, an error in the log naming the call, and
+    a System Health row. The same ledger being down fails the next PRE write, so every later
+    request is refused; at most the outcomes in flight when it went down are lost.
+    """
+    global _unrecorded
+    with _lock:
+        _unrecorded += 1
+    logger.error(
+        "egress outcome not recorded: call %s to %s completed but its post_egress ledger row "
+        "could not be written",
+        call_id or "(no call id)",
+        host or "(unknown host)",
+    )
+
+
+def unrecorded_outcomes() -> int:
+    """How many governed requests have completed with no ``post_egress`` row, this process."""
+    return _unrecorded
+
+
 def current_egress_scope() -> EgressScope | None:
     """The governed call in progress on this thread/task, or ``None`` outside one."""
     return _scope.get()
@@ -361,6 +392,8 @@ __all__ = [
     "PluginEgress",
     "PluginEgressPolicy",
     "current_egress_scope",
+    "note_unrecorded_outcome",
+    "unrecorded_outcomes",
     "egress_policy",
     "egress_scope",
     "INTERNAL_NAME_SUFFIXES",
@@ -374,4 +407,4 @@ __all__ = [
 ]
 
 # Process-wide state: put back when a harness run ends (foundation/process_state.py).
-track_globals(__name__, "_policy", "_kernel_getter")
+track_globals(__name__, "_policy", "_kernel_getter", "_unrecorded")

@@ -45,6 +45,7 @@ from iris_harness.kernel.governance.hooks.types import (
     HookDecision,
     HookPoint,
 )
+from iris_harness.kernel.governance.plugin_egress import note_unrecorded_outcome
 
 logger = logging.getLogger(__name__)
 
@@ -257,6 +258,12 @@ class GovernanceKernel:
                 ),
                 current_ctx,
             )
+        if not audited and hook_point is HookPoint.POST_EGRESS:
+            # The request has already happened and its response is in hand, so it is not
+            # failed after the fact; the lost row is counted and logged (issue #175).
+            egress = current_ctx.payload.get("egress")
+            host = str(egress.get("host", "")) if isinstance(egress, dict) else ""
+            note_unrecorded_outcome(host, call_id_of(current_ctx.metadata))
         return decision, current_ctx
 
     def _audit(

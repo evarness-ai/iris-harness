@@ -119,6 +119,7 @@ iris_harness.sdk.logging:egress_logger
 iris_harness.sdk.logging:ingress_logger
 iris_harness.sdk.logging:log_egress
 iris_harness.sdk.logging:log_ingress
+iris_harness.sdk.logging:log_safe
 iris_harness.sdk.logging:log_tool_run
 iris_harness.sdk.memory:WIKI_INGEST_REQUESTED
 iris_harness.sdk.memory:WikiEngine

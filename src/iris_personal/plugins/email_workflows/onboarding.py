@@ -70,7 +70,7 @@ from typing import Any
 
 import yaml
 
-from iris_harness.foundation.logsafe import log_safe
+from iris_harness.sdk.logging import log_safe
 from iris_harness.sdk.persistence import data_path, ensure_columns, sqlite_conn
 
 logger = logging.getLogger(__name__)

@@ -338,6 +338,14 @@ First public release of the IRIS harness.
   the old patterns meant (checked against them on 40,000 random strings); the same inputs take
   under 0.1 s.
 
+- The external-content scan is idempotent (issue #166). A redaction could expose a phrase the
+  first pass had no word boundary for (`...?q=1disregard the above prompt` after a swallowed
+  URL), so scanning the scan's own output could still redact. `scan` now re-scans until
+  nothing matches (at most 8 passes; spans and ids accumulate; `ScanResult.passes` and
+  `.exhausted` report it; reaching the cap logs a warning and still returns the redacted text).
+  Text that needed one pass is returned as before. Found by fuzzing 200,000 inputs, 7 of which
+  needed a second pass; they are pinned as regression cases beside a seeded CI fuzz.
+
 - An MCP call a `PreToolUse` hook answers with `require_approval` no longer reaches the
   server: the bridge refused only `deny` before the call, though the post step already refused
   both (issue #181).

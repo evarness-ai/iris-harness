@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The sandbox egress proxy (`egress_proxy.py`) now listens on `127.0.0.1` by default, not `0.0.0.0`. The sidecar the harness starts is unaffected: it is started with `IRIS_EGRESS_BIND=0.0.0.0` because the sandbox reaches it from a sibling container. Anyone who runs `egress_proxy.py` by hand or from their own compose file and relied on it listening on every interface must set `IRIS_EGRESS_BIND=0.0.0.0` (or a specific address). A value that is not an IP address is refused, and a non-loopback bind logs one warning.
+
 ### Added
 
 - Audit compaction now keeps what the ledger knows and accounts for what it moved (issue #134,

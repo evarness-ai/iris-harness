@@ -167,6 +167,10 @@ def ensure_egress_infra(allowlist: tuple[str, ...]) -> None:
             f"IRIS_EGRESS_ALLOWLIST={','.join(allowlist)}",
             "-e",
             f"IRIS_EGRESS_PORT={PROXY_PORT}",
+            # The sandbox is a sibling container: it reaches the proxy over the internal
+            # network, so the sidecar must listen beyond its own loopback.
+            "-e",
+            "IRIS_EGRESS_BIND=0.0.0.0",
             PROXY_IMAGE,
             "python",
             "/egress_proxy.py",

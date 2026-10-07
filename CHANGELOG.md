@@ -329,6 +329,15 @@ First public release of the IRIS harness.
   (`IRIS_GOVERNANCE_ENABLED`) the lane's tools still run ungoverned, as the operator's explicit
   opt-out; one startup warning says so.
 
+- The governed HTTP client's name lookup is inside the request's deadline (issue #173).
+  `getaddrinfo` has no timeout, so a resolver that hangs held the request before the deadline
+  even started. The lookup now runs on a daemon thread and the request waits for it at most
+  what is left of the deadline, then fails as the usual deadline abort. A thread stuck in the C
+  resolver cannot be cancelled: it ends when the resolver returns, never keeps the process
+  alive, and at most 8 can be stuck at once (a further lookup fails closed at once, "name
+  lookups are backed up"). The decompression half of the issue was already done in #171
+  (`_decoded` decodes at most 64 KiB at a time).
+
 - The email judge's user message is no longer wrapped in the untrusted-content envelope
   (undoing that part of the issue #148 change). Measured on a real mailbox, 100 emails judged
   by the local `email_judge` model before and after the wrapping: about 5 stably changed bucket

@@ -40,7 +40,7 @@ or otherwise internal, and connects to the address it checked. Names such as ``l
 What this does not do: it cannot stop a plugin from opening its own socket. It governs the
 calls made through it (docs/architecture/plugin-egress.md). A request whose pre-egress ledger
 row cannot be written is not sent; but a plugin that never goes through the client leaves no
-row at all. The name lookup itself has no timeout.
+row at all.
 """
 
 from __future__ import annotations

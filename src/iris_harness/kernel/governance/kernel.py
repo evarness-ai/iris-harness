@@ -27,11 +27,16 @@ from collections import defaultdict
 from typing import Any
 
 from iris_harness.kernel.governance.audit import AuditLog
+from iris_harness.kernel.governance.call_context import is_run_resumed, lineage_of
 from iris_harness.kernel.governance.hooks.tool_payload import (
+    ATTEMPT,
     CALL_ID,
     HELD_CALL_ID,
     PARENT_CALL_ID,
+    REPLAY_OF,
+    RESUMED_FROM_RUN,
     SIDE_EFFECT_ID,
+    TURN_ID,
     call_id_of,
 )
 from iris_harness.kernel.governance.hooks.types import (
@@ -294,10 +299,31 @@ class GovernanceKernel:
             # An egress request's row names the governed call it was made inside, the same
             # way: from the metadata the governed client stamped, never from the payload.
             parent = ctx.metadata.get(PARENT_CALL_ID)
+            # Where a call sits (#134 stage 2): the call it ran inside, which attempt it is,
+            # and the held attempt it replays. Read from the harness's own record of the call
+            # (``call_context``), keyed by the row's own call id, so every row of the call
+            # says the same and a forged key in the payload or the arguments is never read.
+            lineage = lineage_of(call_id)
+            if not (isinstance(parent, str) and parent) and lineage is not None:
+                parent = lineage.parent_call_id
             if isinstance(parent, str) and parent:
                 payload[PARENT_CALL_ID] = parent
             else:
                 payload.pop(PARENT_CALL_ID, None)
+            if lineage is not None:
+                payload[ATTEMPT] = lineage.attempt
+            else:
+                payload.pop(ATTEMPT, None)
+            if lineage is not None and lineage.replay_of:
+                payload[REPLAY_OF] = lineage.replay_of
+            else:
+                payload.pop(REPLAY_OF, None)
+            # A row of a run that was halted and re-entered says so (the run id survives a
+            # halt, so this is a marker on the resumed run's rows, not a new id).
+            if ctx.run_id and is_run_resumed(ctx.run_id):
+                payload[RESUMED_FROM_RUN] = ctx.run_id
+            else:
+                payload.pop(RESUMED_FROM_RUN, None)
             trace_id = _current_trace_id_hex()
             if trace_id is not None:
                 payload.setdefault("trace_id", trace_id)
@@ -305,11 +331,21 @@ class GovernanceKernel:
             # re-entered around agent execution) so audit rows correlate to a chat
             # turn — every pipeline stage stamps its own run_id, so run_id alone
             # cannot tie a hook back to a session. Mirrors the trace_id stamp above.
-            from iris_harness.foundation.observability.session_log import current_session_id
+            from iris_harness.foundation.observability.session_log import (
+                current_session_id,
+                current_turn_id,
+            )
 
             session_id = current_session_id()
             if session_id is not None:
                 payload.setdefault("session_id", session_id)
+            # The turn the row was written in, from the turn scope (never a payload key):
+            # absent outside a turn (a heartbeat, the HTTP MCP route), not invented.
+            turn_id = current_turn_id()
+            if turn_id is not None:
+                payload[TURN_ID] = turn_id
+            else:
+                payload.pop(TURN_ID, None)
             self._audit_log.record(
                 run_id=ctx.run_id,
                 step_id=ctx.step_id,

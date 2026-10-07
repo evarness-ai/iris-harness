@@ -104,3 +104,34 @@ def test_the_approved_code_call_is_a_new_call_that_names_the_held_one(world: _Wo
     run_id = approved[0][0].run_id
     keys = [r.side_effect_id for r in world.ledger.list_by_run(run_id)]
     assert keys == [f"{run_id}:0:{approved_id}"]
+
+
+def test_a_tool_call_a_tool_makes_through_the_service_names_its_parent(world: _World) -> None:
+    """``api.tools.call`` / ``core:<workflow>`` / an MCP client's call all pass
+    ``ToolService``: one made from inside another tool's body is its child (#134 stage 2),
+    and keeps its own run (D4)."""
+    from iris_harness.agent.agentic_core import ToolSpec
+
+    inner_caller = world.service.for_caller("plugin:inner")
+    world.tools.append(world._tool("look_up", "read", "never"))
+    world.tools.append(
+        ToolSpec(
+            "outer",
+            "outer tool",
+            lambda args: inner_caller.call("look_up", {"v": 1}).text,
+            effect="read",
+            confirm="never",
+        )
+    )
+
+    world.service.for_caller("plugin:p").call("outer", {})
+
+    by_tool: dict[str, list[tuple[Any, dict[str, Any]]]] = {}
+    for row, payload in _rows(world):
+        by_tool.setdefault(payload["tool_name"], []).append((row, payload))
+    (outer_id,) = {p["call_id"] for _, p in by_tool["outer"]}
+    assert all("parent_call_id" not in p for _, p in by_tool["outer"])
+    assert {p["parent_call_id"] for _, p in by_tool["look_up"]} == {outer_id}
+    assert {r.run_id for r, _ in by_tool["look_up"]}.isdisjoint(
+        {r.run_id for r, _ in by_tool["outer"]}
+    )

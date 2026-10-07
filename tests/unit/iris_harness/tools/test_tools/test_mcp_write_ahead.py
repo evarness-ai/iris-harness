@@ -301,3 +301,39 @@ def test_a_pre_tool_hook_that_requires_approval_never_reaches_the_server(
         )
 
     assert reached == []
+
+
+def test_a_bridged_call_inside_a_governed_call_names_it_as_its_parent(tmp_path: Path) -> None:
+    """#134 stage 2: the bridge reads the current governed call (the #179 declared path and
+    the #190 undeclared default alike); the HTTP route runs inside none, so no parent."""
+    import json
+
+    from iris_harness.kernel.governance.audit.log import AuditLog as Audit
+    from iris_harness.kernel.governance.call_context import call_scope
+
+    rig = Rig(tmp_path, {"list_files": "read"})
+    with call_scope("PARENT-CALL-ID"):
+        rig.call("list_files")  # declared read
+        with pytest.raises(PermissionError):
+            rig.call("read_file")  # undeclared: refused, the PRE row still names the parent
+    rig.call("list_files")  # outside any governed call
+    destructive = Rig(tmp_path / "two", {"delete_file": "destructive"})
+    approval_id = destructive.approval()
+    with call_scope("PARENT-CALL-ID"):
+        destructive.call(approved_by=approval_id)  # declared destructive, approved
+
+    def payloads(root: Path) -> list[dict[str, Any]]:
+        return [
+            json.loads(r.payload_json)
+            for r in Audit(db_path=root / "audit.db").query()
+            if r.hook_point in ("pre_tool_use", "post_tool_use")
+        ]
+
+    first = payloads(tmp_path)
+    inside = [p for p in first if p.get("parent_call_id") == "PARENT-CALL-ID"]
+    outside = [p for p in first if "parent_call_id" not in p]
+    assert inside and outside and len(inside) + len(outside) == len(first)
+    assert {p["tool_name"] for p in inside} >= {"mcp/files/list_files", "mcp/files/read_file"}
+    assert all(p["attempt"] == 1 for p in first)
+    second = payloads(tmp_path / "two")
+    assert second and all(p["parent_call_id"] == "PARENT-CALL-ID" for p in second)

@@ -1694,6 +1694,7 @@ class AgenticCore:
                     asked_user=_run_asked_user(trace.steps, step.action),
                     effects=trace.effects_executed,
                     halts=halts,
+                    tainted=self._run_tainted(trace.steps),
                 )
                 # What POST_TOOL_USE handed on (a withheld or redacted result, never the
                 # raw one it refused), and the label the result earned: rebound before the
@@ -1998,6 +1999,9 @@ class AgenticCore:
                         effects=effects,
                         approved_by=approval_id,
                         held_call_id=held_call_id,
+                        # The run keeps its taint across the pause: the approved call is
+                        # verified on the same per-call path it was held on.
+                        tainted=self._run_tainted(seed.steps),
                     )
                     results.append(f"{tool}: {executed.observation}")
                     # The label the result earned carries into the resumed loop as a
@@ -2112,6 +2116,22 @@ class AgenticCore:
                     return usable
         return ""
 
+    def _run_tainted(self, steps: Sequence[ReactStep]) -> bool:
+        """Whether this run has already read outside text (issue #149).
+
+        True once a step ran a tool declared ``content: external``. Read off the run's own
+        recorded steps rather than kept as a flag, so a run resumed after an approval keeps
+        it, and the next user message (a new run, with no steps) starts clean. The step
+        being executed is in ``steps`` with no observation yet, so it does not taint itself.
+        """
+        for step in steps:
+            if not step.action or step.observation is None:
+                continue
+            tool = self._tool_index.get(step.action) or self._reserve_index.get(step.action)
+            if tool is not None and tool.content == "external":
+                return True
+        return False
+
     def _execute_tool(
         self,
         name: str,
@@ -2125,6 +2145,7 @@ class AgenticCore:
         approved_by: str | None = None,
         held_call_id: str | None = None,
         halts: list[HookDecision] | None = None,
+        tainted: bool = False,
     ) -> _ToolStep:
         """Resolve the name the model wrote and run the tool through the governed runner.
 
@@ -2177,6 +2198,7 @@ class AgenticCore:
                 approved_by=approved_by,
                 held_call_id=held_call_id,
                 query=self._current_query,
+                tainted=tainted,
             ),
             effects=effects,
         )
@@ -2756,6 +2778,7 @@ class AgenticCore:
                     asked_user=_run_asked_user(steps, step.action),
                     effects=effects_executed,
                     halts=halts,
+                    tainted=self._run_tainted(steps),
                 )
                 # Same as the sync loop — a behaviour the two paths must share, or the
                 # streaming surface hands the model a result governance withheld, or

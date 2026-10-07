@@ -55,6 +55,18 @@ First public release of the IRIS harness.
   of the core's own tools) is reserved for the builtin: any other plugin of that name fails to
   load.
 
+- A model-called memory write after the run read outside text needs the owner's approval
+  (issue #149). A run is tainted once a step ran a tool declared `content: external`; in a
+  tainted run, `memory_correct`, `memory_forget` and `memory_restore` (the list is
+  `config/governance/taint-policy.yaml`, `approval_when_tainted`) are held on the existing
+  approval card, which says why. The loop derives the taint from the run's recorded steps, so a
+  run resumed after an approval keeps it; an ordinary correction in a run that read nothing
+  from outside is unchanged, and the next message starts clean. New defaulted
+  `ToolCall.tainted`. A missing or malformed file falls back to the three memory writes. Taint
+  comes only from a tool step declared external in the run: external text that reaches the prompt
+  with no tool step (recalled memory, injected retrieval context, stored text from earlier
+  turns) does not taint it.
+
 - `search_docs`: the core can search its own shipped documentation (architecture, concepts,
   guides, reference, usage-guides) by keyword at section level, as an internal read tool of
   the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot

@@ -89,6 +89,7 @@ from iris_harness.kernel.governance.hooks.tool_payload import (
 from iris_harness.kernel.governance.plugin_egress import EgressScope, egress_scope
 from iris_harness.kernel.governance.plugins.destructive_approval import pinned_by_declaration
 from iris_harness.kernel.governance.plugins.output_classifier import more_restrictive
+from iris_harness.kernel.governance.taint_policy import TAINT_REASON, taint_gated_tools
 from iris_harness.kernel.governance.turn_label import lift_turn_label
 
 if TYPE_CHECKING:
@@ -150,7 +151,17 @@ def approved_per_call_for(tool: ToolSpec, call: ToolCall) -> bool:
     """``approved_per_call`` for this caller. A deferred (code) caller has no chat turn in
     which to ask, so its ``confirm: once`` write waits for a pinned approval too
     (plugin-capabilities decision 1); the loop's confirm-once rule is unchanged."""
-    return approved_per_call(tool) or (call.deferred and tool.confirm == "once")
+    return (
+        approved_per_call(tool)
+        or (call.deferred and tool.confirm == "once")
+        or taint_applies(tool, call)
+    )
+
+
+def taint_applies(tool: ToolSpec, call: ToolCall) -> bool:
+    """Whether this call waits for approval only because its run read outside text: the run
+    is tainted and the tool is on the owner's list (``taint-policy.yaml``)."""
+    return call.tainted and tool.name in taint_gated_tools()
 
 
 def refused(tool: ToolSpec) -> str:
@@ -197,6 +208,11 @@ class ToolCall:
     # harness from the approval row (``ApprovalRow.call_id``). The approved attempt is a new
     # call with its own id; this is how both join (#134). Never the caller's to set.
     held_call_id: str | None = None
+    # The run has already read outside text (a result of a ``content: external`` tool): the
+    # loop computes it from the run's recorded steps and stamps it, never the model or a
+    # plugin. A tool named in ``taint-policy.yaml`` is then held for the owner's approval
+    # (issue #149).
+    tainted: bool = False
 
 
 @dataclass(frozen=True)
@@ -377,7 +393,7 @@ class GovernedToolRunner:
         # A destructive call about to ask for approval carries its card (ADR-0118 step
         # 4); a pinned call being executed on an approved resume does not need one.
         approval_card = (
-            approval_card_for(tool, args, query=call.query)
+            approval_card_for(tool, args, query=call.query, tainted=taint_applies(tool, call))
             if per_call and not call.approved_by and can_queue
             else None
         )
@@ -1191,7 +1207,9 @@ def invalid_destructive_args(tool: ToolSpec, args: dict[str, Any]) -> str | None
     return text or None
 
 
-def approval_card_for(tool: ToolSpec, args: dict[str, Any], *, query: str | None) -> dict[str, Any]:
+def approval_card_for(
+    tool: ToolSpec, args: dict[str, Any], *, query: str | None, tainted: bool = False
+) -> dict[str, Any]:
     """What the owner will see for this call: the plugin's ``describe`` (title and one line
     per item), the declared undo, and their own request (ADR-0118 step 4).
 
@@ -1220,6 +1238,8 @@ def approval_card_for(tool: ToolSpec, args: dict[str, Any], *, query: str | None
         "asked": query,
         # What the card warns of: data loss, or a write acting for the owner.
         "effect": tool.effect,
+        # Why it asks when the tool does not always ask: the run read outside text.
+        "reason": TAINT_REASON if tainted else None,
     }
 
 
@@ -1236,4 +1256,5 @@ __all__ = [
     "governance_block_message",
     "invalid_destructive_args",
     "refused",
+    "taint_applies",
 ]

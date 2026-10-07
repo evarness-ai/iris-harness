@@ -104,10 +104,15 @@ def build_card(item: ApprovalItem, raw: Any) -> ApprovalCard:
     effect = "write" if d.get("effect") == "write" else "destructive"
     title = card_title(item.tool, raw)
     lines = tuple(str(line) for line in (d.get("lines") or ()) if str(line).strip())
+    lines = lines or (item.render(),)
+    # Why a tool that does not always ask is asking now (the run read outside text, #149).
+    reason = str(d.get("reason") or "").strip()
+    if reason:
+        lines = (*lines, reason)
     days = d.get("undo_window_days")
     return ApprovalCard(
         title=title,
-        lines=lines or (item.render(),),
+        lines=lines,
         undo_tool=str(d["undo_tool"]) if d.get("undo_tool") else None,
         undo_window_days=int(days) if isinstance(days, int) and days > 0 else None,
         asked=str(d["asked"]).strip() if d.get("asked") else None,

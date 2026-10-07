@@ -1,0 +1,18 @@
+# Tools that need the owner's approval for a call made AFTER the run read outside text
+# (issue #149).
+#
+# Outside text is the result of any tool that declares `content: external` (a web page, an
+# email, a document, an MCP server's answer). Redaction of instruction-like phrases is
+# phrase-level, so a model that read such text can still be steered toward a harmful action.
+# A write to memory is the realistic sink: a poisoned fact outlives the turn. So in a run that
+# has an external observation, a call of a tool listed here is held for the owner's
+# approval on the same card the other approved-per-call tools use, and says why. The same
+# call in a run that read nothing from outside is unchanged. The next user message starts a
+# clean run.
+#
+# Names only, no wildcards. A file that is missing, unreadable or malformed falls back to
+# the three tools below; removing a name here is the owner's decision.
+approval_when_tainted:
+  - memory_correct
+  - memory_forget
+  - memory_restore

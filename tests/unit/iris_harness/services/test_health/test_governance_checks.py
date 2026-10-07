@@ -210,3 +210,55 @@ def test_mounted_external_tools_lists_core_plugin_skill_and_capability_sources(
     assert ("notes", "note") not in found  # an internal plugin tool
     assert any(owner.startswith("skill:") for owner, _ in found)  # a skill tool
     assert ("weather", catalogue.capability_tool_name("weather.forecast", "forecast")) in found
+
+
+# -- issue #175: a governed request that completed with no outcome row on the ledger ----------
+
+
+@pytest.fixture()
+def _no_unrecorded(monkeypatch: pytest.MonkeyPatch) -> None:
+    from iris_harness.kernel.governance import plugin_egress
+
+    monkeypatch.setattr(plugin_egress, "_unrecorded", 0)
+
+
+@pytest.mark.usefixtures("_no_unrecorded")
+def test_unrecorded_egress_outcomes_are_a_red_governance_row_and_silent_at_zero() -> None:
+    from iris_harness.kernel.governance import plugin_egress
+    from iris_harness.services.health.governance import (
+        UNRECORDED_TARGET,
+        unrecorded_egress_provider,
+    )
+
+    assert unrecorded_egress_provider() == []
+    plugin_egress.note_unrecorded_outcome("api.example.org", "01CALL")
+    plugin_egress.note_unrecorded_outcome("api.example.org", None)
+    (row,) = unrecorded_egress_provider()
+    assert row.target == UNRECORDED_TARGET
+    assert row.kind is CheckKind.GOVERNANCE and row.state is HealthState.RED
+    assert "2 governed request(s)" in row.detail and row.action
+    assert alerts(SimpleNamespace(checks=(row,))) == [row]  # red: the banner shows it
+
+
+@pytest.mark.usefixtures("_no_unrecorded")
+def test_the_unrecorded_row_reaches_every_surface_that_reads_the_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from iris_harness.kernel.governance import plugin_egress
+    from iris_harness.services.health import render_text
+    from iris_harness.services.health.governance import unrecorded_egress_provider
+    from iris_harness.services.health.models import HealthSnapshot
+
+    plugin_egress.note_unrecorded_outcome("api.example.org", "01CALL")
+    bare = HealthSnapshot(checks=(), sampled_at="2026-10-06T00:00:00+00:00")
+    monkeypatch.setattr(service, "_cached", None)
+    monkeypatch.setattr(service, "build_snapshot", lambda **_: bare)
+    service.register_check_provider("egress_ledger", unrecorded_egress_provider)
+
+    snapshot = service.refresh()
+
+    assert any(
+        c["target"] == "Egress ledger" and c["kind"] == "governance" and c["state"] == "red"
+        for c in snapshot.as_dict()["checks"]  # GET /health and the web screen
+    )
+    assert "Egress ledger [red]" in render_text(snapshot)  # chat's system_health text

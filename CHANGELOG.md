@@ -440,6 +440,15 @@ First public release of the IRIS harness.
   the reset and restart it after. A server that was left running no longer fails silently:
   on its next request it logs one warning, reopens the collection and retries once (and
   falls back to keyword search with a warning if the reopen fails).
+- A governed request whose outcome row cannot be written is no longer invisible (issue #175).
+  A failed `post_egress` ledger write used to be a log line only. The request has already
+  happened by then, so the response is still returned (failing it would report a POST that took
+  effect as failed and invite a retry); the loss is now counted (`unrecorded_outcomes()`),
+  logged at error with the call id, and shown as a red `Egress ledger` row in System Health, so
+  `GET /health`, the web Health screen, the system_health tool and the CLI all see it. The same
+  ledger being down fails the next `pre_egress` write, so later requests are refused. The count
+  is per process and clears on restart.
+
 - The external-content floor bounds what a hostile text can grow to without erasing what
   follows it. The first 64 redacted spans in a text keep the full-size marker; each further
   span is redacted with the 3-character `[~]` and the legitimate text between spans is kept

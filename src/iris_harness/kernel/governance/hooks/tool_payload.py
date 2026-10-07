@@ -87,6 +87,15 @@ HELD_CALL_ID = "held_call_id"
 #: client reads it from the harness's call scope, never from the plugin; the request's own
 #: ``CALL_ID`` is a fresh ULID the client mints (#103, #134).
 PARENT_CALL_ID = "parent_call_id"
+#: Identity of a call beyond its own id (#134 stage 2). Each is written by the kernel from
+#: the harness's own state (``kernel/governance/call_context.py``, the turn scope), never
+#: from a payload, an argument or a caller: the turn the row was written in, which attempt
+#: of the call it is (2 for the approved re-execution of a held call), the held attempt it
+#: replays, and the run a halted run was re-entered as.
+TURN_ID = "turn_id"
+ATTEMPT = "attempt"
+REPLAY_OF = "replay_of"
+RESUMED_FROM_RUN = "resumed_from_run"
 TOOL_SENDS_TO = "tool_sends_to"
 TOOL_ERROR = "tool_error"
 
@@ -201,16 +210,20 @@ def _no_contract_keys(extra: dict[str, Any]) -> None:
 __all__ = [
     "ARGS",
     "ARGS_DIGEST",
+    "ATTEMPT",
     "CALL_ID",
     "DIGEST_ALG",
     "HELD_CALL_ID",
     "PARENT_CALL_ID",
+    "REPLAY_OF",
     "RESULT_DIGEST",
+    "RESUMED_FROM_RUN",
     "RESULT",
     "EXTERNAL_SERVICE",
     "SEARCH_ENGINE",
     "SIDE_EFFECT_ID",
     "TOOL_CALL_ID",
+    "TURN_ID",
     "TOOL_CONTENT",
     "TOOL_CONTENTS",
     "TOOL_EFFECT",

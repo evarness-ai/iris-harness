@@ -21,6 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from iris_harness.foundation.ids import new_ulid
 from iris_harness.foundation.observability.logging_setup import log_egress
+from iris_harness.kernel.governance.call_context import register_call
 from iris_harness.kernel.governance.mcp_signing import (
     MCPSigningConfig,
     ServerSpec,
@@ -453,6 +454,9 @@ class MCPBridge:
         # One id for this outbound call, minted here and nowhere else: its PRE and POST rows
         # both carry it (#134). Not the caller's to supply.
         call_id = new_ulid()
+        # Where this call sits (the governed call it runs inside, if any), for the kernel's
+        # rows of the call (#134 stage 2). The HTTP route runs inside none, so it has no parent.
+        register_call(call_id)
 
         # Governance kernel pre-check (Phase 4 — story 12.gov-4.6).
         if self._governance_kernel is not None:

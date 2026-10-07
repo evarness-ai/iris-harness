@@ -225,3 +225,54 @@ def test_a_held_call_keeps_its_id_and_the_approved_attempt_names_it(entry: str) 
         ]
         assert keys and all(k.endswith(f":{approved_id}") for k in keys)
         assert not any(k.endswith(f":{held_id}") for k in keys)
+
+
+# --------------------------------------------- stage 2: parent, attempt, turn, resumed run
+
+
+@pytest.mark.parametrize("entry", ["chat", "chat_stream"])
+def test_every_row_of_a_turn_names_the_turn_and_two_turns_differ(entry: str) -> None:
+    with harness(plugins=[_echo_plugin()], fake_model=_ECHO_SCRIPT) as h:
+        _chat(entry, h, "Please echo the word banana")
+        _chat(entry, h, "Please echo the word banana")
+        rows = _rows(h)
+        tool_rows = _tool_rows(h, "echo_back")
+        typed = h.audit_rows(hook_point="pre_tool_use")
+    turn_ids = {
+        p.get("turn_id") for r, p in rows if r.hook_point in ("pre_tool_use", "pre_llm_call")
+    }
+    assert None not in turn_ids and len(turn_ids) == 2  # both hook kinds, two turns
+    tool_turns = {p["turn_id"] for _, p in tool_rows}
+    assert tool_turns <= turn_ids and len(tool_turns) == 2
+    # A top-level model call has no parent, is attempt 1, and the stable row says the same.
+    mine = [r for r in typed if r.tool == "echo_back"]
+    assert mine and all(r.parent_call_id is None and r.attempt == 1 for r in mine)
+    assert all(r.replay_of is None and r.held_call_id is None for r in mine)
+    assert all(is_ulid(r.call_id) and r.turn_id in turn_ids for r in mine)
+
+
+@pytest.mark.parametrize("entry", ["chat", "chat_stream"])
+def test_the_approved_attempt_is_attempt_two_replaying_the_held_one(entry: str) -> None:
+    with harness(plugins=[_shredder()], fake_model=_SHRED_SCRIPT) as h:
+        _chat(entry, h, "Shred the memo")
+        [pending] = ApprovalQueue().list_pending()
+        held_rows = _tool_rows(h, "shred_doc")
+        held_ids = {p["call_id"] for _, p in held_rows}
+        (held_id,) = held_ids
+        run_id = held_rows[0][0].run_id
+        h.respond_to_approval(pending.approval_id, approve=True)
+        after = _tool_rows(h, "shred_doc")
+        approved = [(r, p) for r, p in after if p["call_id"] != held_id]
+        typed = [r for r in h.audit_rows(hook_point="pre_tool_use") if r.tool == "shred_doc"]
+    assert approved
+    assert all(p["attempt"] == 2 and p["replay_of"] == held_id for _, p in approved)
+    assert all(p["attempt"] == 1 and "replay_of" not in p for _, p in held_rows)
+    # The held attempt was written before the run was re-entered; the rows the resumed run
+    # wrote say so, with the run id (which survives the halt).
+    assert all("resumed_from_run" not in p for _, p in held_rows)
+    assert all(p.get("resumed_from_run") == run_id for _, p in approved)
+    by_call = {r.call_id: r for r in typed}
+    assert by_call[held_id].attempt == 1 and by_call[held_id].replay_of is None
+    (replay,) = [r for cid, r in by_call.items() if cid != held_id]
+    assert replay.attempt == 2 and replay.replay_of == held_id and replay.held_call_id == held_id
+    assert replay.resumed_from_run == run_id

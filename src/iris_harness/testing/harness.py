@@ -140,6 +140,14 @@ class TurnAuditRow:
     ``egress`` is a governed HTTP request's record on a ``pre_egress`` / ``post_egress`` row
     (scheme, host, port, method, attempt, ...), with its own ``call_id`` (a ULID) and the
     ``parent_call_id`` of the tool call it was made inside, both stamped by the kernel.
+    ``call_id`` is the governed call a tool-use row is about (a ULID); ``held_call_id`` is,
+    on the approved re-execution of a held call, the attempt that was held; ``turn_id`` is
+    the chat turn the row was written in; ``parent_call_id`` is the governed call this
+    call ran inside (a tool that called another tool or a capability); ``attempt`` is 1,
+    or 2 for an approved re-execution, whose ``replay_of`` names the held attempt;
+    ``resumed_from_run`` is the run id on the rows of a halted run that was re-entered.
+    Each is ``None`` on a row it does not describe, and on rows written before the call
+    carried an identity.
     """
 
     id: int
@@ -159,6 +167,13 @@ class TurnAuditRow:
     caller: str | None = None
     tool_plugin: str | None = None
     egress: Mapping[str, Any] | None = None
+    call_id: str | None = None
+    held_call_id: str | None = None
+    turn_id: str | None = None
+    parent_call_id: str | None = None
+    attempt: int | None = None
+    replay_of: str | None = None
+    resumed_from_run: str | None = None
 
 
 def _payload(row: AuditRow) -> dict[str, Any]:
@@ -171,6 +186,10 @@ def _payload(row: AuditRow) -> dict[str, Any]:
 
 def _optional_str(value: Any) -> str | None:
     return str(value) if value is not None else None
+
+
+def _optional_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _egress_view(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -206,6 +225,13 @@ def _turn_audit_row(row: AuditRow) -> TurnAuditRow:
         caller=_optional_str(payload.get("caller")),
         tool_plugin=_optional_str(payload.get("tool_plugin")),
         egress=_egress_view(payload),
+        call_id=_optional_str(payload.get("call_id")),
+        held_call_id=_optional_str(payload.get("held_call_id")),
+        turn_id=_optional_str(payload.get("turn_id")),
+        parent_call_id=_optional_str(payload.get("parent_call_id")),
+        attempt=_optional_int(payload.get("attempt")),
+        replay_of=_optional_str(payload.get("replay_of")),
+        resumed_from_run=_optional_str(payload.get("resumed_from_run")),
     )
 
 

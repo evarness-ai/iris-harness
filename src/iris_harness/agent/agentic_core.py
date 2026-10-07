@@ -41,6 +41,7 @@ from iris_harness.kernel.governance import (
     HookPoint,
     LLMTier,
 )
+from iris_harness.kernel.governance.call_context import mark_run_resumed
 from iris_harness.kernel.governance.disclosure import (
     DISCLOSURE_STYLE_GUARDRAIL,
     is_architecture_disclosure,
@@ -1975,6 +1976,9 @@ class AgenticCore:
         becomes the halted step's observation, so the model continues from what really
         happened and tells the owner. A seed with no pending approval passes through.
         """
+        # Every re-entry of a halted run passes here (the sync and the streaming loop): the
+        # rows this run writes from now on are marked as a resumed run's (#134 stage 2).
+        mark_run_resumed(seed.run_id)
         approval_id = seed.pending_approval_id
         if not approval_id or not seed.steps:
             return seed

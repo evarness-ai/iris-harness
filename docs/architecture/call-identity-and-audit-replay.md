@@ -1,6 +1,6 @@
 # Design note: one unique, parent-linked id per record, and a gap-free replay (issue #134)
 
-Status: Design for issue #134; stage 1 implemented in this branch.
+Status: Design for issue #134; stages 1 and 2 implemented.
 Evidence labels: [RUN] = observed by running current code; [READ] = read from source only.
 
 ## 0. Headline findings
@@ -319,6 +319,27 @@ Parquet schema change needs a reader that handles old chunks (the DuckDB view mu
 v1 closed schema.
 What to test: each stage's row above, plus a two-process writer test (API + CLI writing one session), a crash test (hard exit
 between PRE and POST in a subprocess), and the mutation checks used for #131.
+
+### 6.1 Stage 2 as built (parent, attempt, turn, resumed run)
+
+Payload-only: no schema change and no migration (the audit payload is schema-free; stage 3 owns the columns).
+- `kernel/governance/call_context.py`: `call_scope(call_id)` makes a call current while its code runs (the runner sets it
+  around `tool.call` and around a capability provider, and around each step of a streamed capability so a governed call
+  started inside a stream's body still sees its parent); `register_call` records `(parent_call_id, attempt, replay_of)`
+  when the id is minted; `mark_run_resumed(run_id)` is called from `AgenticCore._settle_pending_approval`, the one
+  re-entry point of both loops. The kernel reads them by the row's own `call_id`, never from a payload or an argument.
+- Fields on the audit payload (and the public view): `turn_id` (from the turn scope, absent outside a turn),
+  `parent_call_id` (containment only; an egress request keeps its own), `attempt` (1, or 2 for the approved re-execution of
+  a held call), `replay_of` (the held attempt), `resumed_from_run` (the run id, as a marker on the rows the re-entered run
+  writes: the run id survives a halt, so it is not a new id). `TurnAuditRow` gains seven optional fields at its end:
+  `call_id`, `held_call_id`, `turn_id`, `parent_call_id`, `attempt`, `replay_of`, `resumed_from_run`.
+- A nested call keeps its own `run_id` (D4: no existing field changes); the parent link is the new field.
+- Context limits (stated, tested): a `ContextVar` follows `await`, `asyncio.run` and `asyncio.to_thread`, not a bare
+  `threading.Thread` or `loop.run_in_executor`; a governed call started there has no parent (the egress scope has the same
+  limit). The lineage registry is bounded (8192 calls): an evicted lineage leaves the fields off a row, nothing is invented.
+- Not stamped: retries (`iris run resume` re-exec, the loop's repeated-action guard) until stage 4; calls that never reach
+  `GovernedToolRunner` (D7: general-lane builtin tools and `kernel=None`) get no call id, no parent and no turn link.
+  Whether the general lane is reachable in the default config is not verified.
 
 ## 7. Verified vs not verified
 Verified by running (current main fbfb7e8, scripted model, temp IRIS_HOME, throwaway vault key): the two scenarios and their

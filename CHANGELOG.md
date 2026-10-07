@@ -11,6 +11,16 @@ First public release of the IRIS harness.
 
 ### Added
 
+- An audit row says where its call sits (issue #134, stage 2): `parent_call_id` (the governed
+  call it ran inside: a tool a tool called, a capability a tool called, a bridged MCP call),
+  `attempt` (2 on the approved re-execution of a held call, with `replay_of` naming the held
+  attempt), `turn_id` (the chat turn the row was written in) and `resumed_from_run` (the run
+  id, on the rows a halted run writes after it is re-entered). The harness writes them, never a
+  caller, an argument or a hook. `TurnAuditRow` gains `call_id`, `held_call_id`, `turn_id`,
+  `parent_call_id`, `attempt`, `replay_of` and `resumed_from_run`, all optional and `None` on a
+  row they do not describe or on one written before calls carried an identity. No existing
+  field, `run_id` included, changes, and no database migration is involved.
+
 - An operator can declare what an MCP tool does: `governance.tools: {<name>: {effect:
   read|write|destructive}}` under a server in `mcp-servers.yaml` (issue #102). A destructive
   tool is refused before the server is reached unless `invoke_external_tool` is given

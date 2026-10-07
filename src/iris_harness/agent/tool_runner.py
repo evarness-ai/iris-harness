@@ -71,6 +71,7 @@ from iris_harness.kernel.governance.audit.digest import (
     AuditKeyUnavailable,
     audit_digester,
 )
+from iris_harness.kernel.governance.call_context import call_scope, register_call
 from iris_harness.kernel.governance.hooks.tool_payload import (
     CALL_ID,
     HELD_CALL_ID,
@@ -310,6 +311,25 @@ def _capability_scope(call: CapabilityCall, run_id: str, agent_type: str, call_i
     )
 
 
+_STREAM_END: Any = object()
+
+
+def _scoped_next(stream: Iterator[Any], call_id: str) -> Any:
+    """The next item of a sync stream, with ``call_id`` as the current call while the
+    provider's body runs; ``_STREAM_END`` when it is exhausted."""
+    with call_scope(call_id):
+        return next(stream, _STREAM_END)
+
+
+async def _scoped_anext(stream: Any, call_id: str) -> Any:
+    """The async counterpart of :func:`_scoped_next`."""
+    with call_scope(call_id):
+        try:
+            return await stream.__anext__()
+        except StopAsyncIteration:
+            return _STREAM_END
+
+
 _NO_KERNEL = "no governance kernel is bound, so capability calls fail closed"
 _IN_LOOP = (
     "a sync capability method cannot be governed inside a running event loop (the kernel "
@@ -402,6 +422,9 @@ class GovernedToolRunner:
         # it runs is keyed by it, and POST_TOOL_USE settles that same row. Nothing a caller
         # passes (arguments, ``ToolCall``) can choose it (#134).
         tool_call_id = new_ulid()
+        # Where this call sits (the call it runs inside, its attempt): recorded now, read by
+        # the kernel for every row of the call (#134 stage 2).
+        register_call(tool_call_id, held_call_id=call.held_call_id)
         decision, tool_args = self.pre(
             tool,
             args,
@@ -458,18 +481,23 @@ class GovernedToolRunner:
             # The request a plugin's code makes through the governed HTTP client while it
             # runs belongs to this call: its egress rows carry the run, step, tool, caller
             # and the run's data class (issue #103).
-            with egress_scope(
-                EgressScope(
-                    run_id=call.run_id or "",
-                    agent_type=self._agent_type,
-                    tool=name,
-                    tool_plugin=tool.plugin,
-                    caller=call.caller or f"model:{self._agent_type}",
-                    step_id=call.step_id,
-                    classification=call.classification,
-                    tool_call_id=tool_call_id,
-                )
+            with (
+                egress_scope(
+                    EgressScope(
+                        run_id=call.run_id or "",
+                        agent_type=self._agent_type,
+                        tool=name,
+                        tool_plugin=tool.plugin,
+                        caller=call.caller or f"model:{self._agent_type}",
+                        step_id=call.step_id,
+                        classification=call.classification,
+                        tool_call_id=tool_call_id,
+                    )
+                ),
+                call_scope(tool_call_id),
             ):
+                # A governed call the tool's code starts (``api.tools.call``, a capability)
+                # reads this as its parent.
                 result = str(tool.call(tool_args))
         except ToolUnavailable as exc:
             result = str(exc)
@@ -718,9 +746,10 @@ class GovernedToolRunner:
         """
         run_id = str(uuid.uuid4())
         call_id = new_ulid()  # one id for the call; the run id is not it (#134)
+        register_call(call_id)
         args = self.capability_pre(call, args, run_id, call_id)
         try:
-            with _capability_scope(call, run_id, self._agent_type, call_id):
+            with _capability_scope(call, run_id, self._agent_type, call_id), call_scope(call_id):
                 result = provider_call(**args)
         except Exception as exc:
             self._capability_failed(call, run_id, call_id, exc)
@@ -735,9 +764,10 @@ class GovernedToolRunner:
         """Govern and run an ``async def`` capability method, through ``kernel.fire``."""
         run_id = str(uuid.uuid4())
         call_id = new_ulid()
+        register_call(call_id)
         args = await self.capability_apre(call, args, run_id, call_id)
         try:
-            with _capability_scope(call, run_id, self._agent_type, call_id):
+            with _capability_scope(call, run_id, self._agent_type, call_id), call_scope(call_id):
                 result = await provider_call(**args)
         except Exception as exc:
             await self._capability_afailed(call, run_id, call_id, exc)
@@ -750,9 +780,11 @@ class GovernedToolRunner:
         """Govern an async stream: ``PRE`` before it starts, ``POST`` per item and at the end."""
         run_id = str(uuid.uuid4())
         call_id = new_ulid()
+        register_call(call_id)
         args = await self.capability_apre(call, args, run_id, call_id)
         try:
-            stream = provider_call(**args)
+            with call_scope(call_id):
+                stream = provider_call(**args)
         except Exception as exc:
             await self._capability_afailed(call, run_id, call_id, exc)
             raise
@@ -761,7 +793,13 @@ class GovernedToolRunner:
         finished = False
         stopped_by: str | None = None
         try:
-            async for item in stream:
+            stream_iter = stream.__aiter__()
+            while True:
+                # The provider's body runs lazily, inside each step: a governed call it
+                # starts must see this call as its parent, so each step runs in its scope.
+                item = await _scoped_anext(stream_iter, call_id)
+                if item is _STREAM_END:
+                    break
                 digests.append(digester.digest(item))
                 yield await self.capability_apost(
                     call, item, run_id, call_id, stream_item=len(digests) - 1
@@ -798,7 +836,10 @@ class GovernedToolRunner:
         finished = False
         stopped_by: str | None = None
         try:
-            for item in stream:
+            while True:
+                item = _scoped_next(stream, call_id)  # see ``aexecute_stream``
+                if item is _STREAM_END:
+                    break
                 digests.append(digester.digest(item))
                 yield self.capability_post(
                     call, item, run_id, call_id, stream_item=len(digests) - 1

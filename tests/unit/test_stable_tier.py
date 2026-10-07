@@ -139,6 +139,13 @@ def test_the_turn_audit_row_fields_are_the_declared_ones() -> None:
         "caller",
         "tool_plugin",
         "egress",
+        "call_id",
+        "held_call_id",
+        "turn_id",
+        "parent_call_id",
+        "attempt",
+        "replay_of",
+        "resumed_from_run",
     )
 
 

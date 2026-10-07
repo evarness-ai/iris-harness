@@ -42,6 +42,13 @@ PUBLIC_PAYLOAD_FIELDS: dict[str, tuple[type, ...]] = {
     "call_id": (str,),
     "held_call_id": (str,),
     "parent_call_id": (str,),
+    # Where the call sits (#134 stage 2): the turn the row was written in, which attempt of
+    # the call it is (``attempt``, a count: the one int field), the held attempt an approved
+    # re-execution replays, and the run id on the rows of a halted run that was re-entered.
+    "turn_id": (str,),
+    "attempt": (int,),
+    "replay_of": (str,),
+    "resumed_from_run": (str,),
 }
 
 #: The tier a governed call leaves the owner's machines on. The egress gate reads
@@ -63,7 +70,9 @@ def public_payload(payload_json: str | None) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, types in PUBLIC_PAYLOAD_FIELDS.items():
         value = payload.get(key)
-        # bool is an int subclass; the table never lists int, so isinstance is exact here.
+        # bool is an int subclass, so a bool only passes where the table names bool itself.
+        if isinstance(value, bool) and bool not in types:
+            continue
         if isinstance(value, types) and value != "":
             out[key] = value
     return out

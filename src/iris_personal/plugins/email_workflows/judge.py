@@ -36,7 +36,6 @@ from datetime import UTC, datetime, timedelta, tzinfo
 from email.utils import parseaddr
 from typing import TYPE_CHECKING, Any
 
-from iris_harness.sdk.content import wrap_external_content
 from iris_harness.sdk.llm import (
     CodingLLMClient,
     CodingLLMConfig,
@@ -203,16 +202,20 @@ def build_prompt(
 
 
 def build_email_message(config: JudgeConfig, message: EmailMessage, body: str) -> str:
-    """The user message: the sender, subject and body, all text a third party wrote, so the
-    whole of it goes in one untrusted-content envelope with instruction-like spans redacted
-    (issue #148). The model reads it as data; its reply is the schema-constrained verdict."""
+    """The user message: the sender, subject and body, filled into ``judge.yaml``'s template.
+
+    It is third-party text and deliberately NOT wrapped in the untrusted-content envelope
+    (issue #148 first wrapped it). On a real mailbox, 100 emails judged by the local
+    ``email_judge`` model before and after the wrapping, about 5 stably changed bucket, at
+    the same 0.95 confidence, and by reading them the wrapping looked slightly worse: two
+    promotional bank loan offers became ``bill`` (a false bill reaches the dues digest). What
+    the envelope guards here is a manipulated label, since the reply is the schema-constrained
+    verdict and never text for the owner; the digest narration and the triage picker, whose
+    output is read by the owner or picks a path, keep their envelope."""
     values = {"sender": message.from_address, "subject": message.subject, "body": body}
-    text = (
-        "\n\n".join(values.values())
-        if not config.email_message
-        else _fill(config.email_message, values)
-    )
-    return wrap_external_content(text, source="email", tool="judge")
+    if not config.email_message:
+        return "\n\n".join(values.values())
+    return _fill(config.email_message, values)
 
 
 # -- one email ----------------------------------------------------------------------

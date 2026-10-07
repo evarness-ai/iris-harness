@@ -15,9 +15,7 @@ rules:
   - name: judge / too little text
     match:
       system: You sort ONE email
-      # The email arrives inside the untrusted-content envelope (issue #148), so the body ends
-      # at the closing tag, not at the end of the message.
-      user: '\n\nSent from my phone\s*(?:</external_content>)?\s*\Z'
+      user: '\n\nSent from my phone\s*\Z'
     reply:
       json:
         bucket: fyi

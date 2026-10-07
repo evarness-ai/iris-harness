@@ -13,6 +13,7 @@ from __future__ import annotations
 import random
 import re
 import time
+from typing import Any
 
 import pytest
 
@@ -20,9 +21,11 @@ from iris_harness.kernel.governance.file_scan import scan_text
 from iris_harness.kernel.governance.plugins.classifier import DataClassifier
 from iris_harness.kernel.governance.plugins.regex_packs import ALL_PACKS
 
-# Generous for a slow CI runner; the old patterns took 20 s on the first three, the new ones
-# take well under 0.1 s.
-BOUND_SECONDS = 1.0
+# A gross guard only, generous for a loaded hosted runner (one run measured 1.2 s on a case that
+# takes ~0.05 s on a laptop): the old patterns took 20-50 s on the issue's inputs, so a regression
+# to quadratic time still crosses it. What PROVES linear time is the scaling test below, which
+# does not depend on how fast the machine is.
+BOUND_SECONDS = 8.0
 
 _ORIGINAL_EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _ORIGINAL_VOICE = re.compile(r"\[voice_transcript:[^\]]*\]")
@@ -57,6 +60,50 @@ def _time(text: str) -> float:
     start = time.perf_counter()
     scan_text(text)
     return time.perf_counter() - start
+
+
+# Runner-independent: doubling the input must not much more than double the time. Best of three on
+# each side removes a noisy neighbour; the additive slack keeps millisecond timings from tripping
+# the ratio. A quadratic pattern gives about 4x at 2N and fails whatever the machine.
+SCALING = {
+    "a.-run then @b.": lambda n: "a." * n + "@b.",
+    "+1- repeated": lambda n: "+1-" * n,
+    "123-45- repeated": lambda n: "123-45-" * n,
+    "unclosed voice markers": lambda n: "[voice_transcript:" * n,
+    "many @ and no domain": lambda n: "a@" * n,
+}
+_SCALING_N = 20_000
+_RATIO = 3.0
+_SLACK_SECONDS = 0.05
+
+
+def _best_of_three(run: Any, text: str) -> float:
+    best = float("inf")
+    for _ in range(3):
+        start = time.perf_counter()
+        run(text)
+        best = min(best, time.perf_counter() - start)
+    return best
+
+
+def _scales_linearly(run: Any, build: Any, n: int) -> tuple[bool, float, float]:
+    small = _best_of_three(run, build(n))
+    large = _best_of_three(run, build(2 * n))
+    return large <= _RATIO * small + _SLACK_SECONDS, small, large
+
+
+@pytest.mark.parametrize("name", list(SCALING))
+def test_classification_time_grows_linearly_with_the_input(name: str) -> None:
+    ok, small, large = _scales_linearly(scan_text, SCALING[name], _SCALING_N)
+
+    assert ok, f"{name}: {small:.3f}s at N, {large:.3f}s at 2N (limit {_RATIO}x + slack)"
+
+
+def test_the_scaling_check_does_catch_the_quadratic_regex_it_replaced() -> None:
+    """The detector must bite: the original email regex (quadratic) fails it."""
+    ok, small, large = _scales_linearly(_ORIGINAL_EMAIL.search, SCALING["a.-run then @b."], 8_000)
+
+    assert not ok, f"the old regex scaled linearly here ({small:.3f}s -> {large:.3f}s)?"
 
 
 @pytest.mark.parametrize("name", list(ISSUE_INPUTS))

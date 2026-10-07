@@ -26,6 +26,7 @@ from typing import Any
 
 from iris_harness.foundation.process_state import track_globals
 from iris_harness.kernel.governance import HookContext, HookPoint, kernel_from_env
+from iris_harness.kernel.governance.reentry import reenter_many, reenter_text
 from iris_harness.kernel.governance.turn_label import apply_turn_floor
 from iris_harness.llm.budget import estimate_tokens, trim_text
 from iris_harness.llm.client import GovernedPromptCall
@@ -362,11 +363,26 @@ class ConversationCompactor:
         )
         max_tokens = int(config.get("max_tokens", 320))
         template = str(config.get("prompt") or _SUMMARY_FALLBACK["prompt"])
+        # The summary the model writes is STORED, and a phrase scan at read time cannot match
+        # a reworded instruction, so the text goes through the re-entry scan on the way IN
+        # (issue #161): an assistant turn and the previous summary are scanned, the owner's own
+        # turns are verbatim. Scanned, not enveloped: the model would copy the tags into the
+        # stored summary, and its provenance is already tracked (``summary_flag``).
+        scanned = reenter_many(
+            [(t.role, t.content) for t in turns],
+            reader="compactor",
+            origin="transcript",
+        )
+        previous = previous_summary.strip()
+        if previous:
+            previous = reenter_text(
+                previous, reader="compactor", origin="summary", role="assistant"
+            ).text
         return template.format(
             sections=rendered,
             max_words=int(max_tokens * 0.75),
-            previous=previous_summary.strip() or "(none yet — this is the first roll)",
-            exchanges="\n".join(f"{t.role}: {t.content}" for t in turns),
+            previous=previous or "(none yet — this is the first roll)",
+            exchanges="\n".join(f"{t.role}: {r.text}" for t, r in zip(turns, scanned, strict=True)),
         )
 
     # Legacy dict-based API retained for backward compatibility

@@ -19,6 +19,7 @@ never the problem; living inside a 1,100-line function was.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -41,9 +42,14 @@ from iris_harness.runtime.skill_matching import (
     format_direct_skill_result,
     score_skill_package,
 )
+from iris_harness.runtime.skill_tool_specs import json_skill_call, skill_tool_spec
 from iris_harness.tools.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
+
+#: The caller of a skill tool the general lane runs for a matched request, before any model: code,
+#: not a model (``core:`` callers need no caller-policy entry; only ``plugin:`` callers are checked).
+DIRECT_CALLER = "core:general_lane"
 
 
 def record_skill_pending_actions(result: object, *, data_dir: Path) -> int:
@@ -177,7 +183,9 @@ class LocalSkills:
     direct_brief_response: Any
 
 
-def make_local_skills(skill_registry: SkillRegistry | None) -> LocalSkills:
+def make_local_skills(
+    skill_registry: SkillRegistry | None, runtime_holder: list[Any] | None = None
+) -> LocalSkills:
     """Bind the local-skill helpers to one registry, which may be absent.
 
     ``None`` is a real case — the factory's own parameter is optional and
@@ -187,6 +195,11 @@ def make_local_skills(skill_registry: SkillRegistry | None) -> LocalSkills:
     The bodies below are unchanged from their nested originals — this function is the
     closure they already had, with a name and a module of its own.
     """
+
+    def _tool_service() -> Any:
+        """The runtime's ``ToolService``, or None when this handler has no runtime."""
+        runtime = runtime_holder[0] if runtime_holder else None
+        return getattr(runtime, "tool_service", None)
 
     def _local_skill_packages() -> tuple[Any, ...]:
         if skill_registry is None:
@@ -253,6 +266,65 @@ def make_local_skills(skill_registry: SkillRegistry | None) -> LocalSkills:
         if arguments is None:
             return None
 
+        service = _tool_service()
+        if service is not None and package.manifest.tools:
+            # Through governance like any other tool call (#155): PRE/POST_TOOL_USE, the
+            # external-content floor, the audit rows. The tool's result is serialised to JSON
+            # inside the governed call and parsed back out of the governed text, so the
+            # formatter and the pending-action recorder still read the structured value.
+            spec = skill_tool_spec(
+                package,
+                package.manifest.tools[0],
+                tool_class,
+                call=json_skill_call(tool_class),
+            )
+            outcome = service.call_core_tool(DIRECT_CALLER, spec, arguments)
+            if not outcome.ok:
+                # Governance held or refused it (an effectful tool the owner has not approved:
+                # nothing ran), or the tool raised: the owner is told, the turn does not guess.
+                text = (
+                    outcome.text
+                    if outcome.held
+                    else f"The `{tool_name}` skill failed: {outcome.text}"
+                )
+                return (
+                    text,
+                    {"used_skill": True, "skill_tool": tool_name, "skill_error": True},
+                )
+            try:
+                result: object = json.loads(outcome.text)
+                parsed = True
+            except ValueError:
+                # What governance let through is not the tool's JSON (a result it replaced or
+                # withheld): show it as the text it is, and record no pending actions from it.
+                logger.warning(
+                    "direct local skill %s: governed result is not JSON; shown as text, "
+                    "pending actions not recorded",
+                    tool_name,
+                )
+                result, parsed = outcome.text, False
+            recorded = 0
+            if parsed:
+                try:
+                    recorded = record_skill_pending_actions(result, data_dir=data_dir())
+                except Exception:
+                    logger.exception("failed to record pending actions from skill result")
+            answer = format_direct_skill_result(tool_name, result)
+            if outcome.external:
+                # The floor already redacted the text for this owner-facing caller (no
+                # envelope); say so once when it cut a span out (issue #139).
+                answer = add_redaction_notice(answer)
+            return (
+                answer,
+                {
+                    "used_skill": True,
+                    "skill_tool": tool_name,
+                    "pending_actions_recorded": recorded,
+                },
+            )
+
+        # No runtime to govern the call (a handler built on its own, as a unit test does):
+        # the tool runs in-process and its text gets the owner-channel tripwire, as before.
         try:
             result = tool_class().invoke(arguments)
         except Exception as exc:

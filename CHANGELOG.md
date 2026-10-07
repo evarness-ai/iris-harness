@@ -273,6 +273,21 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- The general lane's direct skill answer is a governed call (issue #155, second part). When a
+  request matches a skill, the lane answers it before any model by running the skill's first
+  tool; that call used to run in-process with no `PRE_TOOL_USE` / `POST_TOOL_USE`, no approval
+  check and no audit row. It now runs through `ToolService` under the `core:general_lane` caller
+  (a `core:` caller needs no caller-policy entry, and a test pins that): audit rows with one call
+  id, the external-content floor (one scan, where there were two), and the tool-policy and
+  approval checks. The owner's answer is unchanged byte for byte for a structured result
+  (the tool's result travels as JSON inside the governed call). **Visible change for flag-off
+  and shadow installs:** a skill tool that governance will not run without the owner's approval
+  is now refused with the governance message instead of running unasked (nothing is queued: a
+  skill tool is not a registered tool, so an approval for it could never execute). Governed text
+  that is not the tool's JSON (a result governance replaced or withheld) is shown as the text it
+  is and records no pending actions. The brief slots (`direct_brief_response`) are a separate
+  follow-up, #199.
+
 - The legacy general lane (`IRIS_AGENTIC_CORE_ENABLED` off, or `shadow` where the lane's answer is
   the one read) runs every tool through the governed runner (issue #155, #134 D7). Its
   `memory_search`, `memory_graph`, `wiki_search`, `propose_skill_from_sandbox` and every skill

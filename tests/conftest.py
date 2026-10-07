@@ -790,3 +790,74 @@ def _no_chat_turn_in_progress():  # a pytest generator fixture
     activity._reset_for_tests()
     yield
     activity._reset_for_tests()
+
+
+# --------------------------------------------------------------------------- scaling checks
+
+
+class ScalingCheck:
+    """Does a scan's time grow in proportion to its input, whatever the machine?
+
+    An absolute wall-clock bound fails on a loaded runner; a ratio of two measurements taken
+    back to back does not. The input is built at N and at 4N and the best of three timings of
+    each side compared: a linear scan gives about 4x, a quadratic one about 16x, so 8x separates
+    them with room for noise on both sides (a 2N step, 2x against 4x, does not). N doubles until
+    the small side takes at least 20 ms, so a fast machine is not measuring timer noise. A small
+    additive slack covers what is left. No timing of a slow reference is ever used as a
+    detector: ``assert_detects_quadratic`` runs a pure-Python quadratic loop through the same check.
+    """
+
+    FACTOR = 4
+    LIMIT = 8.0
+    SLACK_SECONDS = 0.05
+    REPEATS = 3
+    MIN_SMALL_SECONDS = 0.02
+    MAX_DOUBLINGS = 6
+
+    @staticmethod
+    def _best_of(run: Any, text: Any, repeats: int) -> float:
+        import time
+
+        best = float("inf")
+        for _ in range(repeats):
+            start = time.perf_counter()
+            run(text)
+            best = min(best, time.perf_counter() - start)
+        return best
+
+    def is_linear(self, run: Any, build: Any, n: int) -> tuple[bool, float, float]:
+        """``(linear, seconds at N, seconds at 4N)``; N is raised until N takes 20 ms."""
+        small = self._best_of(run, build(n), self.REPEATS)
+        for _ in range(self.MAX_DOUBLINGS):
+            if small >= self.MIN_SMALL_SECONDS:
+                break
+            n *= 2
+            small = self._best_of(run, build(n), self.REPEATS)
+        large = self._best_of(run, build(self.FACTOR * n), self.REPEATS)
+        return large <= self.LIMIT * small + self.SLACK_SECONDS, small, large
+
+    def assert_linear(self, name: str, run: Any, build: Any, n: int) -> None:
+        ok, small, large = self.is_linear(run, build, n)
+        assert ok, (
+            f"{name}: {small:.3f}s at N, {large:.3f}s at {self.FACTOR}N "
+            f"(limit {self.LIMIT}x + {self.SLACK_SECONDS}s)"
+        )
+
+    @staticmethod
+    def quadratic(text: str) -> int:
+        """A stand-in for a quadratic scan: every position looks at every later position."""
+        hits = 0
+        for i in range(len(text)):
+            for j in range(i, len(text)):
+                hits += text[j] == "x"
+        return hits
+
+    def assert_detects_quadratic(self) -> None:
+        """The detector must bite: the quadratic stand-in must fail ``is_linear``."""
+        ok, small, large = self.is_linear(self.quadratic, lambda n: "a" * n, 1_500)
+        assert not ok, f"a quadratic scan passed as linear ({small:.3f}s -> {large:.3f}s)?"
+
+
+@pytest.fixture
+def scaling() -> ScalingCheck:
+    return ScalingCheck()

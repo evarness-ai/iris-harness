@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from collections.abc import Collection, Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -147,6 +148,10 @@ _UPGRADES: dict[int, tuple[str, ...]] = {
 }
 
 
+# How long a process waits for another to finish initialising the database: the same 30 s a
+# connection waits for any other lock (``_open``).
+_INIT_WAIT_SECONDS = 30.0
+
 # Ids per IN (...) query: well under SQLite's bound-parameter limit on any build.
 _CHUNK = 500
 
@@ -166,8 +171,13 @@ class SQLiteGraphStore:
         self._local = threading.local()
         with self._connect() as conn:
             # WAL is a property of the database file: set once here, not per connection.
-            conn.execute("PRAGMA journal_mode = WAL")
+            self._enable_wal(conn)
             conn.executescript(_SCHEMA)
+            # One initialiser at a time. Reading the version and then writing it (or upgrading
+            # the tables) in a deferred transaction let two processes both read "no version" and
+            # both insert it, or both upgrade; ``BEGIN IMMEDIATE`` takes the write lock first, so
+            # the second process waits and then finds the work done.
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT value FROM memris_meta WHERE key = 'schema_version'"
             ).fetchone()
@@ -194,6 +204,26 @@ class SQLiteGraphStore:
                     "UPDATE memris_meta SET value = ? WHERE key = 'schema_version'",
                     (str(SCHEMA_VERSION),),
                 )
+
+    @staticmethod
+    def _enable_wal(conn: sqlite3.Connection) -> None:
+        """``PRAGMA journal_mode = WAL``, waiting out another process doing the same.
+
+        Switching a database's journal mode needs a lock the busy timeout does not wait for:
+        a second process opening a brand-new file at the same instant gets "database is
+        locked" at once. Retry for as long as the connections wait for any other lock.
+        """
+        deadline = time.monotonic() + _INIT_WAIT_SECONDS
+        delay = 0.005
+        while True:
+            try:
+                conn.execute("PRAGMA journal_mode = WAL")
+                return
+            except sqlite3.OperationalError as exc:
+                if "locked" not in str(exc) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(delay)
+                delay = min(delay * 2, 0.25)
 
     def _open(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=30)

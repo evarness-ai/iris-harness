@@ -407,6 +407,17 @@ settings:
     tab: guards
     guarded: true
     guard_reason: Setting it to off removes side-effect containment from pre-flight eval replays.
+  IRIS_EXPORT_DIR:
+    kind: path
+    default: ~/.iris/exports
+    applies: restart
+    label: Memory export folder
+    description: The one folder the web API's POST /memory/export may write under; a request names a
+      sub-folder of it, never a path. Point it at an Obsidian vault's parent to export straight into
+      one. Created owner-only (0700). The CLI (iris memory export --to PATH) is not limited by it.
+    tab: none
+    editable: false
+    not_editable_reason: directory path
   IRIS_FACT_EXTRACTION_MODE:
     kind: enum
     default: llm

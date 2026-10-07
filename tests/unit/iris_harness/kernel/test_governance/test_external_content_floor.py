@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -554,12 +555,38 @@ def test_the_settings_api_cannot_write_a_blank_for_it() -> None:
     ],
 )
 def test_the_tripwire_cost_is_linear_on_whitespace_heavy_hostile_text(hostile: str) -> None:
-    """A quadratic pattern let one page freeze the loop (reviewer: 20k chars took 5.5 s)."""
-    import time
+    """A quadratic pattern let one page freeze the loop (reviewer: 20k chars took 5.5 s).
+
+    The absolute bound is a gross guard (these take 1-6 ms alone; the quadratic pattern took
+    seconds); the scaling test below is what proves linear time on any machine.
+    """
 
     started = time.perf_counter()
     scan(hostile)
-    assert time.perf_counter() - started < 0.5
+    assert time.perf_counter() - started < 10.0
+
+
+# Runner-independent: the time at 4N against the time at N (``scaling`` in tests/conftest.py).
+# Linear gives about 4x, a quadratic pattern about 16x, whatever the machine; N is the start size
+# and grows until the small side takes 20 ms.
+_SCALING = {
+    "angle bracket, long space run": (lambda n: "<" + " " * n, 500_000),
+    "closing bracket, long space run": (lambda n: "</" + " " * n, 500_000),
+    "alternating bracket and space": (lambda n: "< " * n, 100_000),
+    "space run before tool_call": (lambda n: "<" + " " * n + "tool_call", 500_000),
+    "bracket, 500 spaces, repeated": (lambda n: ("<" + " " * 500) * n, 800),
+}
+
+
+@pytest.mark.parametrize("name", list(_SCALING))
+def test_the_tripwire_time_grows_linearly_with_the_input(name: str, scaling: Any) -> None:
+    build, n = _SCALING[name]
+
+    scaling.assert_linear(name, scan, build, n)
+
+
+def test_the_tripwire_scaling_check_does_catch_a_quadratic_scan(scaling: Any) -> None:
+    scaling.assert_detects_quadratic()
 
 
 @pytest.mark.parametrize(

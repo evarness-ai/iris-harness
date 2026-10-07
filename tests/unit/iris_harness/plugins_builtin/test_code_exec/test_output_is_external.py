@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -412,15 +413,32 @@ def test_a_long_line_with_no_newline_is_flushed_in_bounded_chunks_and_the_stradd
 
 
 def test_100k_one_char_feeds_stay_linear() -> None:
-    import time
 
     from iris_harness.plugins_builtin.code_exec.handler import _ProseRedactor
 
     p = _ProseRedactor()
     start = time.perf_counter()
     out = "".join(p.feed("a") for _ in range(100_000)) + p.flush()
-    assert time.perf_counter() - start < 0.5
+    # A gross guard (it takes ~16 ms alone); the scaling test below proves the linear time.
+    assert time.perf_counter() - start < 10.0
     assert out == "a" * 100_000
+
+
+def _feed_one_char_at_a_time(n: int) -> None:
+    from iris_harness.plugins_builtin.code_exec.handler import _ProseRedactor
+
+    p = _ProseRedactor()
+    "".join(p.feed("a") for _ in range(n))
+    p.flush()
+
+
+# Runner-independent: the time at 4N against the time at N (``scaling`` in tests/conftest.py).
+def test_one_char_feeds_scale_linearly(scaling: Any) -> None:
+    scaling.assert_linear("one-character feeds", _feed_one_char_at_a_time, lambda n: n, 100_000)
+
+
+def test_the_feed_scaling_check_does_catch_a_quadratic_scan(scaling: Any) -> None:
+    scaling.assert_detects_quadratic()
 
 
 def test_no_chunk_boundary_leaks_the_phrase() -> None:

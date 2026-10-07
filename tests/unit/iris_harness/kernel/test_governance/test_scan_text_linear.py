@@ -62,55 +62,27 @@ def _time(text: str) -> float:
     return time.perf_counter() - start
 
 
-# Runner-independent: doubling the input must not much more than double the time. Each size is
-# sized so a linear scan takes 50-100 ms: long enough that a scheduler hiccup is small next to
-# the measurement, short enough that the whole test stays quick. Best of five on each side removes
-# a noisy neighbour (a busy xdist worker, a loaded hosted runner); the additive slack covers the
-# rest. A quadratic pattern gives about 4x at 2N, which no slack of this size hides.
+# Runner-independent: the time at 4N against the time at N (``scaling`` in tests/conftest.py).
+# Linear gives about 4x, a quadratic pattern about 16x, whatever the machine; N is the start size
+# and grows until the small side takes 20 ms.
 SCALING = {
-    "a.-run then @b.": (lambda n: "a." * n + "@b.", 300_000),
-    "+1- repeated": (lambda n: "+1-" * n, 200_000),
-    "123-45- repeated": (lambda n: "123-45-" * n, 100_000),
-    "unclosed voice markers": (lambda n: "[voice_transcript:" * n, 50_000),
-    "many @ and no domain": (lambda n: "a@" * n, 200_000),
+    "a.-run then @b.": (lambda n: "a." * n + "@b.", 100_000),
+    "+1- repeated": (lambda n: "+1-" * n, 60_000),
+    "123-45- repeated": (lambda n: "123-45-" * n, 30_000),
+    "unclosed voice markers": (lambda n: "[voice_transcript:" * n, 16_000),
+    "many @ and no domain": (lambda n: "a@" * n, 60_000),
 }
-_RATIO = 3.0
-_SLACK_SECONDS = 0.25
-_REPEATS = 5
-
-
-def _best_of(run: Any, text: str, repeats: int) -> float:
-    best = float("inf")
-    for _ in range(repeats):
-        start = time.perf_counter()
-        run(text)
-        best = min(best, time.perf_counter() - start)
-    return best
-
-
-def _scales_linearly(
-    run: Any, build: Any, n: int, repeats: int = _REPEATS
-) -> tuple[bool, float, float]:
-    small = _best_of(run, build(n), repeats)
-    large = _best_of(run, build(2 * n), repeats)
-    return large <= _RATIO * small + _SLACK_SECONDS, small, large
 
 
 @pytest.mark.parametrize("name", list(SCALING))
-def test_classification_time_grows_linearly_with_the_input(name: str) -> None:
+def test_classification_time_grows_linearly_with_the_input(name: str, scaling: Any) -> None:
     build, n = SCALING[name]
-    ok, small, large = _scales_linearly(scan_text, build, n)
 
-    assert ok, f"{name}: {small:.3f}s at N, {large:.3f}s at 2N (limit {_RATIO}x + slack)"
+    scaling.assert_linear(name, scan_text, build, n)
 
 
-def test_the_scaling_check_does_catch_the_quadratic_regex_it_replaced() -> None:
-    """The detector must bite: the original email regex (quadratic) fails it. One run per side:
-    the old regex is slow, and a quadratic ratio does not need the noise filtering."""
-    build, _ = SCALING["a.-run then @b."]
-    ok, small, large = _scales_linearly(_ORIGINAL_EMAIL.search, build, 16_000, repeats=1)
-
-    assert not ok, f"the old regex scaled linearly here ({small:.3f}s -> {large:.3f}s)?"
+def test_the_scaling_check_does_catch_a_quadratic_scan(scaling: Any) -> None:
+    scaling.assert_detects_quadratic()
 
 
 @pytest.mark.parametrize("name", list(ISSUE_INPUTS))

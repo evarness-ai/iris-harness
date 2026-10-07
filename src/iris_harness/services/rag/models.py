@@ -87,12 +87,23 @@ class IngestResult:
     # Files that classified secret: not indexed, and any earlier chunks of theirs
     # removed (secret content never enters RAG).
     sources_denied: int = 0
+    # Registered files that no longer exist on disk: ``sync_all`` took their chunks and
+    # index entries out of RAG (the file itself is never touched).
+    sources_removed: int = 0
+    # Registered files ``sync_all`` could not judge because their location is unavailable (the
+    # parent folder is missing or unreadable: an unmounted volume, a dropped share). Left as
+    # they were: not pruned, not reported.
+    sources_unavailable: int = 0
 
     def summary(self) -> str:
         text = (
             f"{self.sources_added} added, {self.sources_updated} updated, "
             f"{self.sources_skipped} unchanged; {self.chunks_indexed} chunk(s) indexed"
         )
+        if self.sources_removed:
+            text += f"; {self.sources_removed} removed: file no longer on disk"
+        if self.sources_unavailable:
+            text += f"; {self.sources_unavailable} skipped: location unavailable"
         if self.sources_denied:
             text += (
                 f"; {self.sources_denied} refused: classified secret "

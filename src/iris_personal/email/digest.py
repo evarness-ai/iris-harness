@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from iris_harness.sdk.content import wrap_external_content
 from iris_personal.email.contracts import EmailMessage
 from iris_personal.email.store import EmailStore
 
@@ -165,7 +166,11 @@ def narrate_digest(digest: InboxDigest, *, llm_call: Callable[[str], str] | None
     if llm_call is None or digest.is_empty:
         return text
     try:
-        narrative = llm_call(_NARRATE_PROMPT.format(digest=text)).strip()
+        # The digest names senders and subjects, text a third party wrote: it goes into the
+        # prompt inside the untrusted-content envelope (issue #148). The owner still gets
+        # the plain list below, unwrapped.
+        marked = wrap_external_content(text, source="email", tool="inbox_digest")
+        narrative = llm_call(_NARRATE_PROMPT.format(digest=marked)).strip()
     except Exception:  # narrative is optional polish
         logger.exception("email digest: narrative LLM call failed; using plain digest")
         return text

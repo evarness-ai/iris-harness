@@ -36,6 +36,7 @@ from typing import Any, cast
 import numpy as np
 
 from iris_harness.sdk.config import workspace_dir
+from iris_harness.sdk.content import wrap_external_content
 from iris_harness.sdk.events import EventBus, get_default_bus
 from iris_harness.sdk.llm import EMBED_MODEL_DEFAULT, embed_corpus
 from iris_harness.sdk.persistence import data_path
@@ -277,11 +278,17 @@ def _build_picker_prompt(email: EmailMessage, candidates: list[CategoryCentroid]
     paths = "\n".join(
         f"  {i + 1}. {c.path}  (cohesion {c.cohesion:.2f})" for i, c in enumerate(candidates)
     )
-    return (
+    # The envelope is text a third party wrote (issue #148): marked and redacted as data.
+    envelope = wrap_external_content(
         f"Email envelope:\n"
         f"  From: {email.from_address} ({domain})\n"
         f"  Subject: {email.subject}\n"
-        f"  Snippet: {email.snippet}\n\n"
+        f"  Snippet: {email.snippet}",
+        source="email",
+        tool="triage",
+    )
+    return (
+        f"{envelope}\n\n"
         f"Candidate categories (closest by embedding distance):\n{paths}\n\n"
         f"Pick exactly one path."
     )

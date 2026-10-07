@@ -291,6 +291,13 @@ First public release of the IRIS harness.
 
 - `httpcore` is a declared dependency (issue #174): the governed client's pinned transport imports it directly and replaces httpx's private `_pool`. A new test pins that attribute, so an httpx upgrade that moves it fails in CI rather than at runtime.
 
+- The behavior miner reads stored turns through the re-entry scan (issue #162). The turns it
+  mines are stored text, so an assistant turn that held third-party text is redacted before it is
+  put in the miner's prompt and the owner's own turns stay verbatim. The scan sits in
+  `mine_behavior_patterns`, the one entry the console preview, the periodic run and the
+  compaction-archived span all pass through. Audited as reader `behavior_miner`, counts only.
+  The miner's output was already propose-only and human-approved.
+
 - The general lane's direct skill answer is a governed call (issue #155, second part). When a
   request matches a skill, the lane answers it before any model by running the skill's first
   tool; that call used to run in-process with no `PRE_TOOL_USE` / `POST_TOOL_USE`, no approval

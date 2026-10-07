@@ -277,10 +277,24 @@ retriever adds, and the recent-turns block of the intent router's prompt. `kerne
 
 **Known limits.** Phrase-level only, like the floor: a paraphrase, another language, a
 homoglyph spelling, and a summary the model wrote that rewords an instruction all pass. The
-recalled text is redacted, not marked: it does not arrive in an `<external_content>`
-envelope, because the turn's origin (third-party text or the owner's own conversation) is not
-recorded yet; that is a later step. Not covered yet: the compactor's summarizer input, the
-behavior miner, intention roll-up and notices injected into the window.
+recalled text of a turn the harness cannot show was third-party is redacted, not marked.
+Not covered yet: the compactor's summarizer input and the summaries it writes (a
+follow-up), the behavior miner, intention roll-up and notices injected into the window.
+
+**Where a stored turn came from (issue #145, steps 2-3).** The loop records, on the
+assistant row (`conversations.turn_origin`), whether the run read third-party text (a
+`content: external` tool's result) before it answered: `external`, or `internal` when it did
+not. A turn an external-origin run produced comes back inside the untrusted-content envelope
+(`<external_content source="stored_transcript" ...>`), scanned as well, in every reader above;
+the cut that shortens an excerpt is made inside the envelope so its closing tag is never lost.
+An `internal` turn, a turn whose producer did not say (every deterministic answer for now) and
+every row written before the column (NULL, never backfilled) are scanned exactly as before and
+not enveloped: internal is not a promise of safety, because a model's restatement of an
+internal-declared tool's result is stored as it was said. The owner's own turns are verbatim
+whatever. The mark is on the whole run, not the sentence: a turn that read a page and then
+answered from its own knowledge is enveloped too (the safe direction). Stored rows are never
+rewritten, and the cross-session index still embeds the text; the mark is applied when the
+text is read back.
 
 ## The audit ledger
 

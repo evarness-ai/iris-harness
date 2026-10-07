@@ -156,6 +156,15 @@ class _WikiLintHandler:
 # a helper that only the facade calls is not composition either.
 
 
+def _turn_origin(metadata: dict[str, object]) -> str | None:
+    """The stored ``turn_origin`` of an answer: what the loop recorded (``"external"`` when its
+    run read third-party text, ``"internal"`` when it did not), else None (unknown: the
+    producer did not say). Only those two exact values count, so a stray metadata key cannot
+    mark a turn."""
+    value = metadata.get("turn_origin")
+    return value if value in ("external", "internal") else None
+
+
 def _build_router_classifier_for_model(model: str) -> IIntentClassifier:
     """Build a router classifier bound to an explicit model name.
 
@@ -815,7 +824,12 @@ class IrisRuntime:
                 text=f"{curated.text.rstrip()}\n\n{_CLARIFY_NUDGE}",
                 metadata={**curated.metadata, "feedback_clarify_appended": True},
             )
-        self.sessions.record_turn(session_id, message, curated.text)
+        self.sessions.record_turn(
+            session_id,
+            message,
+            curated.text,
+            origin=_turn_origin(curated.metadata),
+        )
         self.capture.extract_and_store_facts(message, session_id)
         # Say what was learned, in the same breath. A fact IRIS keeps quietly is one the
         # user cannot correct — and a queue nobody works is not learning at all.

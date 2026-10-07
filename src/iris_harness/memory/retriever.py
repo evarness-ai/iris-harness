@@ -255,11 +255,18 @@ class MemoryRetriever:
                 cross_turns = []
         # Stored turns coming back into a prompt: an assistant turn is scanned for
         # instruction-like text, the owner's own are not (#145).
+        origins: dict[str, str | None] = {}
+        if cross_turns:
+            try:
+                origins = self.store.turn_origins([t.row_id for t in cross_turns])
+            except Exception:
+                logger.warning("retriever: could not read turn origins", exc_info=True)
         scanned = reenter_many(
             [(t.role, t.content) for t in cross_turns],
             reader="retriever.related_turns",
             origin="transcript",
             chronological=False,
+            origins=[origins.get(str(t.row_id)) for t in cross_turns],
         )
         related = tuple(f"{t.role}: {r.text}" for t, r in zip(cross_turns, scanned, strict=True))
 

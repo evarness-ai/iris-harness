@@ -11,6 +11,18 @@ First public release of the IRIS harness.
 
 ### Added
 
+- A stored assistant turn records where it came from (issue #145, steps 2-3). The loop notes
+  whether the run read third-party text (a `content: external` tool's result) before answering,
+  and `conversations.turn_origin` stores `external` or `internal` on the assistant row (NULL
+  is unknown: every row written before this change, never backfilled, and any answer the loop
+  did not produce). A turn marked `external` comes back into a prompt inside the
+  untrusted-content envelope, as well as scanned, from the conversation window, the history
+  reload after a restart, the related turns from other sessions, `recall_conversation`,
+  `memory_search` over sessions and the intent router's recent-turns block. Internal and
+  unknown turns are scanned as before; the owner's own turns come back verbatim. A database an
+  earlier release created gets the column when it is opened (several processes opening it at once
+  are safe).
+
 - The audit stores carry an identity in real columns (issue #134, stage 3). `audit_log` gains
   `record_id` (minted by the store, unique), `session_id`, `turn_id`, `call_id`,
   `parent_call_id`, `attempt`, `replay_of` and `resumed_from_run`; the side-effect ledger gains the

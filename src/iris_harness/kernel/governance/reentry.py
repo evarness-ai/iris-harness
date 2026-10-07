@@ -18,8 +18,13 @@ What it does, and does not:
 - It scans ``assistant`` turns and ``summary`` text only. A ``user`` turn is the owner's own
   words and comes back untouched (an owner's note that says "ignore previous instructions"
   must not be rewritten).
-- It redacts and does not mark. There is no envelope in this step: marking turns needs to
-  know which turns came from third-party text, which is not recorded yet.
+- It redacts, and marks only what is known to be third-party. A turn the loop recorded as
+  ``external`` (the run read a ``content: external`` tool's text before answering,
+  ``turn_origin`` on the stored row, #145 step two) also comes back inside the
+  untrusted-content envelope; every other assistant turn (``internal`` or unknown, which is
+  every row written before the column) is scanned as before and not enveloped. Internal is
+  not safe: a model's restatement of an internal-declared tool's result is stored as it was
+  said, so the scan stays on all of them.
 - It is phrase-level. A paraphrase, another language, a homoglyph or an LLM-written summary
   that rewords an instruction passes: the tripwire is thirteen phrase patterns.
 - Stored rows are never altered; the redaction is on the copy that goes to the prompt.
@@ -43,7 +48,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from iris_harness.kernel.governance.external_content import MARKER, floor_enabled, scan
+from iris_harness.kernel.governance.external_content import MARKER, floor_enabled, scan, wrap
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +70,11 @@ AUDIT_PLUGIN = "reentry"
 #: Roles that come back verbatim: the owner's own words.
 FIRST_PARTY_ROLES = frozenset({"user"})
 
+#: ``turn_origin`` of a stored assistant turn whose run read third-party text (#145 step two).
+EXTERNAL_TURN = "external"
+#: ``source`` of the envelope a stored external-origin turn comes back in.
+ENVELOPE_SOURCE = "stored_transcript"
+
 _MEMO_MAX = 2048
 
 
@@ -78,6 +88,7 @@ class Reentry:
     chars: int = 0  # characters actually scanned (0 for a passed-through or refused text)
     capped: bool = False
     cached: bool = False
+    enveloped: bool = False  # came back inside the untrusted-content envelope (external origin)
 
 
 @dataclass(frozen=True)
@@ -93,6 +104,7 @@ class ReentryAudit:
     ids: tuple[str, ...]
     capped_items: int
     cache_hits: int
+    enveloped_items: int = 0
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -105,6 +117,7 @@ class ReentryAudit:
             "patterns": list(self.ids),
             "capped_items": self.capped_items,
             "cache_hits": self.cache_hits,
+            "enveloped_items": self.enveloped_items,
         }
 
 
@@ -178,8 +191,16 @@ def _scan_cached(text: str) -> tuple[str, tuple[str, ...], int, bool]:
     return redacted, result.ids, result.spans, False
 
 
-def _one(text: str, role: str, remaining: int | None) -> tuple[Reentry, int | None]:
-    """Scan one text under the per-text cap and the call's remaining characters."""
+def _one(
+    text: str,
+    role: str,
+    remaining: int | None,
+    turn_origin: str | None = None,
+    reader: str = "",
+    limit: int | None = None,
+) -> tuple[Reentry, int | None]:
+    """Scan one text under the per-text cap and the call's remaining characters; an
+    external-origin turn also comes back inside the envelope."""
     if role in FIRST_PARTY_ROLES or not text:
         return Reentry(text), remaining
     capped = False
@@ -194,7 +215,14 @@ def _one(text: str, role: str, remaining: int | None) -> tuple[Reentry, int | No
     scanned, ids, spans, cached = _scan_cached(text)
     if capped:
         scanned += CUT_MARKER
-    return Reentry(scanned, ids, spans, len(text), capped, cached), remaining
+    enveloped = turn_origin == EXTERNAL_TURN
+    if enveloped:
+        if limit is not None:
+            # The reader will show a one-line excerpt: cut the TEXT before the envelope goes
+            # round it, so the closing tag is never the part that is cut off.
+            scanned = " ".join(scanned.split())[:limit]
+        scanned = wrap(scanned, source=ENVELOPE_SOURCE, tool=reader or "transcript")
+    return Reentry(scanned, ids, spans, len(text), capped, cached, enveloped), remaining
 
 
 def _emit(reader: str, origin: str, results: Sequence[tuple[str, Reentry]]) -> None:
@@ -221,6 +249,7 @@ def _emit(reader: str, origin: str, results: Sequence[tuple[str, Reentry]]) -> N
         ids=tuple(ids),
         capped_items=capped,
         cache_hits=sum(1 for _, r in results if r.cached),
+        enveloped_items=sum(1 for _, r in results if r.enveloped),
     )
     try:
         recorder(event)
@@ -235,6 +264,7 @@ def reenter_text(
     origin: str,
     role: str,
     budget: int | None = None,
+    turn_origin: str | None = None,
 ) -> Reentry:
     """``text`` as it should enter a prompt: a ``user`` text unchanged, anything else scanned.
 
@@ -244,7 +274,7 @@ def reenter_text(
     """
     if not floor_enabled():
         return Reentry(text)
-    result, _ = _one(text, role, MAX_CALL_CHARS if budget is None else budget)
+    result, _ = _one(text, role, MAX_CALL_CHARS if budget is None else budget, turn_origin, reader)
     _emit(reader, origin, [(role, result)])
     return result
 
@@ -255,12 +285,20 @@ def reenter_many(
     reader: str,
     origin: str,
     chronological: bool = True,
+    origins: Sequence[str | None] | None = None,
+    limit: int | None = None,
 ) -> list[Reentry]:
     """:func:`reenter_text` over ``(role, text)`` pairs, one call budget for all of them.
 
     ``chronological=True`` (oldest first, a history window) spends the budget from the
     newest end; ``False`` spends it in list order (a ranked result). The result is in the
     order of ``items``. One audit row for the whole call.
+
+    ``origins`` is the stored ``turn_origin`` of each item, in the same order (None for an
+    item whose origin is unknown, and when omitted): an ``external`` one comes back inside
+    the envelope, as well as scanned. ``limit`` is the length of the one-line excerpt the
+    reader will show (see :func:`one_line`): an enveloped text is cut to it BEFORE it is
+    wrapped.
     """
     if not floor_enabled():
         return [Reentry(text) for _, text in items]
@@ -269,22 +307,37 @@ def reenter_many(
     order = range(len(items) - 1, -1, -1) if chronological else range(len(items))
     for i in order:
         role, text = items[i]
-        out[i], remaining = _one(text, role, remaining)
+        out[i], remaining = _one(
+            text, role, remaining, origins[i] if origins is not None else None, reader, limit
+        )
     results = [r for r in out if r is not None]
     _emit(reader, origin, [(items[i][0], r) for i, r in enumerate(results)])
     return results
+
+
+def one_line(result: Reentry, limit: int) -> str:
+    """``result`` as one line of at most ``limit`` characters, for a reader that shows an
+    excerpt. An enveloped text was already cut to ``limit`` inside its envelope (pass the same
+    ``limit`` to :func:`reenter_many`), so it is never cut again: that would drop the closing
+    tag. Any other text is collapsed to one line and cut."""
+    if result.enveloped:
+        return result.text
+    return " ".join(result.text.split())[:limit]
 
 
 __all__ = [
     "AUDIT_HOOK_POINT",
     "CUT_MARKER",
     "REENTRY_MARKER",
+    "ENVELOPE_SOURCE",
+    "EXTERNAL_TURN",
     "MAX_CALL_CHARS",
     "MAX_ITEM_CHARS",
     "SPENT_MARKER",
     "Reentry",
     "ReentryAudit",
     "audit_recorder",
+    "one_line",
     "reenter_many",
     "reenter_text",
     "set_reentry_recorder",

@@ -62,6 +62,25 @@ leaves a record for `iris run resume` to check; if that row cannot be written, t
 denied and nothing runs. Without `..._LEDGER_ALL`, plain writes and reads leave no row.
 Turning the ledger off denies destructive tools and pinned writes.
 
+**A write after outside text.** Redaction of instruction-like phrases is phrase-level, so a
+model that has read a web page, an email or a document can still be steered toward a harmful
+action, and a poisoned memory outlives the turn. A run is *tainted* once one of its steps ran
+a tool declared `content: external`. In a tainted run, a call of a tool listed in
+`config/governance/taint-policy.yaml` (`approval_when_tainted`; by default `memory_correct`,
+`memory_forget` and `memory_restore`) is held for the owner's approval on the same card as any
+approved-per-call tool, and the card says why ("IRIS read text from outside ... earlier in this
+turn and now wants to make this change"). The same call in a run that read nothing from
+outside is unchanged ("forget that I like X" asks nothing). The loop works the taint out from
+the run's own recorded steps, so a run resumed after an approval keeps it, and one approval is
+not consent to the next write; the next user message starts a clean run. A lane that cannot
+pause for an answer refuses the write instead of queueing an approval nobody could act on. A
+file that is missing or malformed falls back to the three memory writes; names only, no
+wildcards. The `chat`, `chat_stream`, REPL, web and Telegram surfaces all share the loop and
+the card. The limit of the design: taint is set only by a tool step declared `content:
+external` in this run. External text that reaches the prompt without a tool step (recalled
+memory, auto-injected retrieval context, stored text from earlier turns, which the re-entry
+scan redacts but does not taint) does not taint the run.
+
 ## Run limits
 
 An evaluator watches each run for loops, goal drift and a runaway step count, and a

@@ -269,6 +269,14 @@ First public release of the IRIS harness.
   verdict, so the envelope only guarded against a manipulated label. The digest narration and the
   triage picker keep their envelope.
 
+- The kernel's content classifier runs in linear time on hostile text (issue #156). The `email`
+  pattern backtracked quadratically (a 200 KB `"a."*100000 + "@b."` took 19.5 s, and
+  `"+1-"*130000` and `"123-45-"*57000` over 20 s each) and so did the voice-transcript marker;
+  anything that classifies untrusted text (tool and MCP results, files, RAG ingest, the docs
+  search) could be stalled with a small input. Both are now small linear matchers that mean what
+  the old patterns meant (checked against them on 40,000 random strings); the same inputs take
+  under 0.1 s.
+
 - An MCP call a `PreToolUse` hook answers with `require_approval` no longer reaches the
   server: the bridge refused only `deny` before the call, though the post step already refused
   both (issue #181).

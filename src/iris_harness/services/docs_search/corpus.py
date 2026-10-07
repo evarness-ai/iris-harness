@@ -461,9 +461,11 @@ def _scan_verdict(text: str, limits: Limits, corpus_deadline: float, resume: lis
     """``"secret"`` (withhold), ``"budget"`` (this document used its time: withhold),
     ``"defer"`` (the call's scan time ran out: decide on a later call) or ``"ok"``.
 
-    The kernel's patterns are super-linear on hostile text, so they only ever see a chunk
-    (cost bounded by the chunk) and each document gets a time budget; exhausting it is
-    refused, not waved through. Lines longer than a chunk also get a regex-free marker test.
+    Each document gets a time budget, and the content scan sees one chunk at a time;
+    exhausting the budget is refused, not waved through. Lines longer than a chunk also get a
+    regex-free marker test. The kernel's patterns are linear in the text now (#156), so the
+    chunking is no longer what keeps a hostile document from stalling the scan; the budget
+    stays as a bound on the whole corpus, and the chunk size stays part of the cache key.
     ``resume`` is ``[chunks already scanned clean]``: a deferred document picks up where the
     last call stopped, so a document longer than one call's time still finishes.
     """

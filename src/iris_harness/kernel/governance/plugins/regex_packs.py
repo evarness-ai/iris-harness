@@ -15,17 +15,89 @@ Design notes:
   gated by config and an optional install extra.
 - Patterns should be readable. If a pattern needs comments to justify
   itself, prefer adding a focused test over silent cleverness.
+- Every entry must run in time linear in the text. The classifier scans
+  untrusted text (a document, a tool result, a file) with every entry, so a
+  pattern that backtracks quadratically is a denial-of-service lever (issue
+  #156: 200 KB of ``"a."*100000 + "@b."`` took 20 s). A regex whose start can
+  re-enter the same long run stays a regex only if a ``\b`` or a literal prefix
+  stops that; ``email`` and ``voice_transcript_marker`` could not be made
+  linear that way, so they are small matchers with the same meaning.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Final
+from collections.abc import Mapping, Sequence
+from typing import Final, Protocol
 
 from iris_harness.kernel.governance.hooks.types import DataClassification
 
 # (name, compiled_regex, classification)
 RegexEntry = tuple[str, re.Pattern[str], DataClassification]
+
+
+class Searchable(Protocol):
+    """What the classifier needs of a pattern: does the text contain a match.
+
+    A compiled regex satisfies it; so do the linear matchers below. Only the credential
+    patterns are also used to *replace* text (redaction), and those stay compiled regexes.
+    """
+
+    def search(self, text: str, /) -> object | None: ...
+
+
+# (name, searchable, classification): the classifier's view of an entry.
+ClassifierEntry = tuple[str, Searchable, DataClassification]
+
+
+class _EmailMatcher:
+    """``\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b``, in linear time.
+
+    The regex starts a scan at every word boundary inside a run of local-part characters, and
+    each scan runs to the end of the run: quadratic on ``"a."*N`` or ``"+1-"*N``. The meaning
+    does not depend on where in the run it starts, so this looks at each maximal run once: a
+    run immediately followed by ``@`` is a local part when some position in it is a word
+    boundary (the regex's leading ``\\b``), and the match needs a domain after the ``@``.
+    Each character is visited a constant number of times (a run, then a domain run, and the
+    two never overlap a third), so the cost is linear in the text.
+    """
+
+    _RUN = re.compile(r"[A-Za-z0-9._%+-]+")
+    _BOUNDARY_START = re.compile(r"\b[A-Za-z0-9._%+-]")
+    _DOMAIN = re.compile(r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+
+    def search(self, text: str, /) -> object | None:
+        if "@" not in text:
+            return None
+        for run in self._RUN.finditer(text):
+            end = run.end()
+            if text.startswith("@", end) and self._is_local_part(text, run.start(), end):
+                if self._DOMAIN.match(text, end + 1):
+                    return True
+        return None
+
+    def _is_local_part(self, text: str, start: int, end: int) -> bool:
+        # A ``\b`` somewhere in [start, end): ``pos``/``endpos`` keep the character before
+        # ``start`` in view, so a boundary at ``start`` itself is judged against it.
+        return self._BOUNDARY_START.search(text, start, end) is not None
+
+
+class _VoiceMarkerMatcher:
+    """``\\[voice_transcript:[^\\]]*\\]``, in linear time.
+
+    The regex re-scans to the end of the text from every ``[voice_transcript:`` when no ``]``
+    follows (quadratic). A match exists exactly when a ``]`` follows the first occurrence of
+    the prefix: a later occurrence has fewer characters after it, and the prefix itself
+    contains no ``]``.
+    """
+
+    _PREFIX = "[voice_transcript:"
+
+    def search(self, text: str, /) -> object | None:
+        start = text.find(self._PREFIX)
+        if start == -1:
+            return None
+        return True if text.find("]", start + len(self._PREFIX)) != -1 else None
 
 
 CREDENTIAL_PATTERNS: Final[list[RegexEntry]] = [
@@ -59,12 +131,8 @@ CREDENTIAL_PATTERNS: Final[list[RegexEntry]] = [
 ]
 
 
-PII_PATTERNS: Final[list[RegexEntry]] = [
-    (
-        "email",
-        re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
-        "personal",
-    ),
+PII_PATTERNS: Final[list[ClassifierEntry]] = [
+    ("email", _EmailMatcher(), "personal"),
     # US Social Security Number (no real validation, just the format)
     ("ssn_us", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "personal"),
     # US phone in explicit format: requires separator (avoids matching
@@ -84,7 +152,7 @@ PII_PATTERNS: Final[list[RegexEntry]] = [
 ]
 
 
-IRIS_SPECIFIC_PATTERNS: Final[list[RegexEntry]] = [
+IRIS_SPECIFIC_PATTERNS: Final[list[ClassifierEntry]] = [
     # Telegram bot tokens look like 12345678:AAH...alphanum (35-46 chars)
     (
         "telegram_bot_token",
@@ -99,15 +167,11 @@ IRIS_SPECIFIC_PATTERNS: Final[list[RegexEntry]] = [
         "internal",
     ),
     # IRIS voice transcript markers — anything inside is from the mic
-    (
-        "voice_transcript_marker",
-        re.compile(r"\[voice_transcript:[^\]]*\]"),
-        "personal",
-    ),
+    ("voice_transcript_marker", _VoiceMarkerMatcher(), "personal"),
 ]
 
 
-ALL_PACKS: Final[dict[str, list[RegexEntry]]] = {
+ALL_PACKS: Final[Mapping[str, Sequence[ClassifierEntry]]] = {
     "credentials": CREDENTIAL_PATTERNS,
     "pii": PII_PATTERNS,
     "iris_specific": IRIS_SPECIFIC_PATTERNS,

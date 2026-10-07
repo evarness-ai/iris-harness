@@ -289,6 +289,8 @@ First public release of the IRIS harness.
   provenance is still tracked by its flag). One fix point, `_summary_prompt`, covers `compact`,
   `summarize_all` and the legacy dict API. Audited as reader `compactor`, counts only.
 
+- `httpcore` is a declared dependency (issue #174): the governed client's pinned transport imports it directly and replaces httpx's private `_pool`. A new test pins that attribute, so an httpx upgrade that moves it fails in CI rather than at runtime.
+
 - The general lane's direct skill answer is a governed call (issue #155, second part). When a
   request matches a skill, the lane answers it before any model by running the skill's first
   tool; that call used to run in-process with no `PRE_TOOL_USE` / `POST_TOOL_USE`, no approval

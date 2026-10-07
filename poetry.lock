@@ -7276,4 +7276,4 @@ ml = ["sentence-transformers"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.14"
-content-hash = "6b7c82de46f978ef42baac793859fa12b1a4f16edd763716a29aeca05e2eed5a"
+content-hash = "4db878e090018cfc8ff3a057ddbdfaa7123be8c2a4b5bf0574d9feb9672f02ce"

@@ -100,6 +100,10 @@ langchain-ollama = "^1.1"
 # Core
 pydantic = "^2.0"
 httpx = ">=0.27,<1"
+# Imported directly by runtime/egress_transport.py (PinnedTransport swaps httpx's private
+# connection pool for one that connects to a vetted address). httpx pulls it in, but a direct
+# import must be a declared dependency; tests/.../test_egress_httpx_internals.py pins the seam.
+httpcore = ">=1,<2"
 fastapi = ">=0.109,<1"
 # Pinned directly (fastapi allows >=0.46): 1.0.0 rebuilt request.url from the Host
 # header, which let a crafted Host move a request onto an auth-exempt path

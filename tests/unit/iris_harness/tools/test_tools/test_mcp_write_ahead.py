@@ -190,3 +190,46 @@ def test_the_config_rejects_an_unknown_effect_and_an_empty_tool_name() -> None:
         MCPServerGovernance.model_validate({"tools": {"x": {"effect": "read", "extra": 1}}})
     ok = MCPServerGovernance.model_validate({"tools": {"x": {"effect": "destructive"}}})
     assert ok.tools["x"].effect == "destructive"
+
+
+def test_a_pre_tool_hook_that_requires_approval_never_reaches_the_server(
+    tmp_path: Path,
+) -> None:
+    """The bridge refused only ``deny`` before the call; ``require_approval`` ran it (#181)."""
+    from iris_harness.kernel.governance.hooks.types import (
+        HookContext,
+        HookDecision,
+        HookPoint,
+    )
+    from iris_harness.kernel.governance.kernel import GovernanceKernel
+
+    class AsksForApproval:
+        name = "asks_for_approval"
+        hook_point = HookPoint.PRE_TOOL_USE
+        priority = 10
+
+        async def __call__(self, ctx: HookContext) -> HookDecision:
+            return HookDecision(outcome="require_approval", reason="owner must confirm")
+
+    kernel = GovernanceKernel()
+    kernel.register(AsksForApproval())
+    kernel.init_lock()
+    config = MCPBridgeConfig(
+        enabled=True,
+        servers=(MCPServerConfig(name="files", enabled=True, command="python"),),
+    )
+    bridge = MCPBridge(
+        tmp_path, config=config, governor_service=_governor(tmp_path), governance_kernel=kernel
+    )
+    reached: list[str] = []
+
+    def executor(_server: Any, tool: str, _args: dict[str, Any]) -> str:
+        reached.append(tool)
+        return "ok"
+
+    with pytest.raises(PermissionError, match="needs approval"):
+        bridge.invoke_external_tool(
+            "files", "read_file", dict(ARGS), approval_granted=True, executor=executor
+        )
+
+    assert reached == []

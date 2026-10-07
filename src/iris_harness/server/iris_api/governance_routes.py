@@ -25,7 +25,7 @@ from pydantic import BaseModel
 
 from iris_harness.foundation.env import env_flag
 from iris_harness.kernel.governance.audit import AuditLog
-from iris_harness.kernel.governance.audit.view import audit_view
+from iris_harness.kernel.governance.audit.view import audit_view, redaction_view
 from iris_harness.kernel.governance.external_content import (
     EXTERNAL_CONTENT_FLOOR_FLAG,
     floor_enabled,
@@ -140,6 +140,15 @@ def _model_guard(runtime: Callable[[], Any]) -> dict[str, Any]:
     }
 
 
+def _allow_state() -> dict[str, Any]:
+    """The owner's external-content allow-list (issue #139): how many entries are live, and
+    why the file is being ignored when it is (then nothing is allowed)."""
+    from iris_harness.kernel.governance.external_content_allow import allow_status
+
+    entries, problem = allow_status()
+    return {"entries": entries, "problem": problem}
+
+
 def _env_flag(name: str, *, default: bool = False) -> bool:
     """Thin alias for the shared reader, keeping this module's semantics.
 
@@ -170,6 +179,7 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
                 _owner_pii_flag(),
             ],
             "model_guard": _model_guard(runtime),
+            "external_content_allow": _allow_state(),
         }
 
     @app.get("/cost")
@@ -212,6 +222,16 @@ def install_governance_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
                 "callers": [],
                 "entries": [],
             }
+
+    @app.get("/governance/redactions")
+    def governance_redactions(limit: int = 100) -> dict[str, Any]:
+        """What the external-content floor redacted and the allow-list kept (issue #139):
+        a thin renderer over ``redaction_view``. Pattern ids and counts only, never text."""
+        audit = _audit_log()
+        try:
+            return redaction_view(audit, limit=limit)
+        except Exception:  # noqa: BLE001 — empty/missing ledger -> empty view, not 500
+            return {"count": 0, "audit_db": str(audit.db_path), "entries": []}
 
     @app.get("/governance/pii-shadow")
     def governance_pii_shadow(days: float = 7.0) -> dict[str, Any]:

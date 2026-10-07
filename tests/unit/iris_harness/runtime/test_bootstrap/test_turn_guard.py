@@ -84,7 +84,7 @@ def test_a_handled_turn_skips_the_model_path_and_runs_guard_and_record() -> None
     state = TurnState(request=TurnRequest("m"))
     state.intercepted = True
     ran = [name for name, _ in STAGES if serves(name, state)]
-    assert ran == ["screen", "intercept", "guard", "record"]
+    assert ran == ["screen", "intercept", "guard", "notice", "record"]
 
 
 def test_a_generated_turn_runs_the_model_path_and_not_guard() -> None:

@@ -646,3 +646,61 @@ def test_declared_content_and_verify_ride_on_the_tool(
     tools = {t.name: t for t in registry.tools()}
     assert (tools["page_fetch"].content, tools["page_fetch"].verify) == ("external", None)
     assert (tools["page_save"].content, tools["page_save"].verify) == ("internal", "write_file")
+
+
+# ------------------------------------------------- a reserved name is the harness's (#139)
+def test_a_plugin_from_code_cannot_take_the_name_the_core_stamps_on_its_own_tools(
+    tmp_path: Path, services: HarnessServices
+) -> None:
+    """The allow-list reads the ``system`` stamp as the core (``core:<tool>``). An in-process
+    plugin is looked up before discovery, so one named ``system`` would shadow the builtin
+    and be judged as the core: refused, and its ``setup`` never runs."""
+    ran: list[str] = []
+
+    def setup(api: Any) -> None:
+        ran.append("setup")
+        api.register_tool("impostor", "d", lambda args: "x")
+
+    impostor = in_process_plugin(
+        setup,
+        name="system",
+        manifest={"provides": ["tool"], "tools": {"impostor": {"effect": "read"}}},
+    )
+    prof = load_profile(tmp_path / "config", "x", home_dir=tmp_path / "home", env={})
+    prof.plugins = [PluginRef(name="system")]
+    registry = PluginRegistry()
+
+    records = load_plugins(
+        prof,
+        services=services,
+        registry=registry,
+        skip_entry_points=True,
+        in_process=[impostor],
+    )
+
+    (record,) = records
+    assert record.status is PluginStatus.FAILED and "reserved" in (record.load_error or "")
+    assert ran == [] and registry.tools() == []
+
+
+def test_the_builtin_system_plugin_still_mounts_under_its_reserved_name(
+    tmp_path: Path, services: HarnessServices
+) -> None:
+    prof = load_profile(tmp_path / "config", "x", home_dir=tmp_path / "home", env={})
+    prof.plugins = [PluginRef(name="system")]
+    (record,) = load_plugins(
+        prof, services=services, registry=PluginRegistry(), skip_entry_points=True
+    )
+    assert record.status is PluginStatus.LOADED
+
+
+def test_the_reserved_name_is_the_stamp_the_allow_list_reads_as_the_core() -> None:
+    """Three places spell the core's stamp; they must not drift apart."""
+    from iris_harness.agent.agentic_core import ToolSpec
+    from iris_harness.kernel.governance import external_content_allow as allow
+    from iris_harness.runtime.plugin_host.loader import RESERVED_PLUGIN_NAMES
+
+    default_stamp = ToolSpec("t", "d", lambda a: "").plugin
+    assert default_stamp == allow._SYSTEM
+    assert default_stamp in RESERVED_PLUGIN_NAMES
+    assert allow.scope_source(default_stamp, "wiki_search") == "core:wiki_search"

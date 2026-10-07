@@ -87,6 +87,12 @@ class PluginSource:
         return f"{self.kind}:{self.location}"
 
 
+#: Names only a builtin plugin may take. ``ToolSpec.plugin`` is ``"system"`` for the core's own
+#: tools and for the builtin ``system`` plugin alike, and the external-content allow-list reads
+#: that stamp as the core (``core:<tool>``): a plugin from anywhere else that took the name
+#: would be judged as the core and borrow an exemption owed to it (issue #139).
+RESERVED_PLUGIN_NAMES: frozenset[str] = frozenset({"system"})
+
 # ---------------------------------------------------------------- in-process
 IN_PROCESS = "in-process"
 
@@ -476,6 +482,20 @@ def _mount(
     if isinstance(found, PluginRecord):
         return registry.add_plugin(found)
     source = found
+    if ref.name in RESERVED_PLUGIN_NAMES and source.kind != "builtin":
+        # An in-process plugin is looked up before discovery, so it could stand in for the
+        # builtin of the same name: refused, and nothing of it runs.
+        return registry.add_plugin(
+            PluginRecord(
+                name=ref.name,
+                source=source.label,
+                status=PluginStatus.FAILED,
+                load_error=(
+                    f"the plugin name {ref.name!r} is reserved for the harness's own plugin "
+                    f"and cannot be taken by a {source.kind.replace('_', '-')} plugin"
+                ),
+            )
+        )
     trust = ref.trust or source.manifest.trust
     # Issue #97: a manifest that says nothing about `party` reads untrusted; say so, once per
     # mount. A manifest the loader synthesised for a manifest-less entry point is covered

@@ -163,6 +163,46 @@ notes, JSON, other scripts, emoji) and requires zero matches. The measurement fo
 removed one false positive during development ("send ... your credentials form to
 hr@..."). The known false positives above are the cost of matching phrases.
 
+**Telling the owner.** When an answer or a brief the owner is reading shows the redaction
+marker, one plain sentence is appended once: part of that text was withheld because it looked
+like instructions aimed at the assistant, and `iris governance redactions` (or `GET
+/governance/redactions`) lists which rule matched. A shared turn stage (`notice`, after the
+response checks and before the turn is recorded) does it for the generated and the
+deterministic path on `chat` and `chat_stream`, so the transcript holds what the owner saw;
+a brief and a skill answered directly add it where they render, and none repeats it. The
+view shows pattern ids, span counts, the tool, the source and the caller, never the text.
+
+**The allow-list.** A text that quotes an attack phrase (an article about prompt injection,
+the docs of an LLM library) is a false positive. The owner can allow it, narrowly, in
+`config/governance/external-content.yaml` or with `iris governance allow add|remove|list`:
+
+```yaml
+allow:
+  - pattern: override_instructions   # one floor pattern id
+    source: mcp:docs                 # plugin:<name>, skill:<name>, mcp:<server> or core:<tool>
+    # tool: read_doc                 # optional: narrow the source to one of its tools
+    reason: an article about prompt injection
+    until: 2026-12-31                # optional; ignored once it has passed
+```
+
+An entry names one pattern id and a `source` in a namespace only the harness stamps
+(`plugin:<name>`, `skill:<name>`, `mcp:<server>` or `core:<tool>`), and may narrow it to one
+`tool`. A tool name alone is not a scope, because the registry refuses a duplicate tool name
+only among plugins, not against the core's own tools, so a second plugin's tool of the same
+name would borrow the exemption; a plugin name cannot contain `:`, so no plugin can claim
+another namespace; and the name `system`, which the core's own tools are stamped with, is
+reserved: only the builtin `system` plugin mounts under it (an in-process or discovered plugin
+of that name fails to load), so no plugin is ever judged `core:<tool>`. The floor judges an entry against the scope the harness stamped on the
+call, never a name a plugin chose. A wildcard, a missing or un-namespaced source, an unknown
+id and the hidden-character patterns (`bidi_override`, `invisible_run`, `tag_characters`) are
+refused when the file loads, and a file with a refused entry allows nothing (more
+redaction, never less). Only the floor's phrase patterns can be allowed: secret detection,
+egress, the owner-PII guards and the model guard never read it, so it cannot weaken the secret
+floor. Allowed text is not redacted but is still wrapped in the envelope. Adding or removing an
+entry writes a ledger row (`plugin: external_content_allow`, who, what, why); every use adds
+`allowed: [ids]` to the floor's row; `GET /governance/state` carries the live entry count and
+the reason a file is being ignored. The SDK and the plugin host expose no way to edit it.
+
 **Limits.** This is a floor, not a detector. It does not catch a paraphrase ("set aside
 what you were told earlier"), another language, a homoglyph spelling, or an instruction
 that is not phrased as one. An attack that is not caught is marked as untrusted and

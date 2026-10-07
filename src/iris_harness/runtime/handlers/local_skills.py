@@ -28,6 +28,7 @@ from typing import Any
 from iris_harness.agent.agent_executor import AgentTask
 from iris_harness.foundation.clock import local_now
 from iris_harness.foundation.paths import data_dir
+from iris_harness.kernel.governance.external_content import add_redaction_notice
 from iris_harness.llm.errors import friendly_llm_error as _friendly_llm_error
 from iris_harness.runtime.brief_tools import make_brief_render_tool, make_brief_runner
 from iris_harness.runtime.external_text import redact_external_text
@@ -270,6 +271,9 @@ def make_local_skills(skill_registry: SkillRegistry | None) -> LocalSkills:
         if package.manifest.tools and package.manifest.tools[0].content == "external":
             # The answer is the tool's text, shown to the owner as it is: tripwire, no envelope.
             answer = redact_external_text(answer, skill=package.manifest.name, tool=tool_name)
+            # Say so once when the floor cut a span out (issue #139); the turn's own notice
+            # stage does the same for any answer and does not repeat it.
+            answer = add_redaction_notice(answer)
         return (
             answer,
             {

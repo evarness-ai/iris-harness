@@ -13,6 +13,14 @@ client), what ran (the ``by`` column: the tool's owning plugin, the capability's
 or the model a model call was bound for), whether a deterministic handler answered,
 local or cloud, the reason with email addresses masked. Never the payload.
 
+``redactions``: what the external-content floor cut out of third-party text, and what the
+owner's allow-list kept, newest first: the tool, the source, the pattern ids and the span
+count, never the text (issue #139). ``allow list|add|remove`` edits the owner's allow-list
+for known false positives (``kernel/governance/external_content_allow.py``): an entry names
+one pattern id and a namespaced source (``plugin:`` / ``skill:`` / ``mcp:`` / ``core:``), may
+narrow it to one tool, takes no wildcard, and every change is a ledger row.
+Only the owner runs it; the SDK has no way to.
+
 ``proof-bundle export|verify|check``: the R14 proof bundle -- the ledger's evidence for
 the three onboarding invariants as one versioned JSON document, its offline check, and
 both at once over a recent window without a file (what the web Governance screen shows,
@@ -24,7 +32,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 from rich.table import Table
@@ -154,6 +162,154 @@ def audit(
             how or e.get("tool_name") or "",
         )
     console.print(table)
+
+
+@governance_app.command("redactions")
+def redactions(
+    limit: Annotated[int, typer.Option("--limit", help="How many rows, newest first.")] = 50,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the view as JSON.")] = False,
+) -> None:
+    """What the floor redacted (pattern ids, counts, source) and what the allow-list kept."""
+    from iris_harness.foundation.paths import audit_db_path
+    from iris_harness.kernel.governance.audit import AuditLog
+    from iris_harness.kernel.governance.audit.view import redaction_view
+
+    view = redaction_view(AuditLog(db_path=audit_db_path()), limit=limit)
+    if as_json:
+        console.print_json(json.dumps(view))
+        return
+    console.print(f"[bold]External-content redactions[/bold] {view['count']} row(s)")
+    if not view["entries"]:
+        console.print("nothing redacted")
+        return
+    table = Table(show_lines=False)
+    for column in ("time", "source", "tool", "patterns", "spans", "allowed", "caller"):
+        table.add_column(column)
+    for e in view["entries"]:
+        table.add_row(
+            e["ts"][:19],
+            str(e["source"] or ""),
+            str(e["tool"] or ""),
+            ", ".join(e["patterns"]),
+            str(e["spans"]),
+            ", ".join(e["allowed"]),
+            str(e["caller"] or ""),
+        )
+    console.print(table)
+
+
+allow_app = typer.Typer(
+    name="allow",
+    help="The owner's allow-list for the external-content floor (known false positives).",
+    no_args_is_help=True,
+)
+governance_app.add_typer(allow_app)
+
+
+@allow_app.command("list")
+def allow_list(
+    as_json: Annotated[bool, typer.Option("--json", help="Print the entries as JSON.")] = False,
+) -> None:
+    """The entries, with expired ones marked, and why the file is ignored when it is."""
+    from datetime import UTC, datetime
+
+    from iris_harness.kernel.governance.external_content_allow import (
+        AllowListError,
+        allow_path,
+        load_allow,
+    )
+
+    try:
+        entries = load_allow()
+    except AllowListError as exc:
+        print_error(f"{allow_path()} is ignored, so nothing is allowed: {exc}")
+        raise typer.Exit(1) from exc
+    today = datetime.now(UTC).date()
+    rows: list[dict[str, Any]] = [
+        {
+            "pattern": e.pattern,
+            "source": e.source,
+            "tool": e.tool,
+            "reason": e.reason,
+            "added": e.added,
+            "until": e.until,
+            "expired": e.expired(today),
+        }
+        for e in entries
+    ]
+    if as_json:
+        console.print_json(json.dumps(rows))
+        return
+    if not rows:
+        console.print("no entries: the floor redacts every match")
+        return
+    table = Table(show_lines=False)
+    for column in ("pattern", "source", "tool", "reason", "added", "until", "state"):
+        table.add_column(column)
+    for r in rows:
+        table.add_row(
+            str(r["pattern"]),
+            str(r["source"] or ""),
+            str(r["tool"] or ""),
+            str(r["reason"]),
+            str(r["added"]),
+            str(r["until"] or ""),
+            "expired" if r["expired"] else "active",
+        )
+    console.print(table)
+
+
+@allow_app.command("add")
+def allow_add(
+    pattern: Annotated[str, typer.Option("--pattern", help="One floor pattern id.")],
+    reason: Annotated[str, typer.Option("--reason", help="Why this source is fine.")],
+    source: Annotated[
+        str,
+        typer.Option(
+            "--source",
+            help="The source, in its namespace: plugin:<name>, skill:<name>, mcp:<server> "
+            "or core:<tool>. A tool name alone is not a scope.",
+        ),
+    ],
+    tool: Annotated[
+        str | None, typer.Option("--tool", help="Narrow the source to one of its tools.")
+    ] = None,
+    until: Annotated[
+        str | None, typer.Option("--until", help="An ISO date (YYYY-MM-DD) after which it lapses.")
+    ] = None,
+) -> None:
+    """Allow ONE pattern for ONE source and/or tool. No wildcards; recorded in the ledger."""
+    from iris_harness.kernel.governance.external_content_allow import AllowListError, add_entry
+
+    raw = {"pattern": pattern, "source": source, "tool": tool, "reason": reason, "until": until}
+    try:
+        entry = add_entry({k: v for k, v in raw.items() if v is not None}, actor="cli")
+    except AllowListError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+    console.print(f"allowed {entry.pattern} for {entry.scope()}")
+
+
+@allow_app.command("remove")
+def allow_remove(
+    pattern: Annotated[str, typer.Option("--pattern", help="The entry's pattern id.")],
+    source: Annotated[str, typer.Option("--source", help="The entry's source.")],
+    tool: Annotated[
+        str | None, typer.Option("--tool", help="The entry's tool, if it has one.")
+    ] = None,
+) -> None:
+    """Remove the entry for exactly this pattern and scope; recorded in the ledger."""
+    from iris_harness.kernel.governance.external_content_allow import (
+        AllowListError,
+        remove_entry,
+    )
+
+    try:
+        gone = remove_entry(pattern, source=source, tool=tool, actor="cli")
+    except AllowListError as exc:
+        print_error(str(exc))
+        raise typer.Exit(1) from exc
+    console.print(f"removed {gone.pattern} for {gone.scope()}")
 
 
 proof_bundle_app = typer.Typer(

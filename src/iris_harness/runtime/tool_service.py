@@ -91,7 +91,20 @@ class ToolResult:
         """
         if not self.external:
             return self.text
-        return wrap_scanned(self.text, source=self.source or "plugin", tool=self.tool or "tool")
+        from iris_harness.kernel.governance.external_content_allow import (
+            allowed_ids,
+            scope_source,
+        )
+
+        # ``source`` and ``tool`` were stamped by the tool service, so the owner's allow-list
+        # applies here as it did at the floor (issue #139): an allowed source is not
+        # re-redacted, another source still is.
+        return wrap_scanned(
+            self.text,
+            source=self.source or "plugin",
+            tool=self.tool or "tool",
+            allow=allowed_ids(scope_source(self.source, self.tool), self.tool),
+        )
 
 
 @dataclass(frozen=True)

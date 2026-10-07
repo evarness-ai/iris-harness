@@ -16,7 +16,10 @@ party: first-party
 cli: cli:register
 provides: []
 # Issue #103: the hosts the Google API client and the OAuth flow connect to. `personal`:
-# mail and the account profile cross these.
+# mail and the account profile cross these. The Google client does its own transport, so
+# gmail_fetch.py, gmail_attachments.py and gmail_oauth.py stay on the first-party raw-network
+# list (issue #172, test_network_imports.py): the declaration documents the hosts, it does
+# not yet see these calls.
 egress:
   hosts:
     - host: gmail.googleapis.com

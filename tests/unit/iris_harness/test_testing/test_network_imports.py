@@ -75,27 +75,59 @@ def test_the_list_names_what_it_checks() -> None:
 
 # What the project ships as first-party plugins still imports raw network libraries in
 # these files. That is a visible debt, not an exemption: a NEW raw import in a first-party
-# plugin fails here, and moving a file onto `api.http` deletes its line (then this set must
-# shrink with it). Declared hosts for each are in the plugin's manifest where HTTP is
-# involved (research: open_web; gmail: Google's hosts); imap is a raw TCP socket (imaplib),
-# which no HTTP host list describes.
-_FIRST_PARTY_DEBT = {
-    # The opt-in Redis cache (IRIS_RESEARCH_CACHE=redis) opens a plain TCP connection to the
-    # operator's own Redis (IRIS_REDIS_URL): their infrastructure, and a TCP connection to an
-    # operator-configured server cannot go through api.http. Found when the lint learned
-    # `redis` (#175); the research manifest and plugin-egress.md say the same.
-    ("src/iris_harness/plugins_builtin/research/cache.py", "redis"),
-    ("src/iris_harness/plugins_builtin/research/extract.py", "socket"),
-    ("src/iris_harness/plugins_builtin/research/providers/searxng.py", "urllib.request"),
-    ("src/iris_personal/plugins/email_workflows/demo/run.py", "socket"),
-    ("src/iris_personal/plugins/email_workflows/discovery.py", "requests"),
-    ("src/iris_personal/plugins/email_workflows/job_watch.py", "httpx"),
-    ("src/iris_personal/plugins/gmail/gmail_attachments.py", "googleapiclient"),
-    ("src/iris_personal/plugins/gmail/gmail_fetch.py", "googleapiclient"),
-    ("src/iris_personal/plugins/gmail/gmail_oauth.py", "googleapiclient"),
-    ("src/iris_personal/plugins/imap/connection.py", "imaplib"),
-    ("src/iris_personal/plugins/imap/connection.py", "ssl"),
+# plugin fails here, and moving a file onto `api.http` deletes its line (then this table must
+# shrink with it). Every entry says WHY the file is still pinned (issue #172): a test below
+# fails on an entry with no reason, so a pin cannot be added without one.
+_DISCOVERY_REASON = (
+    "calls the operator's local llama-server (default http://localhost:8090/v1): local model "
+    "inference, not egress. The governed client refuses loopback by design; the proper home "
+    "is the tier router (issue #217: discovery.py onto the tier router)"
+)
+_GMAIL_REASON = (
+    "the Google API client does its own transport and OAuth; its hosts are declared in the "
+    "gmail manifest `egress`, but its calls do not pass through api.http"
+)
+_FIRST_PARTY_DEBT: dict[tuple[str, str], str] = {
+    ("src/iris_harness/plugins_builtin/research/cache.py", "redis"): (
+        "the opt-in Redis cache (IRIS_RESEARCH_CACHE=redis) opens a plain TCP connection to the "
+        "operator's own Redis (IRIS_REDIS_URL): their infrastructure, and a TCP connection to an "
+        "operator-configured server cannot go through api.http"
+    ),
+    ("src/iris_harness/plugins_builtin/research/extract.py", "socket"): (
+        "the Crawl4AI backend drives its own browser and cannot go through api.http; its "
+        "first URL is address-checked here (getaddrinfo). The default backend is governed"
+    ),
+    ("src/iris_harness/plugins_builtin/research/providers/searxng.py", "urllib.request"): (
+        "IRIS_SEARXNG_URL is the operator's own SearXNG server, usually on loopback or the "
+        "LAN; the governed client refuses internal addresses by design, and widening that "
+        "is a security-design decision (issue #216: owner-configured internal-service "
+        "egress declaration)"
+    ),
+    ("src/iris_personal/plugins/email_workflows/demo/run.py", "socket"): (
+        "opens nothing: it patches socket.connect to REFUSE network access for the demo run"
+    ),
+    ("src/iris_personal/plugins/email_workflows/discovery.py", "requests"): _DISCOVERY_REASON,
+    ("src/iris_personal/plugins/email_workflows/job_watch.py", "httpx"): (
+        "a health probe of the operator's own service roots (root_url(), loopback or LAN); "
+        "the governed client refuses internal addresses by design (issue #216: "
+        "owner-configured internal-service egress declaration)"
+    ),
+    ("src/iris_personal/plugins/gmail/gmail_attachments.py", "googleapiclient"): _GMAIL_REASON,
+    ("src/iris_personal/plugins/gmail/gmail_fetch.py", "googleapiclient"): _GMAIL_REASON,
+    ("src/iris_personal/plugins/gmail/gmail_oauth.py", "googleapiclient"): _GMAIL_REASON,
+    ("src/iris_personal/plugins/imap/connection.py", "imaplib"): (
+        "a TCP connection (IMAP over TLS) to the owner's own mail server: not an HTTP host, "
+        "so no `egress` host list describes it and api.http cannot carry it"
+    ),
+    ("src/iris_personal/plugins/imap/connection.py", "ssl"): (
+        "the TLS context for the same IMAP connection (imaplib)"
+    ),
 }
+
+
+def test_every_pinned_file_says_why_it_is_still_pinned() -> None:
+    for pair, reason in _FIRST_PARTY_DEBT.items():
+        assert len(reason.split()) >= 6, f"{pair} needs a real reason"
 
 
 def test_the_debt_list_shrank_by_the_four_urllib_pairs_issue_172_moved() -> None:
@@ -122,7 +154,7 @@ def test_first_party_plugins_import_raw_network_libraries_only_where_listed() ->
     found = _pairs(
         [_ROOT / "src/iris_harness/plugins_builtin", _ROOT / "src/iris_personal/plugins"]
     )
-    assert found == _FIRST_PARTY_DEBT
+    assert found == set(_FIRST_PARTY_DEBT)
 
 
 def test_a_new_library_in_a_pinned_file_is_not_in_the_pin(tmp_path: Path) -> None:

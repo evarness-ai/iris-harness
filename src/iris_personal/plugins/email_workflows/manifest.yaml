@@ -15,6 +15,11 @@ party: first-party
 cli: cli:register
 provides:
   - tool
+# No `egress` declaration, on purpose (issue #172): this plugin reaches no external host. Its
+# two HTTP files talk to the operator's own local services (discovery.py: the llama-server;
+# job_watch.py: service health probes), which the governed client refuses by design, and its
+# demo opens no connection. They stay on the first-party raw-network list with those reasons
+# (test_network_imports.py).
 # ADR-0110: the loop's email tools (built by the core email library, registered here).
 # Answers to these must come from a read tool, never from the model's memory.
 read_first_intents:

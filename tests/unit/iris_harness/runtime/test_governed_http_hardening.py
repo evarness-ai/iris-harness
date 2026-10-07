@@ -426,6 +426,29 @@ def test_a_slow_body_is_cut_off_at_the_total_deadline(
     assert row["egress"]["aborted"] == "deadline" and 0 < row["egress"]["bytes_in"] < 20
 
 
+def test_a_name_lookup_that_hangs_is_cut_off_at_the_total_deadline(
+    wired: AuditLog, server: _Server, monkeypatch: pytest.MonkeyPatch, loopback_allowed: None
+) -> None:
+    """Issue #173: the lookup is inside the deadline, so a resolver that never answers cannot
+    hold the request past it, and the request is recorded as a deadline abort."""
+    release = threading.Event()
+
+    def hangs(host: str, port: int, **_: Any) -> list[tuple[Any, ...]]:
+        release.wait(timeout=30)
+        return [(2, 1, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(egress_transport, "_resolve", hangs)
+    started = time.monotonic()
+    try:
+        with pytest.raises(EgressDenied, match="time limit"):
+            GovernedHttp("p").get(f"http://{NAME}:{server.port}/ok", timeout=1)
+        assert time.monotonic() - started < 3
+        [row] = _rows(wired, "post_egress")
+        assert row["egress"]["aborted"] == "deadline" and row["egress"]["bytes_in"] == 0
+    finally:
+        release.set()
+
+
 def test_slow_headers_are_cut_off_at_the_total_deadline(
     wired: AuditLog, server: _Server, resolver: _Dns, loopback_allowed: None
 ) -> None:

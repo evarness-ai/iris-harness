@@ -15,9 +15,13 @@ It also enforces the request's total wall-clock deadline on every socket operati
 httpx's own timeouts do not (each of those is per operation, so a server that answers one
 byte per second never trips them).
 
-Not covered: the name lookup itself (``getaddrinfo`` has no timeout, so the deadline starts
-counting at the connect), and an in-process plugin that opens its own socket
-(docs/architecture/plugin-egress.md).
+The name lookup is inside the deadline too. ``getaddrinfo`` has no timeout of its own, so it
+runs on a daemon worker thread and the request waits for it at most what is left of the
+deadline (``_lookup``). A thread blocked in the C resolver cannot be cancelled: it ends when the
+resolver returns, never keeps the process alive, and at most ``MAX_STUCK_LOOKUPS`` of them can
+exist at once. Past that, a further lookup fails closed at once instead of piling up threads.
+
+Not covered: an in-process plugin that opens its own socket (docs/architecture/plugin-egress.md).
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from __future__ import annotations
 import ipaddress
 import socket
 import ssl
+import threading
 import time
 import typing
 
@@ -33,6 +38,7 @@ import httpx
 
 _BLOCKED = "the host name resolves to an address inside this machine or network"
 _NO_ADDRESS = "the host name did not resolve"
+_LOOKUPS_BACKED_UP = "name lookups are backed up; the request was not sent"
 
 _NAT64 = ipaddress.ip_network("64:ff9b::/96")
 _SIX_TO_FOUR = ipaddress.ip_network("2002::/16")
@@ -50,6 +56,12 @@ _RESERVED_V6 = tuple(
 
 # The resolver is a seam for tests (no real DNS): ``socket.getaddrinfo`` in production.
 _resolve: typing.Callable[..., list[tuple[typing.Any, ...]]] = socket.getaddrinfo
+
+#: Lookups that may be outstanding at once, counting the ones that outlived their request. A
+#: lookup holds a slot until the resolver actually returns, so a resolver that hangs forever
+#: costs at most this many parked daemon threads, not one per request.
+MAX_STUCK_LOOKUPS = 8
+_slots = threading.BoundedSemaphore(MAX_STUCK_LOOKUPS)
 
 
 class BlockedAddress(Exception):
@@ -82,10 +94,47 @@ def blocked_address(address: str) -> bool:
     return not ip.is_global or ip.is_multicast
 
 
-def resolve_checked(host: str, port: int) -> list[str]:
-    """Resolve ``host`` once; every address must be allowed. Raises :class:`BlockedAddress`."""
+def _lookup(host: str, port: int, timeout: float) -> list[tuple[typing.Any, ...]]:
+    """``_resolve`` on a daemon thread, waited for at most ``timeout`` seconds.
+
+    Raises :class:`DeadlineExceeded` when the time runs out (the thread is left to finish by
+    itself) and :class:`BlockedAddress` when the stuck-lookup cap is reached.
+    """
+    if not _slots.acquire(blocking=False):
+        raise BlockedAddress(_LOOKUPS_BACKED_UP)
+    done = threading.Event()
+    box: dict[str, typing.Any] = {}
+
+    def work() -> None:
+        try:
+            box["infos"] = _resolve(host, port, type=socket.SOCK_STREAM)
+        except Exception as exc:  # noqa: BLE001 - reported to the waiting request
+            box["error"] = exc
+        finally:
+            _slots.release()
+            done.set()
+
+    threading.Thread(target=work, name="egress-resolve", daemon=True).start()
+    if not done.wait(timeout):
+        raise DeadlineExceeded
+    if "error" in box:
+        raise box["error"]
+    return typing.cast("list[tuple[typing.Any, ...]]", box["infos"])
+
+
+def resolve_checked(host: str, port: int, timeout: float | None = None) -> list[str]:
+    """Resolve ``host`` once; every address must be allowed. Raises :class:`BlockedAddress`.
+
+    With ``timeout`` the lookup is bounded (``_lookup``) and raises :class:`DeadlineExceeded`
+    when it runs out; without one it is the plain call.
+    """
     try:
-        infos = _resolve(host, port, type=socket.SOCK_STREAM)
+        if timeout is None:
+            infos = _resolve(host, port, type=socket.SOCK_STREAM)
+        else:
+            infos = _lookup(host, port, timeout)
+    except (DeadlineExceeded, BlockedAddress):
+        raise
     except Exception:  # noqa: BLE001 - any resolver failure is "did not resolve"
         raise BlockedAddress(_NO_ADDRESS) from None
     addresses: list[str] = []
@@ -162,7 +211,8 @@ class PinnedBackend(httpcore.SyncBackend):
         socket_options: typing.Iterable[typing.Any] | None = None,
     ) -> httpcore.NetworkStream:
         try:
-            addresses = resolve_checked(host, port)
+            # The lookup spends what is left of the request's total time, not extra.
+            addresses = resolve_checked(host, port, self._deadline.remaining())
         except BlockedAddress as exc:
             self.refused = str(exc)
             raise

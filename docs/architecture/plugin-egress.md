@@ -296,7 +296,7 @@ host was never contacted by a plugin; it is proof the governed client never cont
 | A plugin opening its own socket, or shelling out | In-process code is a contract, not a sandbox; the lint sees only static imports. Boundary: the MCP rung's process isolation (#111-#114) |
 | A plugin that bypasses the call scope | Inside a call the client acts only for the running tool's plugin (enforced). An in-process plugin that goes around the client altogether (own socket) is the row above |
 | A request made on a thread the tool started | Denied, not governed: it has no call scope. The plugin must request on the tool's thread |
-| The name lookup's own duration and the lookup's integrity | `getaddrinfo` has no timeout (the deadline starts at the connect); a resolver that lies about a public name is the operator's DNS concern. The returned addresses ARE checked |
+| The lookup's integrity | A resolver that lies about a public name is the operator's DNS concern. The returned addresses ARE checked, and the lookup's duration IS bounded: it runs on a daemon thread inside the request's total deadline (a thread stuck in the C resolver cannot be cancelled; it ends when the resolver returns, and at most 8 can be stuck at once, after which a lookup fails closed at once) |
 | Memory just past the cap | Decoding is bounded to 64 KiB per step, so memory is about the cap plus one step |
 | Ledger completeness | A request through the client with no `pre_egress` row is not sent; a request that does not go through the client leaves no row. A `post_egress` row that fails to write is logged and not retried |
 | A wildcard over a multi-label public suffix (`*.co.uk`) | No public-suffix list ships |

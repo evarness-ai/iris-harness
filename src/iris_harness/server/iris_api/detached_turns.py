@@ -29,6 +29,8 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from iris_harness.foundation.logsafe import log_safe
+
 logger = logging.getLogger(__name__)
 
 _END = object()
@@ -77,7 +79,7 @@ class DetachedTurns:
         try:
             for evt in gen:
                 if turn.cancel.is_set():
-                    logger.info("turn for %s cancelled by the owner", turn.session_id)
+                    logger.info("turn for %s cancelled by the owner", log_safe(turn.session_id))
                     close = getattr(gen, "close", None)
                     if close is not None:
                         close()
@@ -85,7 +87,7 @@ class DetachedTurns:
                 if not turn.detached.is_set():
                     turn.events.put(evt)
         except Exception as exc:  # reported to the relay, and logged
-            logger.exception("chat turn for %s failed", turn.session_id)
+            logger.exception("chat turn for %s failed", log_safe(turn.session_id))
             if not turn.detached.is_set():
                 turn.events.put(exc)
         finally:

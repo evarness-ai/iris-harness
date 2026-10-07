@@ -111,6 +111,17 @@ First public release of the IRIS harness.
 
 ### Changed
 
+- **Default flipped (issue #180): an MCP tool nobody declared is now treated as
+  `destructive`.** Before, a tool with no `governance.tools` entry ran with no effect
+  stamp, no write-ahead row and no approval. Now every such call is refused before the
+  server is reached unless `approved_by` names an approved queue row that pinned exactly
+  that call, and it leaves a write-ahead row. **What breaks:** every current MCP server
+  whose tools are not listed under `governance.tools` will need an approval on each call
+  (over HTTP it is refused with a 403, since that surface grants no approval). **The
+  one-line fix:** for a server that only reads, add `governance: {undeclared_tools: read}`
+  to its entry in `mcp-servers.yaml`; or declare each tool under `governance.tools`. After
+  `tools/list` the bridge logs a warning naming the undeclared tools. A server's own
+  `readOnlyHint` never relaxes the default.
 - **Default flipped (issue #104): text a tool, capability or MCP server declares
   `content: external` is now marked and scanned on every install.** The new
   external-content floor needs no model, no weights and no network. An external result

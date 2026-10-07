@@ -352,3 +352,33 @@ def test_building_the_default_bridge_writes_no_audit_file(
     main._default_mcp_bridge()
 
     assert not (tmp_path / "data" / "audit.db").exists()
+
+
+def test_a_call_to_an_undeclared_tool_is_refused_over_http_and_never_reaches_the_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #180: an undeclared tool fails closed. The HTTP surface grants no approval
+    (``_HTTP_APPROVAL``), so a gated call is refused there by design, with the reason."""
+    from iris_harness.kernel.governance import build_default_kernel
+    from iris_harness.kernel.governance.audit import AuditLog
+
+    monkeypatch.setenv("IRIS_WEBUI_ALLOW_WRITES", "1")
+    write_governor_policy(tmp_path, requires_approval=False)
+    write_http_mcp_config(tmp_path, enabled=True)
+    TRANSPORT_CALLS.clear()
+    bridge = MCPBridge(
+        tmp_path,
+        governor_service=build_governor_service(tmp_path),
+        http_requester=fake_http_requester,
+        governance_kernel=build_default_kernel(audit_log=AuditLog(tmp_path / "audit.db")),
+    )
+    client = TestClient(create_app(mcp_bridge=bridge), headers=auth_headers())
+
+    call = client.post(
+        "/api/v1/mcp/servers/github/tools/remote_echo/call",
+        json={"arguments": {"message": "x"}},
+    )
+
+    assert call.status_code == 403, call.text
+    assert "github/remote_echo" in call.json()["detail"]
+    assert TRANSPORT_CALLS == []

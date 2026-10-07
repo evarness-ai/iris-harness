@@ -518,7 +518,14 @@ For tools that make outbound HTTP (`research`, `web_fetch`, GitHub API, custom H
           list_files: {effect: read}
   ```
 
-  A declared tool carries that effect into `PreToolUse` and `PostToolUse`, so it meets the same hooks a plugin tool does. A `destructive` one is refused before the server is reached unless the caller passes `approved_by`, the id of an approved queue row that pinned exactly this call (route `mcp/<server>/<tool>` and its arguments); with one it gets a pending write-ahead ledger row (key `<run_id>:0:<call_id>`, the call id minted by the bridge) before it runs, settled after, so `iris run resume` sees a call whose transport failed. Unknown effect values and empty tool names are rejected when the config is loaded. A tool not listed declares nothing and behaves as before: no effect, no approval gate, no write-ahead row.
+  A declared tool carries that effect into `PreToolUse` and `PostToolUse`, so it meets the same hooks a plugin tool does. A `destructive` one is refused before the server is reached unless the caller passes `approved_by`, the id of an approved queue row that pinned exactly this call (route `mcp/<server>/<tool>` and its arguments); with one it gets a pending write-ahead ledger row (key `<run_id>:0:<call_id>`, the call id minted by the bridge) before it runs, settled after, so `iris run resume` sees a call whose transport failed. Unknown effect values and empty tool names are rejected when the config is loaded. - **A tool nobody declared fails closed (issue #180).** A tool not listed under `tools` is treated as `destructive`: it needs an itemised approval and leaves a write-ahead row, exactly like a declared destructive one. A server that only reads opts out in one line, `governance.undeclared_tools: read`; any other value is rejected when the config is loaded, and a server with no `governance` block gets the fail-closed default. The server's own `readOnlyHint` never relaxes this. After `tools/list` the bridge logs one warning per server naming the tools that have no declared effect and the default they get. The HTTP call endpoint grants no approval (by design), so a gated call there is refused with a 403 and the reason; approve it through the approval queue and call the bridge with `approved_by`.
+
+  ```yaml
+  governance:
+    undeclared_tools: read      # destructive (default) | read
+    tools:
+      delete_file: {effect: destructive}
+  ```
 - v1.1 will add cryptographic signature verification of MCP server packages (covered in a separate `mcp-server-signing.md` doc)
 
 ### 8.6 Sandbox posture

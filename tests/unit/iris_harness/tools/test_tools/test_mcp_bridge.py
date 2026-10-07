@@ -55,7 +55,10 @@ def write_mcp_config(repo_root: Path, *, enabled: bool) -> None:
         "    command: python\n"
         "    args:\n"
         "      - -m\n"
-        "      - iris.fake_mcp\n",
+        "      - iris.fake_mcp\n"
+        # These tests are about the bridge's other behaviour, so the server declares the
+        # read-only opt-out; the fail-closed default has its own tests (issue #180).
+        "    governance:\n" "      undeclared_tools: read\n",
         encoding="utf-8",
     )
 

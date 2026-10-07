@@ -242,6 +242,14 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- The email judge's user message is no longer wrapped in the untrusted-content envelope
+  (undoing that part of the issue #148 change). Measured on a real mailbox, 100 emails judged
+  by the local `email_judge` model before and after the wrapping: about 5 stably changed bucket
+  at the same confidence, and by reading them the wrapping looked slightly worse (two
+  promotional bank loan offers became `bill`). The judge's reply is a schema-constrained
+  verdict, so the envelope only guarded against a manipulated label. The digest narration and the
+  triage picker keep their envelope.
+
 - An MCP call a `PreToolUse` hook answers with `require_approval` no longer reaches the
   server: the bridge refused only `deny` before the call, though the post step already refused
   both (issue #181).

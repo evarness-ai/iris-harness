@@ -261,7 +261,7 @@ retriever adds, and the recent-turns block of the intent router's prompt. `kerne
 - **Where.** Where the text is read back, shared by every path: `rt.chat`, `rt.chat_stream`,
   the general lane, `code_exec` and escalation actions all read the window built in
   `SessionMemory.build_memory_context`, and the intent router's "Conversation so far" block
-  (`format_recent_context`, scanned before its 200-character cut) is its only producer. The compaction summariser's input (assistant turns and the previous summary) goes through the same scan, because a summary the model writes is stored and a reworded instruction would defeat a scan at read time (reader `compactor`). `recall_conversation` and `memory_search` run in the
+  (`format_recent_context`, scanned before its 200-character cut) is its only producer. The compaction summariser's input (assistant turns and the previous summary) goes through the same scan, because a summary the model writes is stored and a reworded instruction would defeat a scan at read time (reader `compactor`). The behavior miner's input (`mine_behavior_patterns`, reader `behavior_miner`) goes through the same scan. `recall_conversation` and `memory_search` run in the
   loop only (`iris mcp serve` and `api.tools` resolve plugin tools, which do not include them).
 - **Limits.** A text over 16 KB is cut, and a read that has scanned 128 KB (newest texts
   first) replaces the older ones, each with a visible `[not scanned: ...]` marker; an

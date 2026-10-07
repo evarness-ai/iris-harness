@@ -19,6 +19,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from iris_harness.kernel.governance.reentry import reenter_many
 from iris_harness.services.learning.dedup import cosine, dedupe_by_text
 
 # Cosine ≥ this means two pattern texts say the same thing — calibrated on real mined
@@ -91,9 +92,17 @@ def mine_behavior_patterns(
 
     ``turns`` are ``(role, content)`` pairs (oldest first). Returns ``[]`` when there's
     too little history to mine, the model returns nothing parseable, or anything fails.
+
+    The turns are stored text (a past assistant turn may hold third-party text), so they go
+    through the re-entry scan before they are put in the miner's prompt (issue #162): an
+    assistant turn is redacted, the owner's own turns are verbatim. This is the one entry
+    every caller (the preview, the periodic run and the compaction-archived span) passes
+    through. The output is propose-only and human-approved either way.
     """
     if len(turns) < min_turns:
         return []
+    scanned = reenter_many(list(turns), reader="behavior_miner", origin="transcript")
+    turns = [(role, r.text) for (role, _), r in zip(turns, scanned, strict=True)]
     activity = render_activity(turns)
     if not activity:
         return []

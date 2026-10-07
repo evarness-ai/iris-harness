@@ -22,6 +22,15 @@ First public release of the IRIS harness.
   at `PRE_TOOL_USE`, so the owner-PII guards read them. `weather.forecast` declares
   `external_service` for its `location` (issue #100).
 
+- Health shows the model guard when it is not doing what the owner may believe (issue #136):
+  a yellow `governance` row when `IRIS_GOVERNANCE_PROMPT_GUARD` is on but its classifier cannot
+  run (packages missing, weights not in the local cache, or a load already failed), and one when
+  it is off while tools that return third-party text are mounted, naming how many and which
+  plugins. Silent when the posture is fine. The probe never loads the model, and the always-on
+  floor is named as still running. `GET /governance/state` gains a `model_guard` object from the
+  same probe. New `CheckKind.GOVERNANCE`; the web Health screen gains Plugins and Governance
+  groups (plugin rows had no group there).
+
 - `search_docs`: the core can search its own shipped documentation (architecture, concepts,
   guides, reference, usage-guides) by keyword at section level, as an internal read tool of
   the `system` plugin. The corpus is an allow-list in `config/docs_search.yaml`; it cannot

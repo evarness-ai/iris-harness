@@ -34,6 +34,7 @@ class CheckKind(str, Enum):
     CREDENTIAL = "credential"
     HARDWARE = "hardware"
     PLUGIN = "plugin"  # a mounted plugin: loaded / degraded / failed (OSS plan decision 8)
+    GOVERNANCE = "governance"  # a safety control that is off or cannot run (issue #136)
 
 
 @dataclass(frozen=True)

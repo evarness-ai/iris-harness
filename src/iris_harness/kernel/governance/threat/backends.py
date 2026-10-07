@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import weakref
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
@@ -59,6 +60,16 @@ class NullClassifier:
         return ThreatVerdict.benign(surface=surface, backend=self.name)
 
 
+# Every PromptGuardClassifier built in this process, so Health can read whether one has tried
+# to load and failed without loading anything itself (``prompt_guard_load_failed``).
+_LIVE_PROMPT_GUARDS: weakref.WeakSet[PromptGuardClassifier] = weakref.WeakSet()
+
+
+def prompt_guard_load_failed() -> bool:
+    """Whether a Prompt Guard classifier in this process tried to load and could not."""
+    return any(guard.load_failed for guard in list(_LIVE_PROMPT_GUARDS))
+
+
 class PromptGuardClassifier:
     """Prompt Guard 2 via a local transformers text-classification pipeline.
 
@@ -80,6 +91,12 @@ class PromptGuardClassifier:
         self._threshold = threshold
         self._pipe: Callable[[str], Any] | None = None
         self._unavailable = False
+        _LIVE_PROMPT_GUARDS.add(self)
+
+    @property
+    def load_failed(self) -> bool:
+        """True once a load was attempted and failed (never triggers a load)."""
+        return self._unavailable
 
     def _ensure_pipe(self) -> None:
         if self._pipe is not None or self._unavailable:

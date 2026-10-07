@@ -655,6 +655,37 @@ def test_first_tool_that_answers_directly_ends_the_run_without_another_call() ->
     assert len(prompts) == 1 and runs == [1]
 
 
+def test_external_answers_directly_tool_shows_the_owner_the_unwrapped_reply() -> None:
+    """An ``answers_directly`` tool that is also ``content: external`` (trash_category,
+    restore_email; issue #146) arrives in the untrusted-content envelope, but the reply the
+    owner is shown has no markup and keeps the readable subject lines:
+    ``_usable_observation`` (agentic_core.py) unwraps it, and ``_direct_answer`` returns that."""
+    from iris_harness.kernel.governance.external_content import wrap
+
+    body = (
+        "Moved 2 emails to Trash.\n- Lunch Friday? — sam@example.com\n- Invoice 77 — ap@example.org"
+    )
+
+    def call(_args: dict) -> str:
+        return wrap(body, source="email_workflows", tool="trash_category")
+
+    tool = ToolSpec(
+        name="trash_category",
+        description="Trash a category.",
+        call=call,
+        answers_directly=True,
+        content="external",
+    )
+    prompts, llm = _counting_llm(["Thought: trash.\nAction: trash_category\nAction Input: {}"])
+    core = AgenticCore(AgenticCoreConfig(max_iterations=5), llm_call=llm, tools=[tool])
+
+    trace = core.run("delete my promo emails")
+
+    assert trace.success and len(prompts) == 1
+    assert "<external_content" not in trace.final_answer
+    assert trace.final_answer == body
+
+
 def test_undeclared_tool_still_goes_back_to_the_model() -> None:
     runs: list[int] = []
     prompts, llm = _counting_llm([_PICK_DIGEST, "Thought: done.\nFinal Answer: 73 new."])

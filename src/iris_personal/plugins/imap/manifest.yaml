@@ -16,3 +16,7 @@ trust: in-process
 party: first-party
 cli: cli:register
 provides: []
+# No `egress` host list, on purpose (issue #172): the plugin's one network connection is IMAP
+# over TLS (TCP) to the owner's own mail server, named in the vault. That is not an HTTP host
+# a declaration can describe and `api.http` cannot carry it, so connection.py (imaplib, ssl)
+# is on the first-party raw-network list with that reason (test_network_imports.py).

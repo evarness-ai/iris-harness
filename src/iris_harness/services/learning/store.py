@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.persistence import connect
+from iris_harness.foundation.persistence.sqlite import ensure_columns
 from iris_harness.services.learning.models import Experiment, ExperimentStatus
 
 logger = logging.getLogger(__name__)
@@ -220,18 +221,16 @@ class LearningMetricsStore:
     def ensure_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
-            # Columns must exist before any index that references them, so a
-            # pre-L1 signals table is migrated before the turn_id index is built.
-            self._migrate_signal_columns(conn)
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_turn ON signals(turn_id)")
-
-    def _migrate_signal_columns(self, conn: sqlite3.Connection) -> None:
-        existing = {row[1] for row in conn.execute("PRAGMA table_info(signals)").fetchall()}
-        for column in self._SIGNAL_MIGRATION_COLUMNS:
-            if column not in existing:
-                conn.execute(
-                    f"ALTER TABLE signals ADD COLUMN {column} TEXT"
-                )  # column from a fixed allow-list
+        # Columns must exist before any index that references them, so a pre-L1 signals table is
+        # migrated before the turn_id index is built. On a connection of its own under BEGIN
+        # IMMEDIATE (#201): a read of ``table_info`` then an ``ALTER`` raised "duplicate column
+        # name" for the process that lost a race to open an older learning.db.
+        ensure_columns(
+            self.db_path,
+            "signals",
+            dict.fromkeys(self._SIGNAL_MIGRATION_COLUMNS, "TEXT"),  # a fixed allow-list
+            indexes=("CREATE INDEX IF NOT EXISTS idx_signals_turn ON signals(turn_id)",),
+        )
 
     # ------------------------------------------------------------------
     # Signals

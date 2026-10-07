@@ -40,6 +40,7 @@ from typing import Any
 from iris_harness.foundation.clock import as_utc, utc_now
 from iris_harness.foundation.eventbus import EventBus
 from iris_harness.foundation.persistence import connect, data_path
+from iris_harness.foundation.persistence.sqlite import ensure_columns
 
 from .bills import (
     DELIVERED_INFO_REASON,
@@ -158,15 +159,18 @@ class ReminderStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             conn.executescript(_SCHEMA_SQL)
-            present = {r["name"] for r in conn.execute("PRAGMA table_info(notification_reminders)")}
-            added = [name for name, _ in _ADDED_COLUMNS if name not in present]
-            for name, ddl in _ADDED_COLUMNS:
-                if name not in present:
-                    conn.execute(f"ALTER TABLE notification_reminders ADD COLUMN {name} {ddl}")
-            if "status" in added:
-                _backfill_lifecycle(conn)
-            conn.executescript(_STATUS_INDEX_SQL)
-            conn.executescript(_DEDUPE_INDEX_SQL)
+        # The D14 columns, then the indexes that reference them, on a connection of their own
+        # under BEGIN IMMEDIATE (#201): a read of ``table_info`` then an ``ALTER`` raised
+        # "duplicate column name" for the process that lost a race to open an older file. The
+        # one-time lifecycle backfill runs inside the transaction that adds ``status``, so only
+        # the process that added it does it, once.
+        ensure_columns(
+            self.db_path,
+            "notification_reminders",
+            dict(_ADDED_COLUMNS),
+            indexes=_LATE_INDEX_STATEMENTS,
+            on_added=_backfill_when_status_added,
+        )
 
     def _connect(self) -> sqlite3.Connection:
         conn = connect(self.db_path, row_factory=sqlite3.Row)
@@ -930,6 +934,21 @@ _DEDUPE_INDEX_SQL = """
 CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_reminders_dedupe
     ON notification_reminders(dedupe_key) WHERE dedupe_key IS NOT NULL;
 """
+
+# The indexes over the columns added after the table first shipped, one statement each.
+_LATE_INDEX_STATEMENTS: tuple[str, ...] = tuple(
+    statement.strip()
+    for statement in (_STATUS_INDEX_SQL + _DEDUPE_INDEX_SQL).split(";")
+    if statement.strip()
+)
+
+
+def _backfill_when_status_added(conn: sqlite3.Connection, added: list[str]) -> None:
+    """``add_columns_if_missing`` callback: the lifecycle backfill, only when ``status`` is new."""
+    if "status" in added:
+        conn.row_factory = sqlite3.Row
+        _backfill_lifecycle(conn)
+
 
 # Two cutoff parameters (both "now"). Pending rows wait for their retry when one is
 # scheduled; a claimed row whose lease ran out is retried (its process died mid-send).

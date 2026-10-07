@@ -93,6 +93,7 @@ def sqlite_conn(
 
 
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_INDEX_NAME = re.compile(r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+IF\s+NOT\s+EXISTS\s+(\w+)", re.IGNORECASE)
 
 
 def add_columns_if_missing(
@@ -154,6 +155,39 @@ def add_columns_if_missing(
         return added
     finally:
         conn.close()
+
+
+def ensure_columns(
+    db_path: str | Path,
+    table: str,
+    columns: Mapping[str, str],
+    *,
+    indexes: Sequence[str] = (),
+    on_added: Callable[[sqlite3.Connection, list[str]], None] | None = None,
+) -> list[str]:
+    """:func:`add_columns_if_missing`, with a cheap read first.
+
+    A store's ``ensure_schema`` usually runs before every method, and nearly every call finds
+    nothing to add. This looks (one read, no write lock) and takes the ``BEGIN IMMEDIATE`` path
+    only when a column or an index is missing, so the common call never contends for the write
+    lock. The look proves nothing about the race: the decision is made again inside the
+    transaction by :func:`add_columns_if_missing`. It keeps no process-wide memory of what it
+    saw, so a database removed and created again at the same path is migrated again.
+    """
+    wanted = {m.group(1) for sql in indexes if (m := _INDEX_NAME.search(sql))}
+    conn = sqlite3.connect(str(db_path), timeout=_DEFAULT_TIMEOUT_S)
+    try:
+        have = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        present = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+        }
+    finally:
+        conn.close()
+    if not have:
+        return []  # no such table: nothing to migrate
+    if set(columns) <= have and wanted <= present and len(wanted) == len(indexes):
+        return []  # nothing to add, and every index is there
+    return add_columns_if_missing(db_path, table, columns, indexes=indexes, on_added=on_added)
 
 
 @overload

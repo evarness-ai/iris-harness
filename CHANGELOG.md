@@ -329,6 +329,8 @@ First public release of the IRIS harness.
   (`IRIS_GOVERNANCE_ENABLED`) the lane's tools still run ungoverned, as the operator's explicit
   opt-out; one startup warning says so.
 
+- `httpcore` is a declared dependency (issue #174): the governed client's pinned transport imports it directly and replaces httpx's private `_pool`. A new test pins that attribute, so an httpx upgrade that moves it fails in CI rather than at runtime.
+
 - The governed HTTP client's name lookup is inside the request's deadline (issue #173).
   `getaddrinfo` has no timeout, so a resolver that hangs held the request before the deadline
   even started. The lookup now runs on a daemon thread and the request waits for it at most
@@ -345,6 +347,19 @@ First public release of the IRIS harness.
   promotional bank loan offers became `bill`). The judge's reply is a schema-constrained
   verdict, so the envelope only guarded against a manipulated label. The digest narration and the
   triage picker keep their envelope.
+
+- Opening an older database from several processes at once no longer fails in the stores that
+  migrate their tables (issue #201). The checkpoint, continuation, task, activity, learning-signal,
+  document (RAG), reminder and approval stores each read `PRAGMA table_info` and then ran
+  `ALTER TABLE ... ADD COLUMN`; two processes (the API, the CLI, a heartbeat) opening the same older
+  file both saw the column missing, and the loser's `ALTER` raised `duplicate column name`, which
+  stopped that process from starting its store. Measured with twelve real interpreters opening an
+  older file at once: every one of these stores failed. They now add their columns through
+  `ensure_columns` (a cheap look, then `BEGIN IMMEDIATE` on a connection of its own), keeping
+  their original column declarations; the three one-time backfills (document classification,
+  reminder lifecycle) run inside the transaction that adds the column, so only the process that added
+  it does them, once. The email and onboarding stores and the `memris` versioned upgrades are the
+  follow-up.
 
 - The kernel's content classifier runs in linear time on hostile text (issue #156). The `email`
   pattern backtracked quadratically (a 200 KB `"a."*100000 + "@b."` took 19.5 s, and

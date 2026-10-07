@@ -1618,6 +1618,7 @@ settings:
 # IRIS_* literals in the code that are not settings, and why.
 not_settings:
   IRIS_EGRESS_ALLOWLIST: set by harness for its child container
+  IRIS_EGRESS_BIND: set by the harness for its own sidecar (loopback unless it is a sibling-reachable sidecar)
   IRIS_EGRESS_PORT: set by the harness for its own sidecar
   IRIS_GOOGLE_OAUTH_TEST_BASE: test and demo only (points a plugin's OAuth calls at a loopback fake)
   IRIS_QUOTE_EOF: not an env setting (heredoc marker)

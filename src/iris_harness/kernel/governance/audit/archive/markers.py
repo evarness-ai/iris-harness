@@ -18,6 +18,7 @@ import sqlite3
 from collections.abc import Iterable, Sequence
 from contextlib import closing
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -241,3 +242,86 @@ def verify_archive(db_path: Path, root: Path) -> VerifyReport:
 def keys_of(rows: Iterable[AuditRow]) -> list[tuple[int, str | None]]:
     """``(id, record_id)`` of each row: what the delete is checked against."""
     return [(row.id, row.record_id) for row in rows]
+
+
+def _month_bounds(path: Path) -> tuple[datetime, datetime] | None:
+    """The first instant of a chunk's ``year=/month=`` partition and the first after it."""
+    try:
+        year = int(path.parent.parent.name.removeprefix("year="))
+        month = int(path.parent.name.removeprefix("month="))
+    except ValueError:
+        return None
+    start = datetime(year, month, 1, tzinfo=UTC)
+    end = datetime(year + (month == 12), (month % 12) + 1, 1, tzinfo=UTC)
+    return start, end
+
+
+def _intersects(lo: datetime, hi: datetime, since: datetime | None, until: datetime | None) -> bool:
+    return not ((until is not None and lo > until) or (since is not None and hi < since))
+
+
+def chunks_in_window(
+    db_path: Path, root: Path, since: datetime | None, until: datetime | None
+) -> list[Path]:
+    """The chunk files that may hold a row stamped within ``[since, until]`` (None: open end).
+
+    A chunk a marker names is judged by the timestamps the marker recorded for it; any other
+    chunk (one of the older shape, or an orphan not yet adopted) by its month partition. The
+    answer is a superset, never a subset, of the chunks with rows in the window.
+    """
+    named: dict[str, tuple[datetime, datetime]] = {}
+    for marker in read_markers(db_path):
+        for chunk in marker.chunks:
+            try:
+                named[str(chunk["file"])] = (
+                    datetime.fromisoformat(str(chunk["ts_min"])),
+                    datetime.fromisoformat(str(chunk["ts_max"])),
+                )
+            except (KeyError, ValueError):
+                continue
+    files = scan_archive(root)
+    out: list[Path] = []
+    for path in (*files.run_chunks, *files.other):
+        rel = path.relative_to(root).as_posix()
+        span = named.get(rel) or _month_bounds(path)
+        if span is None or _intersects(span[0], span[1], since, until):
+            out.append(path)
+    return out
+
+
+def check_window(
+    db_path: Path, root: Path, since: datetime | None, until: datetime | None
+) -> list[str]:
+    """Problems with the chunks a marker names whose recorded span meets the window.
+
+    A named chunk that is missing, whose SHA-256 differs, or whose row count differs from the
+    marker's. Reads each such chunk once; nothing outside the window.
+    """
+    import pyarrow.parquet as pq
+
+    problems: list[str] = []
+    for marker in read_markers(db_path):
+        for chunk in marker.chunks:
+            rel = str(chunk.get("file", ""))
+            try:
+                lo = datetime.fromisoformat(str(chunk["ts_min"]))
+                hi = datetime.fromisoformat(str(chunk["ts_max"]))
+            except (KeyError, ValueError):
+                continue
+            if not _intersects(lo, hi, since, until):
+                continue
+            path = root / rel
+            label = f"{marker.compaction_id}:{rel}"
+            if not path.is_file():
+                problems.append(f"{label}: chunk is missing")
+            elif sha256_of(path) != chunk.get("sha256"):
+                problems.append(f"{label}: sha256 differs from the marker")
+            else:
+                try:
+                    rows = pq.read_metadata(path).num_rows
+                except Exception:  # noqa: BLE001 - unreadable is the finding
+                    problems.append(f"{label}: chunk cannot be read")
+                    continue
+                if rows != chunk.get("rows"):
+                    problems.append(f"{label}: {rows} rows, marker says {chunk.get('rows')}")
+    return problems

@@ -23,7 +23,7 @@ def test_my_plugin_answers() -> None:
         assert h.plugin_loaded("my-plugin")
         result = h.chat("hello")          # or h.chat_stream("hello")
         assert result.text == "Scripted answer."
-        assert h.audit_gaps() == []       # every model call and every answer audited
+        assert h.audit_gaps() == []       # every model call and answer audited, nothing lost
 ```
 
 - **`harness(plugins=[...], fake_model=...)`** runs in a throwaway `IRIS_HOME`, with your
@@ -73,7 +73,8 @@ that wrote the row), `decision`, `reason`, `run_id`, `step_id`, `classification`
 `tier`, `session_id`, `tool`, `caller` and `tool_plugin` (who invoked a tool call, and
 which plugin owns the tool: `system` for a core tool), and `deterministic` and `handler`
 on a deterministic handler's answer row. `h.audit_gaps()` is empty when every model call and every answer
-has its row.
+has its row and the session replay finds nothing lost or contradictory (a missing record, a call that
+never settled, a parent that does not exist); notes such as a writer still running are not gaps.
 
 A turn that stops for the owner's approval (a destructive tool, a write declared
 `approval: pinned`) leaves a pending approval; `h.respond_to_approval(approval_id,

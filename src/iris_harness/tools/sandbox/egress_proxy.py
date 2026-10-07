@@ -13,10 +13,14 @@ allowlist, so they are denied too.
 Config via env:
   IRIS_EGRESS_ALLOWLIST  comma-separated host suffixes (e.g. "pypi.org,github.com")
   IRIS_EGRESS_PORT       listen port (default 8888)
+  IRIS_EGRESS_BIND       address to listen on (default 127.0.0.1, loopback only). The harness
+                         sets 0.0.0.0 for the sidecar it starts, because the sandbox reaches the
+                         proxy from a sibling container; anything else must opt in the same way.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import select
 import socket
@@ -27,6 +31,7 @@ _ALLOWLIST: tuple[str, ...] = tuple(
     h.strip().lower() for h in os.environ.get("IRIS_EGRESS_ALLOWLIST", "").split(",") if h.strip()
 )
 _PORT = int(os.environ.get("IRIS_EGRESS_PORT", "8888"))
+_DEFAULT_BIND = "127.0.0.1"
 _BUFSIZE = 65536
 _CONNECT_TIMEOUT = 10
 
@@ -136,12 +141,34 @@ def _handle(client: socket.socket) -> None:
             pass
 
 
-def main() -> None:
+def _bind_address() -> str:
+    """The address to listen on: ``IRIS_EGRESS_BIND``, else loopback. A value that is not an IP
+    address is refused (``ValueError``) rather than guessed at."""
+    raw = os.environ.get("IRIS_EGRESS_BIND", "").strip() or _DEFAULT_BIND
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        raise ValueError(f"IRIS_EGRESS_BIND must be an IP address, got {raw!r}") from None
+
+
+def _make_server() -> socket.socket:
+    """The listening socket, bound as configured. Warns once when it is not loopback only."""
+    address = _bind_address()
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("0.0.0.0", _PORT))  # noqa: S104 - only reachable on the internal docker net
+    server.bind((address, _PORT))
     server.listen(128)
-    _log(f"egress-proxy listening on :{_PORT} allowlist={list(_ALLOWLIST)}")
+    if not ipaddress.ip_address(address).is_loopback:
+        _log(f"WARN listening on {address}: reachable beyond this container's loopback")
+    _log(f"egress-proxy listening on {address}:{_PORT} allowlist={list(_ALLOWLIST)}")
+    return server
+
+
+def main() -> None:
+    try:
+        server = _make_server()
+    except ValueError as exc:
+        sys.exit(f"egress-proxy: {exc}")
     while True:
         try:
             client, _ = server.accept()

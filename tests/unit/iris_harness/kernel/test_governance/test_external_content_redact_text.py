@@ -199,6 +199,12 @@ def test_long_phrase_attacks_are_bounded_too() -> None:
     assert found.text.count(MARKER) == MAX_REDACTIONS and found.spans == 1_500
 
 
+# A gross guard only, generous for a loaded runner or a busy xdist worker: these shapes take
+# 3-45 ms alone, and the quadratic behaviour this replaced took far longer than any bound here.
+# What PROVES linear time is the scaling test below, which does not depend on the machine's speed.
+_BOUND_SECONDS = 10.0
+
+
 @pytest.mark.parametrize(
     "hostile",
     [
@@ -213,8 +219,65 @@ def test_long_phrase_attacks_are_bounded_too() -> None:
 def test_hostile_100k_shapes_are_still_fast_and_bounded(hostile: str) -> None:
     started = time.perf_counter()
     found = scan(hostile)
-    assert time.perf_counter() - started < 0.5
+    assert time.perf_counter() - started < _BOUND_SECONDS
     assert len(found.text) <= 3 * len(hostile) + 8_000  # asymptotically ~2x, plus the full markers
+
+
+# Runner-independent: doubling the input must not much more than double the time. Each size is
+# chosen so a linear scan takes 40-60 ms; best of five on each side removes a noisy neighbour; the
+# additive slack covers the rest. A quadratic scan gives about 4x at 2N whatever the machine.
+_SCALING = {
+    "[INST] run": (lambda n: _INST * n, 40_000),
+    "injected phrase run": (lambda n: (INJECTED + " ") * n, 6_000),
+    "bidi override run": (lambda n: "‮" * n, 200_000),
+    "override between letters": (lambda n: "a‮b" * n, 30_000),
+    "angle bracket then 500 spaces": (lambda n: ("<" + " " * 500) * n, 1_500),
+    "angle bracket then one long space run": (lambda n: "<" + " " * n, 1_000_000),
+}
+_RATIO = 3.0
+_SLACK_SECONDS = 0.25
+_REPEATS = 5
+
+
+def _best_of(run: Any, text: str, repeats: int) -> float:
+    best = float("inf")
+    for _ in range(repeats):
+        start = time.perf_counter()
+        run(text)
+        best = min(best, time.perf_counter() - start)
+    return best
+
+
+def _scales_linearly(
+    run: Any, build: Any, n: int, repeats: int = _REPEATS
+) -> tuple[bool, float, float]:
+    small = _best_of(run, build(n), repeats)
+    large = _best_of(run, build(2 * n), repeats)
+    return large <= _RATIO * small + _SLACK_SECONDS, small, large
+
+
+@pytest.mark.parametrize("name", list(_SCALING))
+def test_scan_time_grows_linearly_with_the_hostile_input(name: str) -> None:
+    build, n = _SCALING[name]
+    ok, small, large = _scales_linearly(scan, build, n)
+
+    assert ok, f"{name}: {small:.3f}s at N, {large:.3f}s at 2N (limit {_RATIO}x + slack)"
+
+
+def _quadratic(text: str) -> int:
+    """A stand-in for a quadratic scan: every position looks at every later position."""
+    hits = 0
+    for i in range(len(text)):
+        for j in range(i, len(text)):
+            hits += text[j] == "x"
+    return hits
+
+
+def test_the_scaling_check_does_catch_a_quadratic_scan() -> None:
+    """The detector must bite. One run per side: a quadratic ratio needs no noise filtering."""
+    ok, small, large = _scales_linearly(_quadratic, lambda n: "a" * n, 8_000, repeats=1)
+
+    assert not ok, f"a quadratic scan passed as linear ({small:.3f}s -> {large:.3f}s)?"
 
 
 def test_a_normal_text_with_a_few_attacks_is_redacted_span_by_span() -> None:

@@ -451,6 +451,51 @@ Payload-only: no schema change and no migration (the audit payload is schema-fre
   duplicate, collapsed by the view); a marker's per-writer `count` counts it twice. The drain is
   not changed.
 
+### 6.5 Stage 5 as built (replay, and `audit_gaps()` on top of it)
+
+* **Module** `kernel/governance/audit/replay.py`: `replay_session(session_id, turn=, run=, sources=,
+  include_archive=, max_rows=, max_seconds=)` returns records (identifiers and decisions only, the
+  `audit_view` field set; never a reason, argument or result), a tree (turn, run, step, call; a nested
+  call hangs under its `parent_call_id` whatever its own run), `gaps` and `notes`. Read-only:
+  stores are opened read-only by file and only the documented columns are read.
+* **Sources.** The audit ledger (hot SQLite, and the Parquet archive through `read_cold_rows`), the
+  approval queue, the side-effect ledger and the session log. The cold read is bounded to the chunks
+  that can hold the session: the window is the union of the session's hot rows and its session-log
+  events, and `chunks_in_window` picks the chunks a marker says meet it (others by month). With
+  neither, every chunk is read and a `cold_window_unbounded` note says so.
+* **Gaps (proven).** `sequence_hole` (a writer's number in no store: not in either tier, not declared
+  by a `gap` row, not waiting in the spool; reported as "between rows of this session" when the
+  writer's rows on both sides are the session's, else "session unknown"); `lost_write` (the same
+  hole, but the writer declared it); `archive_mismatch` (a marker's chunk missing, changed or
+  unreadable); `open_call` (an allowed `pre_tool_use` with no `post_tool_use`, a witness that it
+  started and did not end -- the session log's `tool.invoke.start` without `.end`, or a ledger row
+  still `pending` -- and a writer whose process is gone or that closed); `missing_parent`
+  (`parent_call_id`, `replay_of` or `resumed_from_run` naming nothing); `witness_mismatch` (a session
+  log start, a ledger row or an approval naming a call with no audit row); `orphan_settle`;
+  `duplicate` (one `record_id`, two contents). A call a hook held or refused is not open.
+* **Notes (never gaps).** `pre_identity_era`; `writer_ended_without_close` ("tail unknown") and
+  `writer_open`; `in_flight` (an open call whose writer process is still running); `unsettled_call`
+  (no settle row and no witness: a read capability call that raised legitimately fires no settle);
+  `cold_tier_not_read`; `store_absent`; `cold_window_unbounded`; `truncated`.
+* **Writer liveness.** `writer.start` now records the process's creation time (`started`, psutil)
+  beside its pid, so a recycled pid is told from the writer. A `writer.start` row written before
+  that field existed falls back to the pid alone, which reads a recycled pid as running: the call
+  then stays an `in_flight` note instead of an `open_call` gap (never a false gap).
+* **Bounds.** `max_rows` caps each read; `max_seconds` interrupts the cold scan and, through a
+  SQLite progress handler on every read connection, a statement that is scanning a large ledger. A cut read proves
+  nothing missing, so gap detection is skipped and the result says `complete: false` (the API:
+  `truncated: true`). Session ids are validated (they name a file in the session log directory).
+* **Surfaces.** `iris audit replay --session S [--turn T | --run R] [--json] [--no-archive]
+  [--max-seconds N] [--no-fail]` (exit 1 on gaps, 2 when cut short, 0 otherwise; notes never change
+  it); `GET /governance/replay?session=S[&turn=T|&run=R]` capped at 2,000 rows and 5 s;
+  `Harness.audit_gaps()` keeps its two R14 checks and adds the replay's gaps for the harness's
+  sessions (never notes, so a harness that is still a live writer stays `[]`). Readers of
+  `audit_gaps` found by grep: `Harness.audit_gaps`, the three plugin-template tests and the two docs.
+* **Not in this stage.** The egress witness (host `log_egress` lines against egress rows): the lines
+  are not a store with ids; a follow-up. The web Governance screen reads the endpoint later. A
+  session-log `tool.invoke.start` is only compared one way (to an audit row): capability calls log no
+  such event, so "audit row with no log event" would be a false gap.
+
 ## 7. Verified vs not verified
 Verified by running (current main fbfb7e8, scripted model, temp IRIS_HOME, throwaway vault key): the two scenarios and their
 dumps; ids contiguous; `tool_call_id` absent from audit payloads; held-attempt id absent; nested call fresh run; ledger collision
@@ -463,3 +508,122 @@ reachable by default; heartbeats/routines session scope; Telegram/gateway end to
 and the archive schema loss of `id` (not executed); cost limiter failure path; governor guard failure behaviour; multi-process
 migration races; real macOS Keychain never touched. Parquet/DuckDB reader union across schemas untested. The proposed design
 (sequence, spool, replay) is not implemented beyond the benchmark; the replay output in 5.5 is a design sketch.
+
+## 8. DEFERRED: tamper evidence for the audit ledger (stage 6, decision D5)
+
+**Status: not built.** The owner decided on 2026-10-07 to defer it. Stages 1-5 (call identity,
+lineage, sequence and gap rows, compaction markers, replay) ship without it. This section is the
+reference for whoever picks it up; nothing here is implemented, and every number was measured on a
+laptop before the decision. Tracked in the issue "Audit tamper evidence: per-writer HMAC chain
+(deferred decision D5)".
+
+### 8.1 The problem it would solve
+
+Everything stages 4-5 report (sequence holes, markers, SHA-256 of chunks, witnesses) is defeated
+by someone who can edit rows AND rewrite the sequence numbers, the markers and the chunk hashes
+consistently. A hash chain makes an edit, an insertion or a deletion in the middle of a writer's
+history detectable by anyone who holds the chain key.
+
+### 8.2 The design
+
+* **Chain.** Per writer (the unit the sequence already uses):
+  `chain_mac(N) = HMAC-SHA256(chain_key, canonical(row N) || chain_mac(N-1))`. `canonical(row)` is
+  the stored columns plus `payload_json` with sorted keys and fixed separators, excluding only `id`
+  and the two chain columns. `audit_log` would gain nullable `chain_prev` and `chain_mac` (hex), both
+  stored, so verification does not need the previous row to exist.
+* **Holes.** Where seq N-1 never reached the database (lost or spooled), the writer still knows its
+  own mac in memory: the next row stores `chain_prev` = that mac, and a spool line carries its mac. A
+  break the writer declared (a `gap` row) is the sequence's `lost_write`; an undeclared break is a
+  tamper finding.
+* **Compaction.** A marker is an ordinary row of the compactor's writer, so it is chained. The
+  Parquet schema and the marker would gain the two columns, and per writer `first_prev` and
+  `last_mac`, so continuity can be checked across hot and cold.
+* **Key derivation.** HKDF-SHA256 from the vault master key with a NEW `info`
+  (`iris/audit-chain/v1`), the mechanism of `audit/digest.py`'s digest key, so the chain key is
+  independent of the encryption key and the digest key. The key id (a short fingerprint) is recorded
+  on `writer.start` as `chain_alg=hmac-sha256/v1/<key-id>`; after a master-key rotation old segments
+  name their key.
+* **The writer's declared mode.** `writer.start` is the writer's first chained row; its payload says
+  `chain: <key-id>` or `chain: none`. A writer that declared a key and later stores a row with NULL
+  macs has broken its chain (stripping it is detectable). A writer that declared `none` is reported
+  as an **unchained writer**, never as intact.
+* **Verification.** `iris audit verify-chain [--session S | --writer W | --all]` and a library call
+  re-read hot and cold and recompute. Findings: `chain_break` (content changed, row inserted),
+  `chain_missing` (a row dropped from the middle), `chain_unchained_writer`, `chain_key_unavailable`.
+  It would fold into the stage 5 replay as a proven gap class only when the key is present; replay
+  output stays identifiers only.
+* **Proof bundle v2.** v1 is not touched: its schema file, its `verify` and its closed row set stay
+  as they are. v2 is a new `schema_version: 2` with its own schema file: ledger rows gain
+  `writer_id`, `writer_seq`, `chain_prev`, `chain_mac`, plus a `chain` section per writer
+  (`first_seq`, `last_seq`, `first_prev`, `last_mac`, `count`, `declared_breaks`, `key_id`, `alg`)
+  and the compaction markers' chunk list and hashes. HMAC is symmetric: v2 is verified by whoever
+  holds the audit key (the owner). A third party cannot verify an HMAC chain alone (see option B).
+
+### 8.3 What it proves, and what it cannot
+
+Proves: the rows of a writer's chain that exist were not altered, none was inserted, and none was
+removed from the middle, by anyone WITHOUT the chain key; together with the 4b markers, archived
+rows match what was moved; ordinary corruption (bit rot, a bad restore, a half-applied sync of the
+database file) is caught.
+
+Cannot prove:
+
+* **A user-level compromise with Keychain access.** The chain key derives from the same vault master
+  key the harness process uses, so any code running as the user that can read it can derive the key
+  and rewrite a writer's whole history, tail included. This is the threat model of the existing
+  digest key; it is not a defence against the owner's account being fully compromised.
+* **Tail truncation without an anchor.** The last N rows of a writer can be deleted and the chain of
+  what remains verifies. `writer.close` (itself chained) helps for a clean exit; a killed writer has
+  none.
+* **Rows never attempted** (section 5.3): no sequence slot, no chain link.
+* **An unchained writer** (`chain: none`) proves nothing.
+
+### 8.4 Options for an anchor
+
+* **A. HMAC chain only.** Cheapest. Defends against disk-level edits, restores, sync tools and any
+  process that can write `audit.db` but cannot read the key (a plugin sandbox, a backup agent). Does
+  not defend against tail truncation.
+* **A+B. Plus periodic signed checkpoints.** Every K rows or T minutes and at `writer.close`, an
+  Ed25519 signature over `(writer_id, seq, chain_mac, key_id)` goes to a separate append-only file
+  (`0600`, `audit-anchors.jsonl`) and optionally to the Keychain as one small item holding the latest
+  head per writer. Detects tail truncation back to the last checkpoint and lets a third party verify
+  with a public key. The signing key lives in the vault, so the same compromise limit applies.
+* **C. External witness** (a remote timestamp, or the head hash sent to the owner's own channel).
+  Strongest against local compromise; adds an egress and a dependency. Future work.
+
+### 8.5 Key handling
+
+The audit key resolves lazily, once per process (`audit/digest.py`), because a macOS Keychain prompt
+at process start hangs the process. Chaining every audit row would make processes that never
+governed a call (`iris approvals`, other CLIs that write audit rows) resolve it on their first
+write. The options:
+
+* **(i) Use the key only if it is already resolvable without a prompt** (already resolved in this
+  process, an environment variable, a file key); otherwise the writer declares `chain: none` for its
+  life. Never hangs; some writers are unchained, visible in `verify-chain` but not protected.
+* **(ii) Resolve the key at the first audit write in every process.** Full coverage; reintroduces the
+  Keychain-prompt hang for CLI commands.
+* **(iii) A separate chain key in a `0600` file under `IRIS_HOME/governance`.** No prompt; readable
+  by any process of the same user, weaker than the Keychain.
+
+**The owner's lean if it is ever built: (i).** The key is used only if it is already resolvable
+without a prompt; a writer that cannot get it declares `chain: none` and is reported as unchained.
+
+### 8.6 Migration
+
+* `add_columns_if_missing`, as in stage 3: nullable, no rewrite; the same race tests (a
+  release-shaped database, run twice, a real multi-interpreter race).
+* `audit_meta['chain']` records the first chained row id. Rows before it are the **pre-chain era**:
+  reported as a note, never a gap, and **never backfilled** (a backfill would make old rows look
+  protected when they were not).
+* The Parquet schema gains the two columns the way 4b added identity: old chunks read as NULL.
+* Key rotation: a new key id starts new writer segments (a `writer.start` under the new key). Old
+  segments stay verifiable only while the old derived key can be re-derived; if the old master key
+  is lost, old segments become unverifiable (still readable). State this in the user docs.
+
+### 8.7 Cost (measured)
+
+Canonical JSON plus HMAC-SHA256 of a typical row: **4.2 us per row**, against the 630-814 us a row
+costs to write (4.2), under 1%. Storage: about **130 bytes per row** (two 64-hex columns). Each
+writer keeps one 32-byte mac in memory; the chain is computed in the writer's own lock, in sequence
+order.

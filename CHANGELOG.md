@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The sandbox egress proxy (`egress_proxy.py`) now listens on `127.0.0.1` by default, not `0.0.0.0`. The sidecar the harness starts is unaffected: it is started with `IRIS_EGRESS_BIND=0.0.0.0` because the sandbox reaches it from a sibling container. Anyone who runs `egress_proxy.py` by hand or from their own compose file and relied on it listening on every interface must set `IRIS_EGRESS_BIND=0.0.0.0` (or a specific address). A value that is not an IP address is refused, and a non-loopback bind logs one warning.
+
 ### Added
 
 - Audit compaction now keeps what the ledger knows and accounts for what it moved (issue #134,
@@ -25,6 +29,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serialised by a lock in the archive directory. Known limit: a spool line that survives a crash
   between being applied and being removed can re-insert a row archived in the meantime; the view
   collapses the copy.
+- A session can be replayed from the stored records, and what is missing is named (issue #134,
+  stage 5). `iris audit replay --session S` and `GET /governance/replay?session=S` rebuild one
+  session's ordered timeline from the audit ledger (hot and archive), the approval queue, the
+  side-effect ledger and the session log, with its calls hung on their parents, and list the gaps
+  found: a sequence number no store holds, an archive chunk that no longer matches its marker, a
+  call that started and never settled in a process that is gone, a parent or held call that does not
+  exist, a witness with no counterpart, a settle with no start, a record stored twice with
+  different content. Rows from before records had ids, a writer that never closed and a call still
+  running are notes, not gaps. The command exits 1 on a gap (`--no-fail` for scripts) and the
+  endpoint is capped (rows and seconds) and says when it cut the read short. `Harness.audit_gaps()`
+  still returns a list of strings and is empty for a healthy turn; it now also lists what the
+  replay proves lost. `writer.start` rows now carry the process's start time so a recycled pid is
+  not mistaken for a running writer (older rows fall back to the pid alone). The egress witness is
+  not part of this stage.
 
 ### Security
 

@@ -1305,6 +1305,76 @@ def cmd_audit_compact(
         )
 
 
+@audit_app.command("replay")
+def cmd_audit_replay(
+    session: Annotated[str, typer.Option("--session", help="The session to rebuild.")],
+    turn: Annotated[str | None, typer.Option("--turn", help="Only this turn.")] = None,
+    run: Annotated[str | None, typer.Option("--run", help="Only this run.")] = None,
+    as_json: Annotated[bool, typer.Option("--json", help="Print the replay as JSON.")] = False,
+    no_archive: Annotated[
+        bool, typer.Option("--no-archive", help="Do not read the Parquet archive.")
+    ] = False,
+    max_seconds: Annotated[
+        float | None, typer.Option("--max-seconds", help="Stop reading after this long.")
+    ] = None,
+    no_fail: Annotated[
+        bool, typer.Option("--no-fail", help="Exit 0 even when gaps were found.")
+    ] = False,
+    db_path: Annotated[
+        str | None, typer.Option("--db", help="Override governance audit SQLite path.")
+    ] = None,
+    archive_root: Annotated[
+        str | None, typer.Option("--archive-root", help="Override Parquet archive root path.")
+    ] = None,
+) -> None:
+    """Rebuild a session's timeline from the stored records and list what is missing.
+
+    Exit 1 when gaps were found (a lost or deleted record, a call that never settled, a
+    parent that does not exist); 2 when a cap cut the read short so gaps could not be judged.
+    Notes (a writer that never closed, rows from before ids existed) never change the exit code.
+    """
+    import json as _json
+    from dataclasses import replace
+    from pathlib import Path as _Path
+
+    from iris_harness.kernel.governance.audit.replay import ReplaySources, replay_session
+
+    sources = ReplaySources.default(_Path(db_path) if db_path else None)
+    if archive_root:
+        sources = replace(sources, archive_root=_Path(archive_root))
+    try:
+        result = replay_session(
+            session,
+            turn=turn,
+            run=run,
+            sources=sources,
+            include_archive=not no_archive,
+            max_seconds=max_seconds,
+        )
+    except ValueError as exc:
+        print_error(str(exc))
+        raise typer.Exit(2) from exc
+
+    if as_json:
+        console.print(_json.dumps(result.as_dict(), indent=2, sort_keys=True, default=str))
+    else:
+        console.print(f"  session {result.session_id}: {len(result.records)} record(s)")
+        for rec in result.records:
+            tool = f" {rec.tool}" if rec.tool else ""
+            call = f" call={rec.call_id}" if rec.call_id else ""
+            console.print(f"  {rec.ts}  {rec.hook_point or rec.kind}{tool}  {rec.decision}{call}")
+        for gap in result.gaps:
+            console.print(f"  [bold red]✗[/bold red]  {gap}")
+        for note in result.notes:
+            console.print(f"  [dim]note {note.code}: {note.detail}[/dim]")
+        if not result.gaps and result.complete:
+            console.print("  [bold green]✓[/bold green]  no gaps found")
+    if not result.complete:
+        raise typer.Exit(2)
+    if result.gaps and not no_fail:
+        raise typer.Exit(1)
+
+
 @audit_app.command("verify")
 def cmd_audit_verify(
     db_path: Annotated[

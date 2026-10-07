@@ -26,8 +26,10 @@ from iris_harness.foundation.process_state import track_globals
 from iris_harness.kernel.governance.hooks.tool_payload import CALL_ID, PARENT_CALL_ID
 from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
 from iris_harness.kernel.governance.plugin_egress import (
+    DEFAULT_RESPONSE_BYTES,
     current_egress_scope,
     egress_kernel,
+    egress_policy,
     normalize_host,
 )
 from iris_harness.kernel.governance.plugins.plugin_egress import PluginEgressHook
@@ -42,9 +44,16 @@ from iris_harness.runtime.egress_transport import (
 #: caller asks for another; a caller's value is clamped to ``_MAX_TIMEOUT``.
 _DEFAULT_TIMEOUT = 10.0
 _MAX_TIMEOUT = 60.0
-#: The most DECODED body bytes a response may have. Fixed, not configurable.
-MAX_RESPONSE_BYTES = 10 * 1024 * 1024
-_TOO_BIG = f"the response is larger than {MAX_RESPONSE_BYTES // (1024 * 1024)} MiB; it was cut off"
+#: The most DECODED body bytes a response may have, unless the plugin's manifest declares
+#: another (``egress.max_response_bytes``, at most 64 MiB; issue #175).
+MAX_RESPONSE_BYTES = DEFAULT_RESPONSE_BYTES
+
+
+def _too_big(cap: int) -> str:
+    size = f"{cap // (1024 * 1024)} MiB" if cap >= 1024 * 1024 else f"{cap} bytes"
+    return f"the response is larger than {size}; it was cut off"
+
+
 _TOO_SLOW = "the request did not finish within its time limit; it was cut off"
 _NOT_VALID = "the URL is not valid"
 _BAD_HEADER = (
@@ -166,7 +175,9 @@ class GovernedHttp:
         started = time.monotonic()
         read = _Read()
         try:
-            response = self._execute(request, _seconds(timeout, self._timeout), read, egress)
+            response = self._execute(
+                request, _seconds(timeout, self._timeout), read, egress, self._response_cap()
+            )
         except Exception as exc:
             self._post_sync(egress, ids, started, request, None, exc, read)
             raise
@@ -197,7 +208,12 @@ class GovernedHttp:
         read = _Read()
         try:
             response = await asyncio.to_thread(
-                self._execute, request, _seconds(timeout, self._timeout), read, egress
+                self._execute,
+                request,
+                _seconds(timeout, self._timeout),
+                read,
+                egress,
+                self._response_cap(),
             )
         except Exception as exc:
             await kernel.fire(
@@ -213,9 +229,20 @@ class GovernedHttp:
         _log(egress, response, None)
         return response
 
+    def _response_cap(self) -> int:
+        """The cap for this plugin, read from the compiled policy each time. It is passed to the
+        transfer as an argument and never read back from the ``egress`` dict, which hooks see:
+        the dict is the record of the request, not an input to it."""
+        policy = egress_policy()
+        return policy.response_cap(self._plugin) if policy is not None else MAX_RESPONSE_BYTES
+
     @staticmethod
     def _execute(
-        request: httpx.Request, seconds: float, read: _Read, egress: dict[str, Any]
+        request: httpx.Request,
+        seconds: float,
+        read: _Read,
+        egress: dict[str, Any],
+        cap: int = MAX_RESPONSE_BYTES,
     ) -> httpx.Response:
         """The transfer: pinned and checked connect, a total deadline, a decoded-size cap."""
         host = str(egress["host"])
@@ -239,9 +266,9 @@ class GovernedHttp:
                 try:
                     for chunk in _decoded(reply, host, egress):
                         read.bytes_in += len(chunk)
-                        if read.bytes_in > MAX_RESPONSE_BYTES:
+                        if read.bytes_in > cap:
                             egress["aborted"] = "max_bytes"
-                            raise EgressDenied(_TOO_BIG, host=host)
+                            raise EgressDenied(_too_big(cap), host=host)
                         if time.monotonic() > deadline:
                             egress["aborted"] = "deadline"
                             raise EgressDenied(_TOO_SLOW, host=host)
@@ -328,6 +355,9 @@ class GovernedHttp:
             "method": request.method,
         }
         egress["attempt"], egress["replay_of"] = _attempt(scope, egress, ids.call_id)
+        cap = self._response_cap()
+        if cap != MAX_RESPONSE_BYTES:
+            egress["cap"] = cap  # recorded on the pre row: a plugin that asked for another size
         # A request that cannot be addressed is still a record: the hook denies it, so a
         # refusal is a ledger row and never silence.
         if scope is None or not scope.tool:

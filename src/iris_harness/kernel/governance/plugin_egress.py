@@ -35,6 +35,12 @@ logger = logging.getLogger(__name__)
 EGRESS_DATA_CLASSES: Final[tuple[str, ...]] = ("public", "internal", "personal")
 _CLASS_RANK: Final[dict[str, int]] = {"public": 0, "internal": 1, "personal": 2, "secret": 3}
 
+#: The most DECODED body bytes a governed response may have, unless the plugin's manifest
+#: declares another (``egress.max_response_bytes``, issue #175)...
+DEFAULT_RESPONSE_BYTES: Final = 10 * 1024 * 1024
+#: ...and the most any manifest may declare: a larger value is refused at mount.
+MAX_RESPONSE_BYTES_CEILING: Final = 64 * 1024 * 1024
+
 DEFAULT_DATA_CLASS: Final = "internal"
 DEFAULT_SCHEMES: Final[tuple[str, ...]] = ("https",)
 _DEFAULT_PORTS: Final[dict[str, int]] = {"http": 80, "https": 443}
@@ -183,6 +189,8 @@ class PluginEgress:
 
     hosts: tuple[HostRule, ...] = ()
     open_web: bool = False
+    #: ``egress.max_response_bytes``; ``None`` means :data:`DEFAULT_RESPONSE_BYTES`.
+    max_response_bytes: int | None = None
 
     @property
     def declared(self) -> bool:
@@ -206,6 +214,16 @@ class PluginEgressPolicy:
     """Every mounted plugin's declaration, by plugin name."""
 
     plugins: Mapping[str, PluginEgress] = field(default_factory=dict)
+
+    def response_cap(self, plugin: str) -> int:
+        """The most decoded body bytes a response to ``plugin`` may have: its declared
+        ``max_response_bytes`` (never above :data:`MAX_RESPONSE_BYTES_CEILING`, whatever a
+        hand-built declaration says), else :data:`DEFAULT_RESPONSE_BYTES`."""
+        declaration = self.plugins.get(plugin)
+        declared = declaration.max_response_bytes if declaration is not None else None
+        if declared is None:
+            return DEFAULT_RESPONSE_BYTES
+        return max(1, min(declared, MAX_RESPONSE_BYTES_CEILING))
 
     def decide(
         self,
@@ -391,6 +409,8 @@ __all__ = [
     "HostRule",
     "PluginEgress",
     "PluginEgressPolicy",
+    "DEFAULT_RESPONSE_BYTES",
+    "MAX_RESPONSE_BYTES_CEILING",
     "current_egress_scope",
     "note_unrecorded_outcome",
     "unrecorded_outcomes",

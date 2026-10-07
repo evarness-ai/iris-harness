@@ -115,12 +115,23 @@ def egress_lines(egress: dict[str, Any] | None) -> list[str]:
     """The hosts a plugin may contact, one line each (``open_web`` says so loudly)."""
     if not egress:
         return []
-    if egress.get("open_web"):
-        return ["[yellow]any host (open_web)[/yellow]  [dim]every call is recorded[/dim]"]
     lines = []
+    if egress.get("open_web"):
+        lines.append("[yellow]any host (open_web)[/yellow]  [dim]every call is recorded[/dim]")
     for h in egress.get("hosts") or []:
         ports = f":{','.join(str(p) for p in h['ports'])}" if h.get("ports") else ""
         lines.append(f"{'/'.join(h['schemes'])}://{h['host']}{ports}  [dim]data: {h['data']}[/dim]")
+    cap = egress.get("max_response_bytes")
+    if cap is not None:
+        from iris_harness.kernel.governance.plugin_egress import DEFAULT_RESPONSE_BYTES
+
+        raised = cap > DEFAULT_RESPONSE_BYTES
+        colour = "yellow" if raised else "dim"
+        note = "raised above" if raised else "lowered from"
+        lines.append(
+            f"[{colour}]response cap {cap // 1024} KiB[/{colour}]  "
+            f"[dim]({note} the {DEFAULT_RESPONSE_BYTES // (1024 * 1024)} MiB default; recorded as `cap` on every request)[/dim]"
+        )
     return lines
 
 

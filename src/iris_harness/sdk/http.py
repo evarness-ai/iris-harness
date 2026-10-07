@@ -30,7 +30,8 @@ transport only, so the declaration, the hooks and the rows run as they do in pro
 
 Bounds, per request: the whole transfer has one time budget (``timeout`` seconds in total, not
 per operation; default 10, at most 60; ``None``, zero or a negative value mean the default) and
-the decoded response body is read up to 10 MiB; past either, the request is cut off, recorded
+the decoded response body is read up to 10 MiB (or the ``egress.max_response_bytes`` the manifest
+declares, at most 64 MiB); past either, the request is cut off, recorded
 and raises :class:`EgressDenied`. The environment is not consulted (no proxy variables, netrc
 or CA-bundle variables), and a ``Host``, ``Proxy-*`` or framing header (``Connection``, ``Upgrade``, ``TE``, ``Transfer-Encoding``, ``Content-Length``) is refused. The body is decoded by the client with a bound (identity requested; one ``gzip``/``deflate`` layer accepted, any other encoding refused). The connection
 resolves the host name once, refuses an address that is loopback, private, link-local, shared

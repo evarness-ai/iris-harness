@@ -57,6 +57,13 @@ First public release of the IRIS harness.
   `approved_by`, an approved queue row that pinned exactly that call, and it leaves a pending
   write-ahead ledger row before it runs. A tool not listed behaves as before.
 
+- The governed HTTP client's response cap is configurable per plugin (issue #175). The manifest
+  key `egress.max_response_bytes` sets the most decoded body bytes a response may have: default
+  10 MiB, lowering is always allowed, and the harness ceiling is 64 MiB (a larger value fails
+  manifest validation, so the plugin does not mount). A cap other than the default is recorded as
+  `cap` on every `pre_egress` row and shown by `iris plugins`. Adding a manifest key is not a
+  breaking change to the stable surface; the key sits under `egress`, which is already in it.
+
 - A capability method can declare `sends_to` (`MethodSpec.sends_to`, as a tool does), and
   `CapabilityCall` carries it: every governed call of the method stamps where its arguments go
   at `PRE_TOOL_USE`, so the owner-PII guards read them. `weather.forecast` declares

@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from iris_harness.foundation.process_state import track_globals
+from iris_harness.kernel.governance.public_suffix import is_public_suffix
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +117,8 @@ def normalize_host_pattern(value: str) -> str:
     so out loud. Refused outright, fail closed: IP literals in any spelling (dotted, short,
     hex, octal, IPv6), ``localhost`` and the local-network suffixes, and numeric last
     labels, which a resolver may read as an address; and a wildcard whose base is a single
-    label (``*.com``). A wildcard over a multi-label public suffix (``*.co.uk``) is not caught: the repo ships no public-suffix
-    list (docs/architecture/plugin-egress.md).
+    label (``*.com``). A wildcard over a public suffix (``*.co.uk``, ``*.com.au``) is refused too, from the
+    vendored ICANN section of the Public Suffix List (``public_suffix.py``).
     """
     if not value or not value.isascii() or any(c.isspace() or not c.isprintable() for c in value):
         raise _refuse(value, "is not a host (ASCII only, no whitespace or control characters)")
@@ -161,6 +162,12 @@ def normalize_host_pattern(value: str) -> str:
         raise _refuse(value, "an IP address is not a declarable host")
     if wildcard and len(labels) < 2:
         raise _refuse(value, "a wildcard needs a registrable domain (`*.example.org`)")
+    if wildcard and is_public_suffix(body):
+        raise _refuse(
+            value,
+            f"`{body}` is a public suffix, so the wildcard would cover every registrant under "
+            f"it; declare the domain you mean (`*.example.{body}`)",
+        )
     return host
 
 

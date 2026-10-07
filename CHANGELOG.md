@@ -45,6 +45,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not mistaken for a running writer (older rows fall back to the pid alone). The egress witness is
   not part of this stage.
 
+### Fixed
+
+- Opening a memris database no longer fails when several processes open a new or older file at the
+  same instant. `SQLiteGraphStore` read the schema version and then wrote it (or upgraded the tables)
+  in a plain transaction, so two processes could both insert the version row
+  (`UNIQUE constraint failed: memris_meta.key`) or both upgrade, and a brand-new file could refuse
+  the second process's switch to WAL ("database is locked"). The initialisation now takes the write
+  lock first (`BEGIN IMMEDIATE`) and waits out a concurrent WAL switch. The earlier statement that
+  memris was measured and not affected (#223) held only for a database that already had its version
+  row; an empty one was not covered.
+
 ## [0.1.0] - 2026-10-07
 
 First public release of the IRIS harness.

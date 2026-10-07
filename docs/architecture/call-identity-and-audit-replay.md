@@ -451,6 +451,46 @@ Payload-only: no schema change and no migration (the audit payload is schema-fre
   duplicate, collapsed by the view); a marker's per-writer `count` counts it twice. The drain is
   not changed.
 
+### 6.5 Stage 5 as built (replay, and `audit_gaps()` on top of it)
+
+* **Module** `kernel/governance/audit/replay.py`: `replay_session(session_id, turn=, run=, sources=,
+  include_archive=, max_rows=, max_seconds=)` returns records (identifiers and decisions only, the
+  `audit_view` field set; never a reason, argument or result), a tree (turn, run, step, call; a nested
+  call hangs under its `parent_call_id` whatever its own run), `gaps` and `notes`. Read-only:
+  stores are opened read-only by file and only the documented columns are read.
+* **Sources.** The audit ledger (hot SQLite, and the Parquet archive through `read_cold_rows`), the
+  approval queue, the side-effect ledger and the session log. The cold read is bounded to the chunks
+  that can hold the session: the window is the union of the session's hot rows and its session-log
+  events, and `chunks_in_window` picks the chunks a marker says meet it (others by month). With
+  neither, every chunk is read and a `cold_window_unbounded` note says so.
+* **Gaps (proven).** `sequence_hole` (a writer's number in no store: not in either tier, not declared
+  by a `gap` row, not waiting in the spool; reported as "between rows of this session" when the
+  writer's rows on both sides are the session's, else "session unknown"); `lost_write` (the same
+  hole, but the writer declared it); `archive_mismatch` (a marker's chunk missing, changed or
+  unreadable); `open_call` (an allowed `pre_tool_use` with no `post_tool_use`, a witness that it
+  started and did not end -- the session log's `tool.invoke.start` without `.end`, or a ledger row
+  still `pending` -- and a writer whose process is gone or that closed); `missing_parent`
+  (`parent_call_id`, `replay_of` or `resumed_from_run` naming nothing); `witness_mismatch` (a session
+  log start, a ledger row or an approval naming a call with no audit row); `orphan_settle`;
+  `duplicate` (one `record_id`, two contents). A call a hook held or refused is not open.
+* **Notes (never gaps).** `pre_identity_era`; `writer_ended_without_close` ("tail unknown") and
+  `writer_open`; `in_flight` (an open call whose writer process is still running); `unsettled_call`
+  (no settle row and no witness: a read capability call that raised legitimately fires no settle);
+  `cold_tier_not_read`; `store_absent`; `cold_window_unbounded`; `truncated`.
+* **Bounds.** `max_rows` caps each read; `max_seconds` interrupts the cold scan. A cut read proves
+  nothing missing, so gap detection is skipped and the result says `complete: false` (the API:
+  `truncated: true`). Session ids are validated (they name a file in the session log directory).
+* **Surfaces.** `iris audit replay --session S [--turn T | --run R] [--json] [--no-archive]
+  [--max-seconds N] [--no-fail]` (exit 1 on gaps, 2 when cut short, 0 otherwise; notes never change
+  it); `GET /governance/replay?session=S[&turn=T|&run=R]` capped at 2,000 rows and 5 s;
+  `Harness.audit_gaps()` keeps its two R14 checks and adds the replay's gaps for the harness's
+  sessions (never notes, so a harness that is still a live writer stays `[]`). Readers of
+  `audit_gaps` found by grep: `Harness.audit_gaps`, the three plugin-template tests and the two docs.
+* **Not in this stage.** The egress witness (host `log_egress` lines against egress rows): the lines
+  are not a store with ids; a follow-up. The web Governance screen reads the endpoint later. A
+  session-log `tool.invoke.start` is only compared one way (to an audit row): capability calls log no
+  such event, so "audit row with no log event" would be a false gap.
+
 ## 7. Verified vs not verified
 Verified by running (current main fbfb7e8, scripted model, temp IRIS_HOME, throwaway vault key): the two scenarios and their
 dumps; ids contiguous; `tool_call_id` absent from audit payloads; held-attempt id absent; nested call fresh run; ledger collision

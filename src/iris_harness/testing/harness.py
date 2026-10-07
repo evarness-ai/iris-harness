@@ -42,6 +42,7 @@ from iris_harness.foundation.process_state import (
     snapshot_process_state,
 )
 from iris_harness.kernel.governance.audit.log import AuditLog, AuditRow
+from iris_harness.kernel.governance.audit.replay import ReplaySources, replay_session
 from iris_harness.llm.fake import FakeCall, Script, transcript
 from iris_harness.runtime.plugin_host.loader import InProcessPlugin, in_process_plugin
 from iris_harness.runtime.plugin_host.manifest import PluginManifest
@@ -455,7 +456,13 @@ class Harness:
           answered. More keys than answers is not a gap: a call governance refused, or
           one the transport failed, is audited and never answered;
         * an answer: each turn that produced one has a ``PRE_RESPONSE`` row in its
-          session.
+          session;
+        * the ledger itself: every session the harness ran is replayed from the stored
+          records (``kernel/governance/audit/replay.py``), and what the replay proves lost
+          or contradictory is listed -- a sequence number no store holds, a call that
+          started and never settled in a process that is gone, a parent or a held call that
+          does not exist, a witness with no counterpart. A healthy turn stays empty: notes
+          (a writer still running, rows from before ids existed) are not gaps.
         """
         gaps: list[str] = []
         calls = self.model_calls()
@@ -469,6 +476,17 @@ class Harness:
                 continue
             if not self.audit_rows(hook_point=ANSWER_HOOK, session_id=turn.session_id):
                 gaps.append(f"no {ANSWER_HOOK} row for the answer to {turn.message!r}")
+        governance = self.home / "governance"
+        sources = ReplaySources(
+            audit_db=self.audit_db,
+            archive_root=None,
+            approvals_db=governance / "approvals.db",
+            ledger_db=governance / "side_effects.db",
+            session_log_dir=self.home / "logs",
+        )
+        for session_id in sorted({turn.session_id for turn in self._turns}):
+            replayed = replay_session(session_id, sources=sources, include_archive=False)
+            gaps.extend(f"{session_id}: {gap}" for gap in replayed.gaps)
         return gaps
 
 

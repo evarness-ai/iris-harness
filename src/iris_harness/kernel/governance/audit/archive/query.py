@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import json
 import sqlite3
+from collections.abc import Sequence
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -173,3 +174,53 @@ class AuditQueryEngine:
             select = ", ".join(name if name in present else "NULL" for name, _ in _COLUMNS)
             rows = conn.execute(f"SELECT {select} FROM audit_log").fetchall()  # noqa: S608
         return [tuple(row) for row in rows]
+
+
+def read_cold_rows(
+    files: Sequence[Path],
+    *,
+    columns: Sequence[str],
+    where: str = "TRUE",
+    params: Sequence[object] = (),
+    limit: int | None = None,
+    timeout_s: float | None = None,
+) -> tuple[list[dict[str, object]], bool]:
+    """Rows of the given chunks (never the whole archive), and whether the read was cut short.
+
+    ``columns`` that a chunk of the older shape lacks read as NULL. ``where`` is SQL written by
+    the caller with ``?`` placeholders for ``params``; it may name any column of ``_COLUMNS``.
+    A ``timeout_s`` interrupts the scan: the rows read so far are NOT returned (a partial scan
+    is not an answer) and the flag is True.
+    """
+    import threading
+
+    if not files:
+        return [], False
+    types = dict(_COLUMNS)
+    with duckdb.connect(database=":memory:") as conn:
+        conn.execute("SET TimeZone = 'UTC'")
+        listing = ", ".join("'" + str(p).replace("'", "''") + "'" for p in files)
+        source = f"read_parquet([{listing}], union_by_name=true)"  # internal paths
+        describe = f"DESCRIBE SELECT * FROM {source}"  # noqa: S608 - internal paths
+        have = {row[0] for row in conn.execute(describe).fetchall()}
+        select = ", ".join(
+            name if name in have else f"NULL::{types[name]} AS {name}" for name in types
+        )
+        conn.execute(f"CREATE TEMP VIEW cold AS SELECT {select} FROM {source}")  # noqa: S608
+        picked = ", ".join(columns)
+        tail = f" LIMIT {int(limit)}" if limit is not None else ""
+        sql = f"SELECT {picked} FROM cold WHERE {where}{tail}"  # noqa: S608 - fixed names
+        timer = None
+        if timeout_s is not None:
+            timer = threading.Timer(timeout_s, conn.interrupt)
+            timer.start()
+        try:
+            cur = conn.execute(sql, list(params))
+            rows = cur.fetchall()
+        except duckdb.InterruptException:
+            return [], True
+        finally:
+            if timer is not None:
+                timer.cancel()
+        names = [d[0] for d in cur.description]
+    return [dict(zip(names, row, strict=True)) for row in rows], False

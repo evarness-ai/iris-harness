@@ -1,6 +1,6 @@
 # Design note: one unique, parent-linked id per record, and a gap-free replay (issue #134)
 
-Status: Design for issue #134; stages 1 and 2 implemented.
+Status: Design for issue #134; stages 1, 2 and 3 implemented.
 Evidence labels: [RUN] = observed by running current code; [READ] = read from source only.
 
 ## 0. Headline findings
@@ -196,7 +196,7 @@ already does exactly this for `session_id`: precedent). Old rows keep NULL ids; 
 not claim completeness for them (honest boundary: a `migration` marker row records the first id/ts that carries identity).
 | Store | Change |
 |---|---|
-| audit_log | add `record_id, turn_id, call_id, parent_call_id, attempt, writer_id, writer_seq, kind`; indexes on `(call_id)`, `(session via json)->` promote `session_id` to a column (backfill from payload); keep payload copies for compatibility |
+| audit_log | add `record_id, session_id, turn_id, call_id, parent_call_id, attempt, replay_of, resumed_from_run` (stage 3; `writer_id, writer_seq, kind` are stage 4); `session_id` is a column but is NOT backfilled from the payload (D6): readers use `COALESCE(session_id, json_extract(payload_json, '$.session_id'))`; keep payload copies for compatibility |
 | side_effect_ledger | add `call_id, parent_call_id, attempt, replay_of, record_id`; new `side_effect_events` append-only table (pending/settled transitions) so the mutated row stops being the only history |
 | approval_queue | add `call_id` (held attempt), `step_id`, `turn_id`; transitions already audited |
 | router_decisions / session log | add `turn_id`, `record_id`, `writer_seq` (JSONL: new keys, readers ignore unknown) |
@@ -340,6 +340,34 @@ Payload-only: no schema change and no migration (the audit payload is schema-fre
 - Not stamped: retries (`iris run resume` re-exec, the loop's repeated-action guard) until stage 4; calls that never reach
   `GovernedToolRunner` (D7: general-lane builtin tools and `kernel=None`) get no call id, no parent and no turn link.
   Whether the general lane is reachable in the default config is not verified.
+
+### 6.2 Stage 3 as built (identity columns, migration)
+
+- Shared helper `foundation/persistence/sqlite.add_columns_if_missing`: its OWN connection, `BEGIN IMMEDIATE`, then
+  `PRAGMA table_info` and `ALTER TABLE ... ADD COLUMN` for what is missing (nullable, no default, no row rewritten),
+  index creation, an `on_added` callback in the same transaction, `COMMIT`. Why not inside a store's transaction: a
+  read followed by an `ALTER` in a deferred transaction fails with `database is locked` when another process commits in
+  between, and the 5 s busy timeout does not help (`SQLITE_BUSY_SNAPSHOT`). Measured with 8 real interpreters opening
+  one release-shaped file at the same instant: the deferred variant failed 37 of 40 rounds, `BEGIN IMMEDIATE` 0 of 40
+  (`tests/unit/iris_harness/kernel/test_governance/test_identity_migration.py` runs the real race per store and shows
+  the naive variant failing).
+- `audit_log` gains `record_id` (minted by `AuditLog.record`, ULID, unique partial index), `session_id`, `turn_id`,
+  `call_id`, `parent_call_id`, `attempt`, `replay_of`, `resumed_from_run`, filled from the same payload keys the kernel
+  stamps (one source; payload copies stay). `AuditLog.record_many` writes several rows on one connection with per-row
+  failure semantics (a failed row is `None` in the result and the others are kept); the kernel does not batch a firing
+  yet (atomic-per-firing waits for D3, stage 4, because `PRE_EGRESS` reads each write's result).
+- Pre-identity era (D6): a row with no `record_id` was written before identity (an older process still writing to a
+  migrated file produces such rows too). The process that adds `record_id` also writes one `audit_meta` row
+  (`key='identity'`, `{schema, first_identity_row_id, migrated_at}`) in the same transaction; a fresh database writes none.
+  Nothing is backfilled or rewritten.
+- `side_effect_ledger` gains `call_id, parent_call_id, attempt, replay_of, record_id` (the key stays
+  `<run>:<step>:<call_id>`, so `list_by_run`/`pending`/`iris run resume` are unchanged) and a new append-only
+  `side_effect_events` table (one row per pending/settled transition). `approval_queue` gains `step_id, turn_id`;
+  `router_decisions` gains `record_id, turn_id`; `governor_guard_audit` gains `run_id, call_id, session_id, record_id`
+  (the MCP bridge passes the run and the call id it minted). Router and governor migrations that fail are logged at error
+  level and the old schema keeps being written.
+- Not in stage 3: cost ledger and checkpoints (#193), the Parquet archive (stage 4: a compacted row keeps its identity
+  in `payload_json`, but loses `record_id` and the columns until the archive schema grows them), the session log.
 
 ## 7. Verified vs not verified
 Verified by running (current main fbfb7e8, scripted model, temp IRIS_HOME, throwaway vault key): the two scenarios and their

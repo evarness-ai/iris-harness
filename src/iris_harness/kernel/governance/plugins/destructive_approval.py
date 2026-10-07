@@ -38,6 +38,7 @@ import logging
 import uuid as _uuid
 from typing import TYPE_CHECKING, Any
 
+from iris_harness.foundation.observability.session_log import current_turn_id
 from iris_harness.kernel.governance.approvals.store import ApprovalCard, ApprovalItem
 from iris_harness.kernel.governance.hooks.tool_payload import CALL_ID, HELD_CALL_ID
 from iris_harness.kernel.governance.hooks.types import HookContext, HookDecision, HookPoint
@@ -268,6 +269,9 @@ class DestructiveApprovalHook:
             # The id of THIS (held) attempt: the approved re-execution is a new call, and
             # records this one as its ``held_call_id`` (#134).
             call_id=_metadata_str(ctx, CALL_ID),
+            # Where it was raised (#134 stage 3): the loop step and the chat turn.
+            step_id=ctx.step_id,
+            turn_id=current_turn_id(),
         )
         row = self._queue.get(approval_id)
         if row is not None and self._router is not None:

@@ -337,3 +337,33 @@ def test_a_bridged_call_inside_a_governed_call_names_it_as_its_parent(tmp_path: 
     assert all(p["attempt"] == 1 for p in first)
     second = payloads(tmp_path / "two")
     assert second and all(p["parent_call_id"] == "PARENT-CALL-ID" for p in second)
+
+
+def test_the_governor_decision_of_a_bridged_call_names_its_run_and_minted_call(
+    tmp_path: Path,
+) -> None:
+    """#134 stage 3: ``governor_guard_audit`` rows carry the run and the call id the bridge
+    minted -- the same id the kernel's rows of that call carry."""
+    import json
+    import sqlite3
+
+    from iris_harness.kernel.governance.audit.log import AuditLog as Audit
+
+    rig = Rig(tmp_path, {"list_files": "read"})
+    rig.call("list_files")
+
+    conn = sqlite3.connect(tmp_path / "data" / "audit.db")
+    rows = conn.execute(
+        "SELECT action, run_id, call_id, session_id, record_id FROM governor_guard_audit "
+        "WHERE action = 'call_tool'"
+    ).fetchall()
+    conn.close()
+    (kernel_call_id,) = {
+        json.loads(r.payload_json)["call_id"]
+        for r in Audit(db_path=tmp_path / "audit.db").query()
+        if r.hook_point == "pre_tool_use"
+    }
+    assert [(a, run, call) for a, run, call, _, _ in rows] == [
+        ("call_tool", "mcp-files", kernel_call_id)
+    ]
+    assert rows[0][4]  # the row's own id

@@ -475,6 +475,8 @@ class MCPBridge:
             "call_tool",
             server_name=server.name,
             approval_granted=approval_granted,
+            run_id=run_id or f"mcp-{server.name}",
+            call_id=call_id,
             metadata={
                 "tool_name": tool_name,
                 "arguments": arguments,
@@ -675,6 +677,8 @@ class MCPBridge:
         server_name: str,
         approval_granted: bool,
         metadata: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        call_id: str | None = None,
     ) -> GovernorGuardDecision:
         """Evaluate one outbound MCP action through the local governor service.
 
@@ -690,12 +694,17 @@ class MCPBridge:
                 {key: value for key, value in metadata.items() if key not in _APPROVAL_KEYS}
             )
         payload_metadata["approval_granted"] = approval_granted
+        from iris_harness.foundation.observability.session_log import current_session_id
+
         return self.governor_service.guard(
             "coding/mcp",
             {
                 "action": action,
                 "metadata": payload_metadata,
             },
+            # What the harness knows of the call (#134 stage 3), beside the decision, never
+            # from the request: the run, the minted call id, the chat session.
+            identity={"run_id": run_id, "call_id": call_id, "session_id": current_session_id()},
         )
 
     def _invoke_transport(

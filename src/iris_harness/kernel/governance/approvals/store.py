@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from iris_harness.foundation.paths import governance_data_dir
+from iris_harness.foundation.persistence.sqlite import add_columns_if_missing
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,10 @@ class ApprovalRow:
     # so both attempts join. None for a row written before the column, and for an approval
     # no tool call raised (evaluator halts).
     call_id: str | None = None
+    # Where the held call was raised (#134 stage 3): the loop step and the chat turn. None for
+    # a row written before the columns, and for an approval no tool call raised.
+    step_id: int | None = None
+    turn_id: str | None = None
 
     @property
     def is_deferred_call(self) -> bool:
@@ -273,6 +278,11 @@ class ApprovalStore:
                     if "duplicate column" not in str(exc).lower():
                         raise
             conn.commit()
+        # #134 stage 3: where the held call was raised. Added on a connection of its own, under
+        # ``BEGIN IMMEDIATE`` (``add_columns_if_missing``): nullable, no existing row rewritten.
+        add_columns_if_missing(
+            self.db_path, "approval_queue", {"step_id": "INTEGER", "turn_id": "TEXT"}
+        )
 
     @staticmethod
     def _row(r: sqlite3.Row) -> ApprovalRow:
@@ -295,6 +305,8 @@ class ApprovalStore:
             caller=(r["caller"] if "caller" in r.keys() else None),
             executed_at=(r["executed_at"] if "executed_at" in r.keys() else None),
             call_id=(r["call_id"] if "call_id" in r.keys() else None),
+            step_id=(r["step_id"] if "step_id" in r.keys() else None),
+            turn_id=(r["turn_id"] if "turn_id" in r.keys() else None),
         )
 
     # ------------------------------------------------------------------
@@ -316,6 +328,8 @@ class ApprovalStore:
         card: ApprovalCard | None = None,
         caller: str | None = None,
         call_id: str | None = None,
+        step_id: int | None = None,
+        turn_id: str | None = None,
     ) -> ApprovalId:
         approval_id = str(uuid.uuid4())
         now = datetime.now(UTC)
@@ -326,8 +340,9 @@ class ApprovalStore:
                 INSERT INTO approval_queue
                     (approval_id, run_id, checkpoint_id, signal, context_summary,
                      requested_at, channel, status, timeout_at, policy_on_timeout,
-                     session_id, items_json, card_json, caller, call_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
+                     session_id, items_json, card_json, caller, call_id,
+                     step_id, turn_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     approval_id,
@@ -344,6 +359,8 @@ class ApprovalStore:
                     _card_to_json(card),
                     caller,
                     call_id,
+                    step_id,
+                    turn_id,
                 ),
             )
             conn.commit()

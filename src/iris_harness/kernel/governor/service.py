@@ -40,8 +40,18 @@ class IRISGovernorService:
             audit_logger=GovernorAuditLogger.from_repo_root(repo_root, db_path=audit_db_path),
         )
 
-    def guard(self, route: str, payload: Mapping[str, Any] | None = None) -> GovernorGuardDecision:
-        """Evaluate one route decision, then append it to the governor audit log."""
+    def guard(
+        self,
+        route: str,
+        payload: Mapping[str, Any] | None = None,
+        *,
+        identity: Mapping[str, str | None] | None = None,
+    ) -> GovernorGuardDecision:
+        """Evaluate one route decision, then append it to the governor audit log.
+
+        ``identity`` (``run_id`` / ``call_id`` / ``session_id``) is what the harness knows of
+        the call the decision is for; it is stored beside the decision, never read from the
+        request payload."""
         request = _coerce_guard_request(route, payload)
         matched_policy = self.policy_engine.match_route(request.route)
         decision = self.policy_engine.evaluate(request, matched_policy=matched_policy)
@@ -57,7 +67,7 @@ class IRISGovernorService:
                     }
                 )
 
-        self.audit_logger.record_decision(decision)
+        self.audit_logger.record_decision(decision, identity=identity)
         return decision
 
     def list_routes(self) -> tuple[str, ...]:

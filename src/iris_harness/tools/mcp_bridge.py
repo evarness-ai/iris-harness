@@ -392,8 +392,10 @@ class MCPBridge:
         governor check. ``persona`` and ``run_id`` are forwarded into the
         :class:`~iris_harness.kernel.governance.hooks.types.HookContext` so
         ``MCPAllowlistHook`` can enforce the ``(persona, server, tool)``
-        tuple. A ``deny`` outcome raises :exc:`PermissionError` with the
-        governance reason. The server is called with the arguments as
+        tuple. A ``deny`` or ``require_approval`` outcome raises
+        :exc:`PermissionError` with the governance reason (the bridge has no resume
+        path, so a call that needs approval does not run); the pre step matches the
+        post step. The server is called with the arguments as
         ``PreToolUse`` left them (a ``vault://`` handle resolved by the
         credential broker); everything recorded -- the governor's audit, the
         returned ``arguments`` -- keeps the arguments as the caller wrote them.
@@ -401,7 +403,8 @@ class MCPBridge:
         Its result then passes ``PostToolUse``: an external server's output is
         third-party text (``content: external``), so the external-content floor
         marks and scans it (and the opt-in retrieved-content injection guard, when
-        enabled). A ``deny`` raises :exc:`PermissionError`; a
+        enabled). A ``deny`` or ``require_approval`` raises
+        :exc:`PermissionError`; a
         ``transform`` is what the caller receives.
 
         A tool the operator declared in the server's ``governance.tools`` carries that
@@ -485,7 +488,8 @@ class MCPBridge:
         Route format: ``mcp/{server_name}/{tool_name}`` (AC-5). The
         ``mcp_server`` and ``mcp_tool`` payload fields allow
         ``MCPAllowlistHook`` to identify the dispatch without parsing the
-        route string. A ``deny`` decision raises :exc:`PermissionError`.
+        route string. A ``deny`` or ``require_approval`` decision raises
+        :exc:`PermissionError` (the bridge has no resume path), as the post step does.
         Returns the arguments to call the server with: the final context's
         ``args`` (``tool_payload.args_of``).
 
@@ -544,6 +548,13 @@ class MCPBridge:
         if decision.outcome == "deny":
             raise PermissionError(
                 f"MCP tool '{server_name}/{tool_name}' blocked by governance: " f"{decision.reason}"
+            )
+        if decision.outcome == "require_approval":
+            # The bridge has no resume path of its own, so a hook asking for approval
+            # stops the call here, the same as the POST step withholds the result.
+            raise PermissionError(
+                f"MCP tool '{server_name}/{tool_name}' needs approval before it runs: "
+                f"{decision.reason}"
             )
         final_args = args_of(final_ctx.payload)
         return dict(final_args) if final_args is not None else dict(arguments)

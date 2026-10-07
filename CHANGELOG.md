@@ -231,6 +231,9 @@ First public release of the IRIS harness.
 
 ### Fixed
 
+- An MCP call a `PreToolUse` hook answers with `require_approval` no longer reaches the
+  server: the bridge refused only `deny` before the call, though the post step already refused
+  both (issue #181).
 - `iris docs sync` (`sync_all`) removes a registered file that is gone from disk: its chunks
   and index entries are dropped and the file domain is told (`removed`), the same as
   `iris docs remove`. Before, a deleted file stayed searchable and the file domain kept

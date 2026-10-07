@@ -36,6 +36,7 @@ the process (see "What this does not prove").
          schemes: [https]
          ports: [443, 8443]
      open_web: false                          # true: any host (a page fetcher); see below
+     max_response_bytes: 10485760             # optional; default 10 MiB, at most 64 MiB
    ```
 
    Unknown keys are rejected. `data` is `public | internal | personal` (never `secret`);
@@ -146,7 +147,10 @@ replaces the transport, so there is no socket to check).
 Bounds: the whole request has one wall-clock budget, enforced on every socket operation and
 between body chunks (`timeout` seconds, default 10, at most 60; `None`, zero, negative or NaN
 mean the default; this is a total, where httpx's own timeout is per operation), and the
-decoded body is read up to 10 MiB (fixed: not manifest-configurable). Either limit ends the
+decoded body is read up to 10 MiB by default (a manifest may set `egress.max_response_bytes`:
+lowering it is always allowed, the harness ceiling is 64 MiB and a manifest above it does not
+load, so the plugin does not mount; a cap other than the default is shown by `iris plugins`
+and recorded as `cap` on every `pre_egress` row). Either limit ends the
 request with a `post_egress` row (`error: EgressDenied`, `aborted: max_bytes | deadline`,
 `bytes_in` = the decoded bytes actually read) and an `EgressDenied` with a fixed message.
 The returned response holds the decoded body, without `Content-Encoding` and length headers.
@@ -322,7 +326,7 @@ the same `PRE_EGRESS` / `POST_EGRESS` rows for contacts a launch wrapper reports
 | `fake_http` active | transport faked, everything else as production | both rows |
 | Host resolves to an internal address (any answer) | `EgressDenied`, no connection | `post_egress` with `aborted: address` |
 | `localhost`, `*.local`, `*.internal`, ... | denied, even for `open_web` | `pre_egress` deny |
-| Body over 10 MiB decoded, or past the time budget | `EgressDenied`, cut off | `post_egress` with `aborted`, `bytes_in` |
+| Body over the cap (10 MiB unless declared) decoded, or past the time budget | `EgressDenied`, cut off | `post_egress` with `aborted`, `bytes_in` |
 | `Host` / `Proxy-*` header, or an unparsable URL | `EgressDenied`, no request | `pre_egress` deny |
 | `pre_egress` ledger write fails | `EgressDenied`, no request | none (logged) |
 | `no_network()` active, real transport | the socket is refused; outcome row records the error | both rows |

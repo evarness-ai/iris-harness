@@ -27,6 +27,7 @@ from iris_harness.kernel.governance.hooks.tool_payload import ToolContent, ToolS
 from iris_harness.kernel.governance.owner_identity import OWNER_PII_KINDS
 from iris_harness.kernel.governance.plugin_egress import (
     MAX_HOSTS_PER_PLUGIN,
+    MAX_RESPONSE_BYTES_CEILING,
     HostRule,
     PluginEgress,
     normalize_host_pattern,
@@ -132,6 +133,11 @@ class PluginEgressDecl(BaseModel):
 
     hosts: tuple[EgressHostDecl, ...] = Field(default_factory=tuple)
     open_web: bool = False
+    # The most decoded body bytes one response may have. Absent: 10 MiB. Lowering is always
+    # allowed; the harness ceiling is 64 MiB and a larger value is refused when the manifest
+    # loads, so the plugin does not mount. A raised value is shown by `iris plugins` and
+    # recorded as `cap` on every `pre_egress` row.
+    max_response_bytes: int | None = Field(default=None, ge=1, le=MAX_RESPONSE_BYTES_CEILING)
 
     @model_validator(mode="after")
     def _distinct(self) -> PluginEgressDecl:
@@ -152,7 +158,7 @@ class PluginEgressDecl(BaseModel):
 
     def summary(self) -> dict[str, Any]:
         """The declaration as plain data, for ``iris plugins`` and ``--dump-config``."""
-        return {
+        out: dict[str, Any] = {
             "open_web": self.open_web,
             "hosts": [
                 {
@@ -164,6 +170,9 @@ class PluginEgressDecl(BaseModel):
                 for h in self.hosts
             ],
         }
+        if self.max_response_bytes is not None:
+            out["max_response_bytes"] = self.max_response_bytes
+        return out
 
     def compile(self) -> PluginEgress:
         """The kernel's form of this declaration."""
@@ -173,6 +182,7 @@ class PluginEgressDecl(BaseModel):
                 for h in self.hosts
             ),
             open_web=self.open_web,
+            max_response_bytes=self.max_response_bytes,
         )
 
 

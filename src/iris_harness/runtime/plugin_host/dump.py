@@ -76,6 +76,8 @@ def render_text(tree: dict[str, Any]) -> str:
                 lines.append(
                     "        egress: none declared (raw network calls by this plugin are not governed)"
                 )
+            if egress.get("max_response_bytes") is not None:
+                lines.append(f"        egress response cap: {egress['max_response_bytes']} bytes")
             if row.get("search_providers"):
                 lines.append(f"        search providers: {', '.join(row['search_providers'])}")
         else:

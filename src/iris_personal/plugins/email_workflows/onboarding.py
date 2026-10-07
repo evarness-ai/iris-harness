@@ -70,7 +70,7 @@ from typing import Any
 
 import yaml
 
-from iris_harness.sdk.persistence import data_path, sqlite_conn
+from iris_harness.sdk.persistence import data_path, ensure_columns, sqlite_conn
 
 logger = logging.getLogger(__name__)
 
@@ -264,13 +264,6 @@ CREATE TABLE IF NOT EXISTS email_onboarding_effects (
 """
 
 
-def _add_column_if_missing(conn: sqlite3.Connection, table: str, column: str, decl: str) -> None:
-    """Idempotent additive migration for an existing table."""
-    cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
-    if column not in cols:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
-
-
 @dataclass
 class OnboardingStore:
     """The ``email_onboarding`` table in ``email.db``."""
@@ -282,7 +275,11 @@ class OnboardingStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with sqlite_conn(self.db_path, row_factory=sqlite3.Row) as conn:
             conn.executescript(_SCHEMA)
-            _add_column_if_missing(conn, "email_onboarding", "activity_id", "TEXT")
+        # On a connection of its own under BEGIN IMMEDIATE (#201): a read of ``table_info`` then an
+        # ``ALTER`` raised "duplicate column name" for the process that lost a race to open an
+        # older email.db.
+        ensure_columns(self.db_path, "email_onboarding", {"activity_id": "TEXT"})
+        with sqlite_conn(self.db_path, row_factory=sqlite3.Row) as conn:
             yield conn
 
     def get(self, account_id: str) -> OnboardingState | None:

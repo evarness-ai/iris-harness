@@ -401,7 +401,7 @@ def test_migration_adds_triage_state_when_missing(tmp_path: Path) -> None:
     emails table that pre-dates the column."""
     import sqlite3
 
-    from iris_personal.email.store import _apply_migrations
+    from iris_personal.email.store import _migrate_columns
 
     db_path = tmp_path / "legacy.db"
     # Build the prior-version emails table (no triage_state). Mirrors
@@ -434,8 +434,9 @@ def test_migration_adds_triage_state_when_missing(tmp_path: Path) -> None:
             )
             """)
         cols_before = {r[1] for r in conn.execute("PRAGMA table_info(emails)").fetchall()}
-        assert "triage_state" not in cols_before
-        _apply_migrations(conn)
+    assert "triage_state" not in cols_before
+    _migrate_columns(db_path)
+    with sqlite3.connect(db_path) as conn:
         cols_after = {r[1] for r in conn.execute("PRAGMA table_info(emails)").fetchall()}
     assert "triage_state" in cols_after
 

@@ -32,6 +32,14 @@ First public release of the IRIS harness.
   earlier release created gets the column when it is opened (several processes opening it at once
   are safe).
 
+- `iris_harness.sdk.persistence.ensure_columns(db_path, table, {column: declaration}, *, indexes=(),
+  on_added=None)` adds the columns an older table lacks, safely when several processes open it at
+  once: a plugin that reads `PRAGMA table_info` and then runs `ALTER TABLE` itself loses that race
+  with `duplicate column name` (issue #201). It looks first, then takes the write lock on a
+  connection of its own (`BEGIN IMMEDIATE`) and decides again inside it; `on_added` runs in that
+  transaction, only in the process that added a column, for a one-time backfill. It is the harness's
+  own function, re-exported as a new stable name.
+
 - The audit stores carry an identity in real columns (issue #134, stage 3). `audit_log` gains
   `record_id` (minted by the store, unique), `session_id`, `turn_id`, `call_id`,
   `parent_call_id`, `attempt`, `replay_of` and `resumed_from_run`; the side-effect ledger gains the
@@ -355,6 +363,12 @@ First public release of the IRIS harness.
   alive, and at most 8 can be stuck at once (a further lookup fails closed at once, "name
   lookups are backed up"). The decompression half of the issue was already done in #171
   (`_decoded` decodes at most 64 KiB at a time).
+
+- The email store and the email onboarding store add their columns the same safe way (issue #201,
+  second part): opening an older `email.db` from several processes at once no longer fails with
+  `duplicate column name`, and the one-time stamp of old classifications as IRIS's (`classified_source`)
+  runs once, in the process that added the column. The `memris` versioned upgrades were measured
+  (twelve interpreters, fifteen rounds) and already tolerate the race, so they are unchanged.
 
 - The email judge's user message is no longer wrapped in the untrusted-content envelope
   (undoing that part of the issue #148 change). Measured on a real mailbox, 100 emails judged

@@ -24,6 +24,12 @@ provides:
 # out loud. Its keyed providers (api.tavily.com, api.exa.ai, api.search.brave.com,
 # duckduckgo.com) are covered by it. Its own SSRF checks (extract.py) stay: they refuse
 # non-public addresses, which a host list cannot.
+#
+# Outside this declaration: the opt-in Redis result cache (IRIS_RESEARCH_CACHE=redis,
+# cache.py) opens a plain TCP connection to the operator's own server (IRIS_REDIS_URL). That is
+# the operator's infrastructure, not a host the plugin reaches on a user's behalf, and a TCP
+# connection to an operator-configured server cannot go through `api.http`. cache.py is on the
+# first-party debt list (test_network_imports.py) for that reason.
 egress:
   open_web: true
 tools:

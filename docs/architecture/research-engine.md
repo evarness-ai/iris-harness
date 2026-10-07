@@ -157,6 +157,9 @@ Phase-1 default if the dep is missing or the backend is unreachable — nothing 
 - **Crawl4AI** and **Redis** are intentionally *not* in `pyproject` (Crawl4AI pulls a
   headless browser; Redis is a service) — install them only if you opt in. Selection is via
   `build_cache()` / `build_reranker()` / `_select_extractor()`.
+- The Redis cache connects to *your own* Redis (`IRIS_REDIS_URL`) over plain TCP. That is your
+  infrastructure, outside the governed-egress model (`docs/architecture/plugin-egress.md`): the
+  plugin's `egress: {open_web: true}` declaration does not cover it and `api.http` cannot carry it.
 
 ## Phase 3 (shipped)
 

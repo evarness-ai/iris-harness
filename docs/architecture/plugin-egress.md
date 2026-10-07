@@ -240,7 +240,7 @@ test_network_imports.py` pins the files):
 
 | Plugin | What it connects to | In this change |
 |---|---|---|
-| `research` | `api.tavily.com`, `api.exa.ai`, `api.search.brave.com` and every page it fetches: through `api.http` (issue #172), under `egress: {open_web: true}`, with a ledger row per request and per redirect hop. Still raw: SearXNG (the operator's own, usually loopback, server, which the governed client refuses by design), `duckduckgo.com` (the `ddgs` library), Crawl4AI (its own browser; its first URL is address-checked in `extract.py`, which keeps `socket`) | two files on the debt list |
+| `research` | `api.tavily.com`, `api.exa.ai`, `api.search.brave.com` and every page it fetches: through `api.http` (issue #172), under `egress: {open_web: true}`, with a ledger row per request and per redirect hop. Still raw: SearXNG (the operator's own, usually loopback, server, which the governed client refuses by design), `duckduckgo.com` (the `ddgs` library), Crawl4AI (its own browser; its first URL is address-checked in `extract.py`, which keeps `socket`), and with the opt-in `IRIS_RESEARCH_CACHE=redis` the operator's own Redis over TCP (`redis`, `cache.py`: the operator's infrastructure, outside governed egress) | three files on the debt list |
 | `gmail` | `gmail.googleapis.com`, `www.googleapis.com`, `oauth2.googleapis.com`, `accounts.google.com` (Google API client, OAuth) | the four hosts declared (`data: personal`); three files on the debt list |
 | `imap` | the owner's IMAP server over TCP (`imaplib`, `ssl`) | not an HTTP host, so nothing to declare; one file on the debt list |
 | `email_workflows` | job-posting fetch (`httpx`), discovery (`requests`), a demo that guards sockets | three files on the debt list; no declaration yet |
@@ -289,9 +289,9 @@ governed client proves: *a call made through it* was declared, allowed and recor
 denied host was not contacted by it. The lint proves the plugin's *own source files*
 import (or use through an imported package: `urllib.request.urlopen`, `asyncio.open_connection`)
 no raw network library it names, and reports an unparsable file as a finding; it does not see
-dynamic imports, a library the list does not name (`paramiko`, `aiosmtplib`, `boto3`, `openai`,
-`redis`, ...), an event loop's own `create_connection`, a dependency's own
-network use, or `subprocess`. A ledger with no row for a host is therefore not proof the
+dynamic imports, a library the list does not name (`botocore`, `psycopg`, `kafka`, ...; the
+list does name `paramiko`, `aiosmtplib`, `boto3`, `openai`, `pymongo` and `redis`), an event
+loop's own `create_connection`, a dependency's own network use, or `subprocess`. A ledger with no row for a host is therefore not proof the
 host was never contacted by a plugin; it is proof the governed client never contacted it.
 `no_network()` proves a test path made no socket in the test process.
 

@@ -32,6 +32,12 @@ def _scan(tmp_path: Path, source: str) -> list[tuple[int, str]]:
         ("import socket\n", "socket"),
         ("import smtplib, imaplib\n", "smtplib"),
         ("from googleapiclient.discovery import build\n", "googleapiclient"),
+        ("import paramiko\n", "paramiko"),
+        ("import boto3\n", "boto3"),
+        ("from openai import OpenAI\n", "openai"),
+        ("import redis.asyncio as redis\n", "redis"),
+        ("from pymongo import MongoClient\n", "pymongo"),
+        ("import aiosmtplib\n", "aiosmtplib"),
     ],
 )
 def test_a_raw_network_import_is_reported_with_its_line(
@@ -74,6 +80,11 @@ def test_the_list_names_what_it_checks() -> None:
 # involved (research: open_web; gmail: Google's hosts); imap is a raw TCP socket (imaplib),
 # which no HTTP host list describes.
 _FIRST_PARTY_DEBT = {
+    # The opt-in Redis cache (IRIS_RESEARCH_CACHE=redis) opens a plain TCP connection to the
+    # operator's own Redis (IRIS_REDIS_URL): their infrastructure, and a TCP connection to an
+    # operator-configured server cannot go through api.http. Found when the lint learned
+    # `redis` (#175); the research manifest and plugin-egress.md say the same.
+    ("src/iris_harness/plugins_builtin/research/cache.py", "redis"),
     ("src/iris_harness/plugins_builtin/research/extract.py", "socket"),
     ("src/iris_harness/plugins_builtin/research/providers/searxng.py", "urllib.request"),
     ("src/iris_personal/plugins/email_workflows/demo/run.py", "socket"),
@@ -91,13 +102,15 @@ def test_the_debt_list_shrank_by_the_four_urllib_pairs_issue_172_moved() -> None
     """Brave, Exa, Tavily and the page fetch now go through the governed client. What is left
     in the research plugin is SearXNG (the operator's own, usually loopback, server: the
     governed client refuses internal addresses by design) and ``extract.py``'s ``socket``
-    (the Crawl4AI backend's address check, since it drives its own browser)."""
+    (the Crawl4AI backend's address check, since it drives its own browser), plus the opt-in
+    Redis cache (#175)."""
     research = sorted(p for p in _FIRST_PARTY_DEBT if "/research/" in p[0])
     assert research == [
+        ("src/iris_harness/plugins_builtin/research/cache.py", "redis"),
         ("src/iris_harness/plugins_builtin/research/extract.py", "socket"),
         ("src/iris_harness/plugins_builtin/research/providers/searxng.py", "urllib.request"),
     ]
-    assert len(_FIRST_PARTY_DEBT) == 10
+    assert len(_FIRST_PARTY_DEBT) == 11
 
 
 def _pairs(paths: list[Path]) -> set[tuple[str, str]]:

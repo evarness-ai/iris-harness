@@ -41,6 +41,15 @@ First public release of the IRIS harness.
   or backfilled, a row without a `record_id` is one written before identity (an `audit_meta` row
   records the boundary), and several processes opening the file at once are safe.
 
+- The plugin raw-network lint also names `paramiko`, `boto3`, `openai`, `redis`, `pymongo` and
+  `aiosmtplib` (issue #175, item 4). `NETWORK_MODULES` grows by six entries; no name is added or
+  removed, so the stable-tier snapshot (`tests/fixtures/stable_tier/names.txt`) is unchanged. A
+  plugin that imports one of them now fails `check_network_imports` the way one that imports
+  `httpx` does; route the call through `api.http`, or declare why it cannot be. The scan finds
+  one first-party file, `research/cache.py` (the opt-in Redis cache, a plain TCP connection to
+  the operator's own server), pinned as listed debt with its reason in the research manifest and
+  `plugin-egress.md`.
+
 - An audit row says where its call sits (issue #134, stage 2): `parent_call_id` (the governed
   call it ran inside: a tool a tool called, a capability a tool called, a bridged MCP call),
   `attempt` (2 on the approved re-execution of a held call, with `replay_of` naming the held

@@ -54,6 +54,8 @@ CapabilityConfirm = Literal["once", "never"]
 #: floor tripwire-scans (and the opt-in model guard scans), or the owner's / IRIS's own data
 #: (``internal``).
 CapabilityContent = Literal["internal", "external"]
+# Where a method's arguments go when they leave the machine, as a tool's ``sends_to``.
+CapabilitySendsTo = Literal["search_engine", "external_service"]
 #: How a method hands back its result. ``value``: a plain return. ``async``: ``async def``.
 #: ``stream`` / ``astream``: a method returning ``Iterator[X]`` / ``AsyncIterator[X]``, whose
 #: items are governed. There is no "sync method returning an awaitable": its ``PRE_TOOL_USE``
@@ -114,12 +116,17 @@ class MethodSpec:
     ``external`` when those fields carry text a third party wrote (a web page, an email),
     which the external-content floor redacts instruction-like text from, field by field, at
     ``POST_TOOL_USE`` (the opt-in model guard scans it too). The typed value is not wrapped.
+    ``sends_to``: where the arguments go when they leave the machine (``external_service``,
+    or ``search_engine``), as a tool's manifest entry declares it: the owner-PII guards then
+    read the arguments of every call of the method at ``PRE_TOOL_USE`` (a ``location`` that
+    may be the owner's home address). ``None`` declares nothing.
     """
 
     effect: CapabilityEffect = "read"
     confirm: CapabilityConfirm | None = None
     fields: tuple[str, ...] = ()
     content: CapabilityContent = "internal"
+    sends_to: CapabilitySendsTo | None = None
 
     def __post_init__(self) -> None:
         if self.effect != "write" and self.confirm is not None:
@@ -300,6 +307,9 @@ WEATHER_FORECAST = CapabilitySpec(
             effect="read",
             fields=("location", "periods.[].summary"),
             content="external",
+            # ``location`` is a place name or address as the owner would say it, possibly
+            # their home: the provider sends it to a weather service (issue #100).
+            sends_to="external_service",
         ),
     },
     description="The expected weather at a place, for the days ahead.",
@@ -323,6 +333,7 @@ __all__ = [
     "CAPABILITY_TOOL_PREFIX",
     "CapabilityConfirm",
     "CapabilityContent",
+    "CapabilitySendsTo",
     "CapabilityDenied",
     "CapabilityEffect",
     "CapabilitySpec",

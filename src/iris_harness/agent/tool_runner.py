@@ -78,6 +78,7 @@ from iris_harness.kernel.governance.hooks.tool_payload import (
     TOOL_SENDS_TO,
     TOOL_VERIFY,
     ToolContent,
+    ToolSendsTo,
     args_of,
     post_tool_payload,
     pre_tool_payload,
@@ -264,6 +265,9 @@ class CapabilityCall:
     value_type: Any
     # Whether the result is text a third party wrote (``MethodSpec.content``).
     content: ToolContent = "internal"
+    # Where the arguments go when they leave the machine (``MethodSpec.sends_to``); the
+    # owner-PII guards read it at PRE_TOOL_USE, as for a tool.
+    sends_to: ToolSendsTo | None = None
     # The turn's label (``kernel/governance/turn_label.py``), stamped by the harness when
     # it builds the call; None outside a turn. Never the caller's to set.
     classification: DataClassification | None = None
@@ -841,6 +845,7 @@ class GovernedToolRunner:
                 "caller": call.caller,
                 "asked_user": False,
                 "tool_confirm": call.confirm,
+                TOOL_SENDS_TO: call.sends_to,
                 "origin_channel": self._origin_channel,
                 "session_id": self._session_id,
                 "approved_by": None,

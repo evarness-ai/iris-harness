@@ -533,3 +533,54 @@ def test_a_stream_stopped_early_still_audits_its_end(tmp_path: Path) -> None:
     asyncio.run(one())
     ends = [c.payload for c in post.seen if c.payload.get("stream_end")]
     assert [e["stream_partial"] for e in ends] == [True, True]
+
+
+# ------------------------------------------------- where a method's arguments go (#100)
+class _SeenAtPre:
+    name = "seen_at_pre"
+    hook_point = HookPoint.PRE_TOOL_USE
+    priority = 1
+
+    def __init__(self) -> None:
+        self.metadata: list[dict[str, Any]] = []
+
+    async def __call__(self, ctx: HookContext) -> HookDecision:
+        self.metadata.append(dict(ctx.metadata))
+        return HookDecision(outcome="allow", reason="seen")
+
+
+def _stamped(sends_to: str | None) -> list[dict[str, Any]]:
+    seen = _SeenAtPre()
+    kernel = GovernanceKernel(audit_log=None)
+    kernel.register(seen)
+    kernel.init_lock()
+    call = CapabilityCall(
+        caller="core:t",
+        provider="weather",
+        capability="weather.forecast",
+        method="forecast",
+        effect="read",
+        confirm="never",
+        fields=("",),
+        shape="value",
+        value_type=str,
+        sends_to=sends_to,  # type: ignore[arg-type]
+    )
+    GovernedToolRunner(kernel=kernel, agent_type="core:t").execute_call(
+        call, lambda **kw: "Sunny", {"location": "Oslo"}
+    )
+    return seen.metadata
+
+
+def test_a_capability_call_stamps_where_its_arguments_go_at_pre() -> None:
+    (metadata,) = _stamped("external_service")
+    assert metadata["tool_sends_to"] == "external_service"
+
+
+def test_a_method_that_declares_nothing_stamps_nothing() -> None:
+    (metadata,) = _stamped(None)
+    assert metadata["tool_sends_to"] is None
+
+
+def test_the_weather_forecast_method_declares_that_its_location_leaves_the_machine() -> None:
+    assert catalogue.WEATHER_FORECAST.methods["forecast"].sends_to == ("external_service")

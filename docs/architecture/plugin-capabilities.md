@@ -327,7 +327,11 @@ contract to catch.
   `MethodSpec`: its `effect` (`read`, or `write` with `confirm: once|never`, as a tool's
   manifest entry) and the `fields` of its return type that carry text, as path patterns
   (`[].subject`, `[].sender.name`, `""` for a bare `str`), which must be exactly the `str`
-  leaves of the type. Refused when the spec is defined: a member that is not a method, a
+  leaves of the type. A method may also declare `sends_to` (`external_service` or
+  `search_engine`), as a tool does: where its arguments go when they leave the machine. Every
+  call of it then carries that declaration at `PRE_TOOL_USE`, so the owner-PII guards read
+  its arguments (`weather.forecast` declares `external_service`, since `location` may be the
+  owner's home address). Refused when the spec is defined: a member that is not a method, a
   method with no return type or with `*args` / `**kwargs` / positional-only parameters, and a
   return type the harness cannot see into (`bytes`, `dict`, `Any`, a handle, a fixed-length
   tuple, a recursive type, a dataclass field with `init=False`).

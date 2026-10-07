@@ -110,11 +110,11 @@ def published(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     register_caller_policy(None)
 
 
-def _new_registry() -> PluginRegistry:
+def _new_registry(*extra_hooks: Any) -> PluginRegistry:
     """A registry whose capability calls are governed by a real kernel and caller policy."""
     registry = PluginRegistry()
     kernel = GovernanceKernel(audit_log=None)
-    for hook in (CallerPolicyHook(), ToolPolicyHook(), CapabilityRedactionHook()):
+    for hook in (CallerPolicyHook(), ToolPolicyHook(), CapabilityRedactionHook(), *extra_hooks):
         kernel.register(hook)
     kernel.init_lock()
     registry.bind_kernel(lambda: kernel)
@@ -309,6 +309,47 @@ async def test_weather_forecast_mounts_through_the_registry_and_resolves() -> No
     assert catalogue.split_capability_tool(tool) == ("weather.forecast", "forecast")
     assert registry.caller_denial("plugin:trip", tool) is None
     assert registry.caller_denial("plugin:weather", tool) is not None  # provider does not consume
+
+
+async def test_a_mounted_weather_provider_is_called_with_where_its_location_goes_stamped() -> None:
+    """Issue #100, end to end: a provider mounted through the registry and called by a
+    declared consumer reaches PRE_TOOL_USE as ``tool/capability:weather.forecast.forecast``
+    carrying the method's ``sends_to`` declaration (the owner-PII guards read it there)."""
+    from datetime import UTC, datetime
+
+    from iris_harness.kernel.governance.hooks.types import HookDecision, HookPoint
+
+    seen: list[tuple[str, Any]] = []
+
+    class Spy:
+        name = "spy"
+        hook_point = HookPoint.PRE_TOOL_USE
+        priority = 1
+
+        async def __call__(self, ctx: Any) -> HookDecision:
+            seen.append((ctx.route, ctx.metadata.get("tool_sends_to")))
+            return HookDecision(outcome="allow", reason="spy")
+
+    registry = _new_registry(Spy())
+    _record(registry, "weather", provides=["weather.forecast"])
+    _record(registry, "trip", uses=["weather.forecast"])
+    now = datetime(2026, 10, 5, tzinfo=UTC)
+
+    class Impl:
+        async def forecast(self, location: str, days: int = 3) -> catalogue.Forecast:
+            return catalogue.Forecast(location, now, ())
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(
+            catalogue,
+            "CAPABILITIES",
+            MappingProxyType({"weather.forecast": catalogue.WEATHER_FORECAST}),
+        )
+        assert registry.provide_capability("weather", "weather.forecast", Impl()) is True
+        impl = registry.resolve_capability("trip", "weather.forecast")
+        assert (await impl.forecast("12 Example Lane")).location == "12 Example Lane"
+
+    assert seen == [("tool/capability:weather.forecast.forecast", "external_service")]
 
 
 def test_undeclared_provide_is_refused_and_recorded() -> None:

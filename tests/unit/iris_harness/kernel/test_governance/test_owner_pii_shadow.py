@@ -369,6 +369,42 @@ async def test_a_declared_external_service_is_checked_as_egress(tmp_path: Path) 
     assert {(o["kind"], o["guard"]) for o in report["observations"]} == {("email", "egress")}
 
 
+def test_a_capability_argument_that_looks_like_the_owner_address_is_checked_as_egress(
+    tmp_path: Path,
+) -> None:
+    """Issue #100: ``weather.forecast`` declares ``sends_to: external_service``, so the
+    ``location`` a consumer passes (here the owner's home address) is read by the egress
+    column at PRE_TOOL_USE, as a plugin tool's arguments are; a method that declares nothing
+    is not."""
+    from iris_harness.agent.tool_runner import CapabilityCall
+
+    def run(sends_to: str | None) -> dict[str, Any] | None:
+        kernel, audit = _kernel(tmp_path, "shadow")
+        call = CapabilityCall(
+            caller="core:t",
+            provider="weather",
+            capability="weather.forecast",
+            method="forecast",
+            effect="read",
+            confirm="never",
+            fields=("",),
+            shape="value",
+            value_type=str,
+            sends_to=sends_to,  # type: ignore[arg-type]
+        )
+        GovernedToolRunner(kernel=kernel, agent_type="core:t").execute_call(
+            call, lambda **kw: "Sunny", {"location": PII["address"]}
+        )
+        rows = _rows(audit, shadow=True)
+        return json.loads(rows[-1].payload_json)[SHADOW_KEY] if rows else None
+
+    declared = run("external_service")
+    assert declared is not None and declared["checked"] == ["egress"]
+    assert {(o["kind"], o["guard"]) for o in declared["observations"]} == {("address", "egress")}
+    undeclared = run(None)
+    assert undeclared is None or undeclared == {"checked": []}
+
+
 async def test_a_governed_request_is_observed_at_pre_egress(tmp_path: Path) -> None:
     """Issue #103: what a plugin's request carries out (the strings in its address and
     parameters) is read by the egress column, the destination being the host."""

@@ -26,7 +26,7 @@ def test_run_research_formats_results(monkeypatch) -> None:  # type: ignore[no-u
     _stub_engine(monkeypatch, captured)
     out = tool_mod.run_research({"query": "meta llm framework"})
     assert "provider: searxng" in out
-    assert "**T**" in out and "http://x.com" in out
+    assert "**T**" in out and "(http://x.com)" in out.split()
     assert captured["input"].query == "meta llm framework"
 
 

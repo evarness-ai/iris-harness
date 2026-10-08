@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from iris_harness.foundation.logsafe import log_safe
 from iris_harness.foundation.persistence import data_path
 
 if TYPE_CHECKING:
@@ -189,7 +190,7 @@ class SemanticIndex:
         try:
             self._facts.delete(ids=[key])
         except Exception:
-            logger.debug("semantic index: failed to drop fact %r", key, exc_info=True)
+            logger.debug("semantic index: failed to drop fact %r", log_safe(key), exc_info=True)
 
     def drop_turns(self, row_ids: list[int]) -> int:
         """Remove conversation turns from the index by SQLite row id.

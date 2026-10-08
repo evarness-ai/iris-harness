@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   memris was measured and not affected (#223) held only for a database that already had its version
   row; an empty one was not covered.
 
+### Security
+
+- An unexpected failure in `/chat/stream` or a web slash command now tells the client the exception class and to see the server log, not the exception text. The full traceback is logged. Curated errors (validation, removal, allow-list) are unchanged.
+- Request-derived values in log lines are escaped (new stable `iris_harness.sdk.logging.log_safe`); the shared ingress line escapes method, path, source and session id.
+- Session ids that contain a path separator or leave the session log directory are refused.
+- Copilot token fragments are no longer logged.
+
 ## [0.1.0] - 2026-10-07
 
 First public release of the IRIS harness.

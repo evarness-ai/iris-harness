@@ -234,11 +234,7 @@ class CopilotDeviceFlow:
                 scope=str(payload.get("scope") or self._scope),
             )
             _write_cache(self._cache_path, entry)
-            logger.info(
-                "Persisted Copilot OAuth token %s to %s",
-                _mask_secret(entry.access_token),
-                self._cache_path,
-            )
+            logger.info("Persisted the Copilot OAuth token to %s", self._cache_path)
             return entry
         raise CopilotAuthError("Device-flow authorization timed out before user approved")
 
@@ -305,11 +301,7 @@ class CopilotTokenProvider:
             raise CopilotAuthError("Copilot token exchange returned no expires_at")
         self._cached_token = token.strip()
         self._cached_expires_at = float(expires_at)
-        logger.debug(
-            "Refreshed Copilot API token %s (expires_at=%s)",
-            _mask_secret(self._cached_token),
-            expires_at,
-        )
+        logger.debug("Refreshed the Copilot API token (expires_at=%s)", expires_at)
 
     def get_token(self) -> str:
         if self._needs_refresh():

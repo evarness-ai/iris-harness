@@ -25,6 +25,8 @@ import os
 import sys
 from typing import Any
 
+from iris_harness.foundation.logsafe import log_safe
+
 _CONFIGURED = False
 
 # Dedicated boundary loggers. Named so they can be filtered/routed independently
@@ -84,11 +86,13 @@ def log_ingress(
     session_id: str | None = None,
 ) -> None:
     """One line per inbound request crossing a service boundary (HTTP / WS / channel)."""
-    parts = [f"INGRESS {method} {path}"]
+    # method/path/source/session id come off the wire: the ASGI path is percent-decoded, so
+    # %0a in a URL is a real newline here. One request must stay one line.
+    parts = [f"INGRESS {log_safe(method)} {log_safe(path, 500)}"]
     if source:
-        parts.append(f"from={source}")
+        parts.append(f"from={log_safe(source)}")
     if session_id:
-        parts.append(f"session={session_id}")
+        parts.append(f"session={log_safe(session_id)}")
     if status is not None:
         parts.append(f"status={status}")
     if duration_ms is not None:

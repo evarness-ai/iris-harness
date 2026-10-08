@@ -70,6 +70,7 @@ from typing import Any
 
 import yaml
 
+from iris_harness.sdk.logging import log_safe
 from iris_harness.sdk.persistence import data_path, ensure_columns, sqlite_conn
 
 logger = logging.getLogger(__name__)
@@ -749,7 +750,7 @@ class Onboarding:
             except OnboardingError:
                 raise
             except Exception as exc:  # a step's failure waits; it never loses the state
-                logger.exception("email setup: %s failed for %s", step, account_id)
+                logger.exception("email setup: %s failed for %s", step, log_safe(account_id))
                 outcome = StepOutcome.blocked(f"{step} failed: {type(exc).__name__}: {exc}")
             state = self._apply(state, step, outcome)
             # The result first, then its ledger row: a step is done when it is saved, and

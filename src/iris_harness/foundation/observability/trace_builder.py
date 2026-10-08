@@ -25,8 +25,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from iris_harness.foundation.logsafe import log_safe
 from iris_harness.foundation.observability.audit_view import public_payload, tier_locality
-from iris_harness.foundation.observability.session_log import TURN_OPENING_KINDS, session_log_dir
+from iris_harness.foundation.observability.session_log import (
+    TURN_OPENING_KINDS,
+    session_log_dir,
+    session_log_path,
+)
 from iris_harness.foundation.process_state import track_globals
 
 logger = logging.getLogger(__name__)
@@ -537,7 +542,10 @@ def session_messages(session_id: str) -> list[dict[str, Any]]:
     the Sessions list, this keeps every real exchange (not just pipeline-heavy
     turns) so the resumed conversation reads back faithfully.
     """
-    path = session_log_dir() / f"session-{session_id}.jsonl"
+    try:
+        path = session_log_path(session_id)
+    except ValueError:
+        return []
     if not path.exists():
         return []
     out: list[dict[str, Any]] = []
@@ -803,7 +811,10 @@ def get_trace(trace_id: str) -> dict[str, Any] | None:
         idx = int(idx_s)
     except ValueError:
         return None
-    path = session_log_dir() / f"session-{session_id}.jsonl"
+    try:
+        path = session_log_path(session_id)
+    except ValueError:
+        return None
     if not path.exists():
         return None
     turns = _split_turns(_load_session(path))
@@ -812,7 +823,7 @@ def get_trace(trace_id: str) -> dict[str, Any] | None:
     try:
         return _build_trace(session_id, idx, turns[idx])
     except Exception:
-        logger.exception("trace build failed for %s", trace_id)
+        logger.exception("trace build failed for %s", log_safe(trace_id))
         return None
 
 

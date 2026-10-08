@@ -45,7 +45,7 @@ const SCREENS: Screen[] = [
   {
     name: "setup",
     path: "/setup",
-    ready: (page) => expect(page.getByText(/example\.com/).first()).toBeVisible(),
+    ready: (page) => expect(page.getByText("example.com").first()).toBeVisible(),
   },
 ];
 

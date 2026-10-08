@@ -83,7 +83,10 @@ GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"  # noqa: S105 - a URL, 
 TEST_BASE_ENV = "IRIS_GOOGLE_OAUTH_TEST_BASE"
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
-_EMAIL = re.compile(r"^[^@\s/?#]+@[^@\s/?#]+\.[^@\s/?#]+$")
+# Domain labels exclude "." so the dots are the only separators: a label class that also
+# matched "." let ``+\.+`` split a dotted run many ways (polynomial backtracking, ReDoS).
+_EMAIL = re.compile(r"^[^@\s/?#]+@[^@\s/?#.]+(?:\.[^@\s/?#.]+)+$")
+_EMAIL_MAX = 254  # RFC 5321 path limit
 _ERROR_CODE = re.compile(r"[^a-z0-9_]")
 _HTTP_TIMEOUT = 15.0
 
@@ -560,7 +563,7 @@ def _normalize_account(account: str | None) -> str | None:
     if account is None:
         return None
     addr = account.strip().lower()
-    if not _EMAIL.match(addr):
+    if len(addr) > _EMAIL_MAX or not _EMAIL.match(addr):
         raise StartRefused(422, "account must be an email address")
     return addr
 

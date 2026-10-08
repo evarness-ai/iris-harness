@@ -238,8 +238,10 @@ def install_chat_routes(app: FastAPI, runtime: Callable[[], Any]) -> None:
                         payload["payload"] = evt.payload
                     yield (json.dumps(payload) + "\n").encode("utf-8")
             except Exception as exc:
+                # The traceback goes to the log; the client gets the class name only.
                 logger.exception("chat_stream endpoint failed")
-                yield (json.dumps({"event": "error", "error": str(exc)}) + "\n").encode("utf-8")
+                error = f"chat failed ({type(exc).__name__}); see the server log"
+                yield (json.dumps({"event": "error", "error": error}) + "\n").encode("utf-8")
 
         return StreamingResponse(gen(), media_type="application/x-ndjson")
 

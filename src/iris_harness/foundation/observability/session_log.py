@@ -105,7 +105,18 @@ def subscribe_events(callback: Any) -> Any:
 
 
 def session_log_path(session_id: str) -> Path:
-    return session_log_dir() / f"session-{session_id}.jsonl"
+    """The log file for one session.
+
+    ``session_id`` reaches here from request paths and trace ids, so it is untrusted: a
+    separator or ``..`` in it would name a file outside the log directory. An id is one file
+    name: it may hold no separator, and the joined path must stay inside
+    ``session_log_dir()``; else ``ValueError``.
+    """
+    base = os.path.normpath(os.fspath(session_log_dir()))
+    candidate = os.path.normpath(os.path.join(base, f"session-{session_id}.jsonl"))
+    if any(c in session_id for c in ("/", "\\", "\x00")) or not candidate.startswith(base + os.sep):
+        raise ValueError("session id does not name a file in the session log directory")
+    return Path(candidate)
 
 
 @dataclass(frozen=True)

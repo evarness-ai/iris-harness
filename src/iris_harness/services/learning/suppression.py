@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from iris_harness.foundation.logsafe import log_safe
 from iris_harness.foundation.paths import data_dir
 from iris_harness.foundation.persistence import sqlite_conn
 
@@ -234,7 +235,7 @@ class SurfaceFeedbackStore:
         digital-twin Layer-2 behavior signals as steering ground truth.
         """
         if verdict not in VERDICTS:
-            logger.debug("ignoring unknown surface-feedback verdict %r", verdict)
+            logger.debug("ignoring unknown surface-feedback verdict %r", log_safe(verdict))
             return
         canonical = _canonical_dims(dims)
         key_hash = _key_hash(subsystem, surface_kind, canonical)
@@ -259,7 +260,10 @@ class SurfaceFeedbackStore:
                 )
         except Exception:  # feedback capture must never break a user action
             logger.debug(
-                "surface-feedback capture failed (%s/%s)", subsystem, surface_kind, exc_info=True
+                "surface-feedback capture failed (%s/%s)",
+                log_safe(subsystem),
+                log_safe(surface_kind),
+                exc_info=True,
             )
             return
         if emit_signal:

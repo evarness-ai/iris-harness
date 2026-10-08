@@ -506,7 +506,10 @@ def test_imap_choice_shows_a_domain_specific_app_password_hint(
     monkeypatch.setattr(setup_cli, "_iris_argv", lambda: ["iris"])
     result = runner.invoke(app, ["setup"], input="n\nn\ny\n3\nowner@gmail.com\n")
     assert result.exit_code == 0, result.output
-    assert "myaccount.google.com" in result.output
+    # The provider hint the step prints for a Gmail address, whitespace-normalised so rich's
+    # wrapping cannot split it.
+    hint = setup_cli._IMAP_APP_PASSWORD_HINTS["gmail.com"]
+    assert " ".join(hint.split()) in " ".join(result.output.split())
 
 
 def test_imap_choice_falls_back_to_generic_hint_for_an_unknown_domain(

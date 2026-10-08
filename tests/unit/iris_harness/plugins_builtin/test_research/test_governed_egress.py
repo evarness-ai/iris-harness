@@ -82,6 +82,9 @@ class _Server:
                     self._send(200, b"<html><body>hello</body></html>")
 
             def _redirect(self, to: str) -> None:
+                if "\r" in to or "\n" in to:
+                    self.send_error(400, "bad redirect target")
+                    return
                 self.send_response(302)
                 self.send_header("Location", to)
                 self.send_header("Content-Length", "0")

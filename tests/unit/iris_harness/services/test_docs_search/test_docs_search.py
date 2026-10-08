@@ -879,8 +879,7 @@ def test_resume_is_not_valid_across_a_changed_chunk_size(tree: Path, tmp_path, m
 def _rewrite_in_place(path: Path, new: str) -> None:
     st = path.stat()
     assert len(new.encode()) == st.st_size
-    with open(path, "r+b") as fh:
-        fh.write(new.encode())
+    path.write_text(new, encoding="utf-8")  # truncates + rewrites the same inode
     os.utime(path, ns=(st.st_atime_ns, st.st_mtime_ns))  # put the mtime back
 
 

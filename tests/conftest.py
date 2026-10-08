@@ -799,12 +799,18 @@ class ScalingCheck:
     """Does a scan's time grow in proportion to its input, whatever the machine?
 
     An absolute wall-clock bound fails on a loaded runner; a ratio of two measurements taken
-    back to back does not. The input is built at N and at 4N and the best of three timings of
+    back to back does not -- if the measurements do not include time the thread spent descheduled.
+    Hosted runners stall for seconds, and a wall-clock side that stalls looks like a slow scan
+    (15x on a linear one, 7.8x on a quadratic one). So the timer is the thread's CPU time
+    (``time.thread_time``: ``CLOCK_THREAD_CPUTIME_ID``, nanosecond resolution on macOS and Linux),
+    which a descheduled thread does not accrue and another process or xdist worker cannot add to,
+    and the collector is run before and switched off during each timed call, so a collection
+    triggered by an earlier allocation does not land inside the measurement. The input is built at N and at 4N and the best of three timings of
     each side compared: a linear scan gives about 4x, a quadratic one about 16x, so 8x separates
     them with room for noise on both sides (a 2N step, 2x against 4x, does not). N doubles until
     the small side takes at least 20 ms, so a fast machine is not measuring timer noise. A small
-    additive slack covers what is left. No timing of a slow reference is ever used as a
-    detector: ``assert_detects_quadratic`` runs a pure-Python quadratic loop through the same check.
+    additive slack covers what is left. The floor and the slack are CPU seconds. No timing of a
+    slow reference is ever used as a detector: ``assert_detects_quadratic`` runs a pure-Python quadratic loop through the same check.
     """
 
     FACTOR = 4
@@ -816,13 +822,22 @@ class ScalingCheck:
 
     @staticmethod
     def _best_of(run: Any, text: Any, repeats: int) -> float:
+        """The least CPU time of the calling thread over ``repeats`` runs of ``run(text)``."""
+        import gc
         import time
 
         best = float("inf")
         for _ in range(repeats):
-            start = time.perf_counter()
-            run(text)
-            best = min(best, time.perf_counter() - start)
+            gc.collect()
+            was_enabled = gc.isenabled()
+            gc.disable()
+            try:
+                start = time.thread_time()
+                run(text)
+                best = min(best, time.thread_time() - start)
+            finally:
+                if was_enabled:
+                    gc.enable()
         return best
 
     def is_linear(self, run: Any, build: Any, n: int) -> tuple[bool, float, float]:

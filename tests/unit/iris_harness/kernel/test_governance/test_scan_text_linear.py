@@ -89,16 +89,17 @@ def test_time_a_run_spends_descheduled_is_not_counted(scaling: Any) -> None:
     """A hosted runner stalls for seconds; a stall is not the scan's cost.
 
     The work is linear CPU; the sleep stands for being descheduled and grows with the square of
-    the input, so the WALL time is quadratic. The check measures the thread's CPU time, so the
-    scan still reads as linear (a wall-clock timer would call it 10x).
+    the input, so the WALL time is quadratic (about 30x over 8N). The check measures the thread's
+    CPU time, so the scan still reads as linear. One repeat per side keeps the sleeps short.
     """
 
     def run(text: str) -> None:
         for _ in range(4):  # about 40 ms of CPU at a million characters
             sum(map(ord, text))
-        time.sleep(len(text) ** 2 * 5e-14)
+        time.sleep(len(text) ** 2 * 2.5e-14)
 
-    scaling.assert_linear("linear work, quadratic stalls", run, lambda n: "a" * n, 1_000_000)
+    once = type(scaling)(repeats=1)
+    once.assert_linear("linear work, quadratic stalls", run, lambda n: "a" * n, 1_000_000)
 
 
 @pytest.mark.parametrize("name", list(ISSUE_INPUTS))

@@ -796,81 +796,108 @@ def _no_chat_turn_in_progress():  # a pytest generator fixture
 
 
 class ScalingCheck:
-    """Does a scan's time grow in proportion to its input, whatever the machine?
+    """Does a scan's cost grow in proportion to its input, whatever the machine?
 
-    An absolute wall-clock bound fails on a loaded runner; a ratio of two measurements taken
-    back to back does not -- if the measurements do not include time the thread spent descheduled.
-    Hosted runners stall for seconds, and a wall-clock side that stalls looks like a slow scan
-    (15x on a linear one, 7.8x on a quadratic one). So the timer is the thread's CPU time
-    (``time.thread_time``: ``CLOCK_THREAD_CPUTIME_ID``, nanosecond resolution on macOS and Linux),
-    which a descheduled thread does not accrue and another process or xdist worker cannot add to,
-    and the collector is run before and switched off during each timed call, so a collection
-    triggered by an earlier allocation does not land inside the measurement. The input is built at N and at 4N and the best of three timings of
-    each side compared: a linear scan gives about 4x, a quadratic one about 16x, so 8x separates
-    them with room for noise on both sides (a 2N step, 2x against 4x, does not). N doubles until
-    the small side takes at least 20 ms, so a fast machine is not measuring timer noise. A small
-    additive slack covers what is left. The floor and the slack are CPU seconds. No timing of a
-    slow reference is ever used as a detector: ``assert_detects_quadratic`` runs a pure-Python quadratic loop through the same check.
+    An absolute wall-clock bound fails on a loaded runner. A ratio of two timings taken back to
+    back survives that, but only if the timings do not include time the thread spent descheduled,
+    so the clock is the thread's CPU time (``time.thread_time``: ``CLOCK_THREAD_CPUTIME_ID``,
+    nanosecond resolution on macOS and Linux); the collector is run before and switched off
+    during each timed call. Even CPU time is not constant on a shared VM (SMT, frequency, steal
+    change the work done per CPU-second), so the margins are wide: the input is built at N and at
+    8N and the best of three timings of each side compared. Linear gives about 8x, a quadratic
+    scan about 64x, and the limit is 24x: three times the linear ratio of headroom for noise,
+    2.7x below a quadratic one. N doubles until the small side takes at least 20 ms, so a fast
+    machine is not measuring timer noise.
+
+    The clock is injectable. The decision logic (the ratio rule and the doubling floor) is tested
+    with a COUNTING clock, where "time" is the number of steps a stand-in took, so the detector
+    tests involve no real timing and cannot flake: ``assert_detects_quadratic``.
     """
 
-    FACTOR = 4
-    LIMIT = 8.0
+    FACTOR = 8
+    LIMIT = 24.0
     SLACK_SECONDS = 0.05
     REPEATS = 3
     MIN_SMALL_SECONDS = 0.02
     MAX_DOUBLINGS = 6
 
-    @staticmethod
-    def _best_of(run: Any, text: Any, repeats: int) -> float:
-        """The least CPU time of the calling thread over ``repeats`` runs of ``run(text)``."""
-        import gc
+    def __init__(
+        self,
+        *,
+        clock: Any = None,
+        repeats: int | None = None,
+        min_small: float | None = None,
+        slack: float | None = None,
+    ) -> None:
         import time
 
+        self._clock = clock or time.thread_time
+        self._repeats = self.REPEATS if repeats is None else repeats
+        self._min_small = self.MIN_SMALL_SECONDS if min_small is None else min_small
+        self._slack = self.SLACK_SECONDS if slack is None else slack
+
+    def _best_of(self, run: Any, text: Any) -> float:
+        """The least clock reading over the repeats of ``run(text)`` (CPU seconds by default)."""
+        import gc
+
         best = float("inf")
-        for _ in range(repeats):
+        for _ in range(self._repeats):
             gc.collect()
             was_enabled = gc.isenabled()
             gc.disable()
             try:
-                start = time.thread_time()
+                start = self._clock()
                 run(text)
-                best = min(best, time.thread_time() - start)
+                best = min(best, self._clock() - start)
             finally:
                 if was_enabled:
                     gc.enable()
         return best
 
     def is_linear(self, run: Any, build: Any, n: int) -> tuple[bool, float, float]:
-        """``(linear, seconds at N, seconds at 4N)``; N is raised until N takes 20 ms."""
-        small = self._best_of(run, build(n), self.REPEATS)
+        """``(linear, clock units at N, clock units at 8N)``; N is raised until N reaches the floor."""
+        small = self._best_of(run, build(n))
         for _ in range(self.MAX_DOUBLINGS):
-            if small >= self.MIN_SMALL_SECONDS:
+            if small >= self._min_small:
                 break
             n *= 2
-            small = self._best_of(run, build(n), self.REPEATS)
-        large = self._best_of(run, build(self.FACTOR * n), self.REPEATS)
-        return large <= self.LIMIT * small + self.SLACK_SECONDS, small, large
+            small = self._best_of(run, build(n))
+        large = self._best_of(run, build(self.FACTOR * n))
+        return large <= self.LIMIT * small + self._slack, small, large
 
     def assert_linear(self, name: str, run: Any, build: Any, n: int) -> None:
         ok, small, large = self.is_linear(run, build, n)
         assert ok, (
             f"{name}: {small:.3f}s at N, {large:.3f}s at {self.FACTOR}N "
-            f"(limit {self.LIMIT}x + {self.SLACK_SECONDS}s)"
+            f"(limit {self.LIMIT}x + {self._slack}s)"
         )
 
-    @staticmethod
-    def quadratic(text: str) -> int:
-        """A stand-in for a quadratic scan: every position looks at every later position."""
-        hits = 0
-        for i in range(len(text)):
-            for j in range(i, len(text)):
-                hits += text[j] == "x"
-        return hits
-
     def assert_detects_quadratic(self) -> None:
-        """The detector must bite: the quadratic stand-in must fail ``is_linear``."""
-        ok, small, large = self.is_linear(self.quadratic, lambda n: "a" * n, 1_500)
-        assert not ok, f"a quadratic scan passed as linear ({small:.3f}s -> {large:.3f}s)?"
+        """The decision logic accepts a linear stand-in and rejects a quadratic one.
+
+        Both stand-ins count their steps and the clock reads that counter, so the result does not
+        depend on any real timing. The floor is 20,000 steps; N starts below it, so the doubling
+        is exercised too.
+        """
+        steps = [0]
+
+        def linear(text: str) -> None:
+            for _ in text:
+                steps[0] += 1
+
+        def quadratic(text: str) -> None:
+            for i in range(len(text)):
+                for _ in range(i, len(text)):
+                    steps[0] += 1
+
+        counting = ScalingCheck(
+            clock=lambda: float(steps[0]), repeats=1, min_small=20_000.0, slack=0.0
+        )
+        ok, small, large = counting.is_linear(linear, lambda n: "a" * n, 1_000)
+        assert ok and small >= 20_000, f"a linear stand-in failed ({small} -> {large} steps)"
+        ok, small, large = counting.is_linear(quadratic, lambda n: "a" * n, 50)
+        assert small >= 20_000, f"the doubling did not reach the floor ({small} steps)"
+        assert not ok, f"a quadratic stand-in passed as linear ({small} -> {large} steps)"
 
 
 @pytest.fixture

@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 def setup(api: PluginAPI) -> None:
     for row in telegram_rows(api.services.config_dir):
         if not row.bot_token:
-            logger.warning("channel %r skipped — TELEGRAM_BOT_TOKEN not set", row.name)
+            # channels.yaml documents this skip as silent: Telegram is opt-in, and a row whose
+            # token is unset is a surface the operator has not set up, not a fault.
+            logger.info("channel %r skipped — TELEGRAM_BOT_TOKEN not set", row.name)
             continue
         api.register_channel(
             TelegramConnector(

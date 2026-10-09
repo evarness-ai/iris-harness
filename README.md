@@ -16,12 +16,16 @@ Documentation: **https://evarness-ai.github.io/iris-harness/**
 
 ## Try it in three minutes
 
+You need [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/); neither ships with Python, and `pip install uv` is the shortest route ([details](https://evarness-ai.github.io/iris-harness/getting-started/install/)).
+
 ```bash
 uv tool install "iris-harness[email]"   # or: pipx install "iris-harness[email]"
 iris doctor                             # can IRIS run here, and what to fix
 iris email demo                         # a synthetic mailbox, a scripted model, no network
 iris email setup                        # then your own mailbox (IMAP or Gmail), step by step
 ```
+
+If `iris` is not found after installing, add `~/.local/bin` to your PATH: run `uv tool update-shell` (or `pipx ensurepath`) and open a new terminal.
 
 `iris email demo` needs no account, no credentials and no model server. It fetches a
 200-message synthetic mailbox, sorts it, previews and writes labels, prints a first

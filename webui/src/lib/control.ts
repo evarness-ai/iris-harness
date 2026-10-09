@@ -815,7 +815,7 @@ export type HealthState = "green" | "yellow" | "red" | "grey";
 
 export interface HealthCheck {
   target: string;
-  kind: "service" | "credential" | "hardware" | "plugin" | "governance";
+  kind: "service" | "credential" | "hardware" | "plugin" | "skill" | "governance";
   state: HealthState;
   detail: string;
   endpoint: string | null;

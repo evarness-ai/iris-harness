@@ -83,19 +83,28 @@ class SkillRegistry:
         if not missing or key in self._reported_unavailable:
             return
         self._reported_unavailable.add(key)
-        extra = package.manifest.requires.extra
-        has_package = any(item.startswith("package:") for item in missing)
-        fix = (
-            f"; install it with: pip install 'iris-harness[{extra}]'"
-            if extra and has_package
-            else ""
-        )
         logger.info(
             "skill %s unavailable: missing %s%s",
             package.manifest.name,
             ", ".join(_describe_missing(item) for item in missing),
-            fix,
+            _install_hint(package),
         )
+
+    def unavailable(self) -> list[tuple[str, str, str | None]]:
+        """Skills the last discovery left blocked: ``(name, what is missing, fix or None)``.
+
+        The same items, spelled the same, as the one INFO line and ``iris skills list``'s
+        ``blocked:``; Health reads this so a skill that cannot run is a row, not only a log.
+        """
+        return [
+            (
+                package.manifest.name,
+                ", ".join(_describe_missing(item) for item in package.missing_prerequisites),
+                _install_hint(package).removeprefix("; install it with: ") or None,
+            )
+            for package in self._packages
+            if package.missing_prerequisites
+        ]
 
     def list_packages(
         self,
@@ -130,6 +139,13 @@ class SkillRegistry:
             ):
                 indexed[tool_manifest.name] = tool_class
         return indexed
+
+
+def _install_hint(package: SkillPackage) -> str:
+    """``; install it with: pip install '...'`` when an extra supplies the missing package."""
+    extra = package.manifest.requires.extra
+    has_package = any(item.startswith("package:") for item in package.missing_prerequisites)
+    return f"; install it with: pip install 'iris-harness[{extra}]'" if extra and has_package else ""
 
 
 def _describe_missing(item: str) -> str:

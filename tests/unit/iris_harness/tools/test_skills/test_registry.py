@@ -259,3 +259,15 @@ def test_shipped_skills_on_a_core_only_install(monkeypatch) -> None:  # type: ig
     assert registry.load_failures == {}
     assert by_name["gmail-inbox"].missing_prerequisites == ("package:google-api-python-client",)
     assert by_name["system-status"].is_loadable
+
+
+
+def test_unavailable_lists_what_blocks_each_skill(tmp_path: Path) -> None:
+    """Health reads this: the same names and wording as the INFO line (#110)."""
+    write_skill_package(tmp_path, skill_name="needs_extra", packages=("no-such-dist-xyz>=1",))
+    write_skill_package(tmp_path, skill_name="fine")
+
+    registry = SkillRegistry(tmp_path)
+    registry.discover()
+
+    assert registry.unavailable() == [("needs_extra", "package no-such-dist-xyz", None)]

@@ -332,6 +332,10 @@ def _mount_plugins(runtime: IrisRuntime, in_process: Sequence[InProcessPlugin] =
         build_governance_judge(tier_router=runtime.tier_router, channels=runtime.channels).review
     )
     register_check_provider("plugins", runtime.plugin_registry.health_checks)
+    # Issue #110: a skill blocked by a prerequisite this install lacks, or one that failed to load.
+    from iris_harness.services.health.skills import skills_provider
+
+    register_check_provider("skills", skills_provider(runtime.skill_registry))
     # Issue #136: the model guard off, or on and unable to run, while a mounted tool returns
     # third-party text. Silent when the posture is fine.
     from iris_harness.runtime.external_tools import mounted_external_tools

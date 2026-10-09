@@ -50,6 +50,9 @@ class InterceptDispatch:
 
     def __init__(self, host: InterceptDispatchHost) -> None:
         self._host = host
+        # effective_chain() runs at least twice a turn (dispatch, activity_hint); a real
+        # drift is said once, not once per resolve.
+        self._warned_drift: set[str] = set()
 
     def dispatch(
         self,
@@ -160,11 +163,7 @@ class InterceptDispatch:
                 seen.add(spec.name)
                 continue
             if spec.handler.startswith("plugin:"):
-                logger.warning(
-                    "intercept %r is declared for %s but no plugin registered it; skipping",
-                    spec.name,
-                    spec.handler,
-                )
+                self._note_declared_only(spec)
                 continue
             # Core rows name a handler on the runtime, not on this collaborator.
             handler = resolve_runtime_handler(self._host, spec.handler)
@@ -184,6 +183,26 @@ class InterceptDispatch:
             rank = {name: i for i, name in enumerate(order)}
             resolved.sort(key=lambda item: rank.get(item[0].name, len(rank)))
         return tuple(resolved)
+
+    def _note_declared_only(self, spec: InterceptSpec) -> None:
+        """Say so when a declared ``plugin:`` row has no registration while its plugin is mounted.
+
+        That is drift: the plugin is serving but did not register what the chain names. A
+        plugin that is simply not in this profile (a core-only install) is the expected
+        state, not a fault; ``iris plugins`` and Health already list what is mounted, so
+        the row is skipped without a line.
+        """
+        owner = spec.handler.removeprefix("plugin:")
+        if self._host.plugin_registry.unmounted_reason(owner) is not None:
+            return
+        if spec.name in self._warned_drift:
+            return
+        self._warned_drift.add(spec.name)
+        logger.warning(
+            "intercept %r is declared for %s but no plugin registered it; skipping",
+            spec.name,
+            spec.handler,
+        )
 
     def activity_hint(self, message: str) -> str | None:
         """Status text to stream before a deterministic intercept that may take seconds.

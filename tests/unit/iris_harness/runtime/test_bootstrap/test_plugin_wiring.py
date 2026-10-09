@@ -131,6 +131,29 @@ def test_declared_plugin_row_without_registration_is_skipped(runtime, caplog) ->
     assert "phantom" not in names and "time_date" in names
 
 
+def test_declared_row_for_a_plugin_not_in_the_profile_is_silent(runtime, caplog) -> None:  # type: ignore[no-untyped-def]
+    """A core-only install declares rows for plugins it never installed; that is the
+    expected state, so resolving the chain (twice a turn) must not warn about it."""
+    runtime.intercept_chain = (InterceptSpec("phantom", "plugin:nobody"),) + tuple(
+        runtime.intercept_chain
+    )
+    with caplog.at_level("WARNING", logger="iris_harness.runtime.intercept_dispatch"):
+        runtime.intercepts.effective_chain()
+        runtime.intercepts.effective_chain()
+    assert not [r for r in caplog.records if "phantom" in r.getMessage()]
+
+
+def test_declared_row_its_mounted_plugin_did_not_register_warns_once(runtime, caplog) -> None:  # type: ignore[no-untyped-def]
+    """Real drift: the plugin is serving, yet the chain names an intercept it never registered."""
+    runtime.intercept_chain = (InterceptSpec("phantom", "plugin:system"),) + tuple(
+        runtime.intercept_chain
+    )
+    with caplog.at_level("WARNING", logger="iris_harness.runtime.intercept_dispatch"):
+        runtime.intercepts.effective_chain()
+        runtime.intercepts.effective_chain()
+    assert len([r for r in caplog.records if "phantom" in r.getMessage()]) == 1
+
+
 @pytest.mark.usefixtures("offline_services")  # the probes would ask the live stack
 def test_health_snapshot_carries_plugin_verdict(runtime) -> None:  # type: ignore[no-untyped-def]
     snapshot = refresh(net_probe=False)

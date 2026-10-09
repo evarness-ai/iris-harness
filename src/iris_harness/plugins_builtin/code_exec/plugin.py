@@ -31,7 +31,9 @@ TOOL_DESCRIPTION = (
 
 def setup(api: PluginAPI) -> None:
     if not _is_docker_available():
-        logger.warning("code_exec not mounted — the Docker daemon is not reachable")
+        # Docker is the opt-in sandbox this tool needs, not something the install promises;
+        # the module docstring defines the degrade (no tool, no agent type) as the design.
+        logger.info("code_exec not mounted — the Docker daemon is not reachable")
         return
 
     handler, stream_handler = _make_code_exec_handler(

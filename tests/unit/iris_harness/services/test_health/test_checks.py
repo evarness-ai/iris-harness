@@ -21,6 +21,13 @@ from iris_harness.services.health.checks import (
 from iris_harness.services.health.models import CheckKind, HealthSnapshot, HealthState, alerts
 
 
+@pytest.fixture(autouse=True)
+def _governor_declared(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The governor is probed as required only where a deployment declares it. Most tests
+    here are about the probe, so they run as that deployment; the opt-in tests undo it."""
+    monkeypatch.setenv("IRIS_GOVERNOR_BASE_URL", "http://governor:8080")
+
+
 @dataclass(frozen=True)
 class _FakeHost:
     """Stand-in for iris_harness.services.system.status.HostStatus."""
@@ -508,3 +515,18 @@ def test_llm_proxy_unrequested_when_the_port_env_is_junk(
     monkeypatch.setenv("LM_STUDIO_BASE_URL", "http://127.0.0.1:4000/v1")
     by_name = {c.target: c for c in service_checks(prober=lambda _url: None)}
     assert by_name["llm_proxy"].state is HealthState.GREY
+
+
+def test_governor_not_asked_for_is_grey_not_red(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nothing in the harness calls the governor service, so a desktop install that never
+    started it has nothing wrong. Red here made every fresh install open on a red Health."""
+    monkeypatch.delenv("IRIS_GOVERNOR_BASE_URL", raising=False)
+    by_name = {c.target: c for c in service_checks(prober=lambda _url: None)}
+    assert by_name["governor"].state is HealthState.GREY
+    assert "optional" in by_name["governor"].detail
+
+
+def test_governor_a_deployment_declares_is_red_when_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("IRIS_GOVERNOR_BASE_URL", "http://governor:8080")
+    by_name = {c.target: c for c in service_checks(prober=lambda _url: None)}
+    assert by_name["governor"].state is HealthState.RED

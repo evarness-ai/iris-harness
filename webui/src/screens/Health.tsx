@@ -31,6 +31,7 @@ const GROUPS: { label: string; kind: HealthCheck["kind"] }[] = [
   { label: "Services", kind: "service" },
   { label: "Credentials", kind: "credential" },
   { label: "Plugins", kind: "plugin" },
+  { label: "Skills", kind: "skill" },
   { label: "Governance", kind: "governance" },
 ];
 

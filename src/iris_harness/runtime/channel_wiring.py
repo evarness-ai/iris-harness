@@ -131,6 +131,13 @@ def _resolve_default_channel(runtime: IrisRuntime, desired: str) -> None:
         runtime.default_channel = desired
     else:
         fallback = registered[0] if registered else "console"
-        logger.warning("default channel %r not registered, falling back to %r", desired, fallback)
+        # A name channels.yaml declares but whose surface did not come up (Telegram with no
+        # bot token: the shipped default) is the install not having set it up. A name the
+        # file never declares is a typo, and that one the operator needs to hear about.
+        from iris_harness.services.channels.channel_config import load_channel_config
+
+        declared = {row.name for row in load_channel_config(runtime.config_dir).rows}
+        log = logger.info if desired in declared else logger.warning
+        log("default channel %r not registered, falling back to %r", desired, fallback)
         runtime.default_channel = fallback
     logger.info("channels registered: %s  |  default: %s", registered, runtime.default_channel)

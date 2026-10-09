@@ -143,6 +143,14 @@ def _llm_proxy_requested() -> bool:
         return False
 
 
+def _governor_requested() -> bool:
+    """The governor service wraps an embedded kernel nothing in the harness calls
+    (``docs/architecture/process-topology.md``); the API and the MCP bridge each build their
+    own. A deployment that runs it declares where (``IRIS_GOVERNOR_BASE_URL``, set by
+    docker-compose); a desktop install that never started it has nothing wrong."""
+    return bool(os.environ.get("IRIS_GOVERNOR_BASE_URL", "").strip())
+
+
 def _channel_gateway_requested() -> bool:
     """The gateway (``src/iris_harness/server/channel_gateway``) runs the Telegram long-poller
     and the WebSocket bridge; nothing asks for it until a bot token is set."""
@@ -157,6 +165,7 @@ _SERVICES: tuple[ServiceTarget, ...] = (
         "IRIS_GOVERNOR_PORT",
         8080,
         "/healthz",
+        enabled_when=_governor_requested,
         start_action="uvicorn iris_harness.server.governor.main:app --port 8080",
     ),
     ServiceTarget(

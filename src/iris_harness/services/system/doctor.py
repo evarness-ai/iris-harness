@@ -7,8 +7,12 @@ check is pass / warn / fail / info with a one-line fix; the report ends in a ver
 * ``demo_only`` -- the synthetic demo runs (it uses a scripted model, not Ollama), but
   something real use needs is missing: local models, Ollama, or the 16 GB floor;
 * ``not_ready`` -- even the demo cannot run (wrong Python, native Windows, under 8 GB,
-  no writable IRIS_HOME, or no vault master key -- without it every governed tool call
-  is refused, #741).
+  or no writable IRIS_HOME).
+
+The owner's vault master key is a real-use requirement, not a demo one: without it every
+governed tool call is refused (#741), but ``iris email demo`` runs in its own home with a
+throwaway key (``demo/home.py``) and never reads the owner's, so a missing or invalid key
+makes the verdict ``demo_only``, not ``not_ready`` (#246).
 
 The states are System Health's (``services/health/models.HealthState``): green = pass,
 yellow = warn, red = fail, grey = info. Doctor is not a second health system: health
@@ -573,7 +577,7 @@ def check_vault_key(
             HealthState.RED,
             status.detail,
             fix="Unset IRIS_VAULT_MASTER_KEY or set it to the valid Fernet key your vault uses",
-            blocks="all",
+            blocks="use",
         )
     if status.source == "not_read" and audit_state != "unavailable":
         return DoctorCheck(
@@ -588,7 +592,7 @@ def check_vault_key(
         HealthState.RED,
         f"no master key: governed tool calls are refused ({status.detail})",
         fix=f"iris doctor --fix  ({how})",
-        blocks="all",
+        blocks="use",
     )
 
 

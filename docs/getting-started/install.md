@@ -50,8 +50,8 @@ with a verdict, which is also the exit code:
 | Verdict | Exit code | What it means |
 |---|---|---|
 | Ready. | 0 | Everything real use needs is in place. |
-| Ready for the demo only. | 1 | The demo runs; real use still needs Ollama, the starter model, or 16 GB of RAM. |
-| Not ready. | 2 | Fix the failing checks first (the Python version, native Windows, under 8 GB, an unwritable `IRIS_HOME`, or no vault master key). |
+| Ready for the demo only. | 1 | The demo runs; real use still needs Ollama, the starter model, a vault master key, or 16 GB of RAM. |
+| Not ready. | 2 | Fix the failing checks first (the Python version, native Windows, under 8 GB, or an unwritable `IRIS_HOME`). |
 
 Right after installing, "demo only" is normal. The next page runs the demo.
 

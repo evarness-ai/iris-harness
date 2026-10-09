@@ -68,6 +68,13 @@ def _ollama(models: list[str], *, pulls: list[str] | None = None) -> httpx.Clien
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
+def _ollama_down() -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused")
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
 @pytest.fixture
 def facts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     """Healthy defaults for every fact reader; a test changes the one it is about."""
@@ -242,7 +249,7 @@ def test_vault_key_check_states() -> None:
     for source in ("absent", "no_keyring", "invalid"):
         row = dr.check_vault_key(vault_keys.MasterKeyStatus(source))  # type: ignore[arg-type]
         assert row.state is HealthState.RED
-        assert row.blocks == "all"
+        assert row.blocks == "use"  # the demo brings its own throwaway key (#246)
     no_keyring = dr.check_vault_key(vault_keys.MasterKeyStatus("no_keyring"))
     assert "export line" in (no_keyring.fix or "")
 
@@ -277,13 +284,37 @@ def test_verdict_demo_only_when_models_missing(facts: dict[str, Any], tmp_path: 
     assert report.fixable
 
 
-def test_verdict_not_ready_without_a_key(facts: dict[str, Any], tmp_path: Path) -> None:
+def test_verdict_demo_only_without_a_key(facts: dict[str, Any], tmp_path: Path) -> None:
+    """The owner's vault key is a real-use requirement: `iris email demo` runs in its
+    own home with a throwaway key, so a missing key must not read as 'not ready'."""
     keyring.set_keyring(fail.Keyring())
+    report = _run(tmp_path, _ollama(["qwen2.5:7b-instruct"]))
+    assert report.verdict is dr.Verdict.DEMO_ONLY
+    assert report.verdict.exit_code == 1
+    assert report.key_status.source == "no_keyring"
+    assert report.fixable
+
+
+def test_verdict_demo_only_on_a_headless_8gb_box(facts: dict[str, Any], tmp_path: Path) -> None:
+    """#246: no keyring, no Ollama, 7.7 GiB (rounds to the 8 GB demo floor) -- the demo
+    prerequisites are met, so the verdict is demo-only with exit 1."""
+    keyring.set_keyring(fail.Keyring())
+    facts["host"] = _host(ram_total_bytes=int(7.7 * _GIB))
+    report = _run(tmp_path, _ollama_down())
+    assert _row(report, "Memory").blocks == "use"
+    assert _row(report, "Vault key").blocks == "use"
+    assert _row(report, "Ollama").state is HealthState.RED
+    assert report.verdict is dr.Verdict.DEMO_ONLY
+    assert report.verdict.exit_code == 1
+
+
+def test_verdict_not_ready_under_the_demo_floor_even_with_a_key(
+    facts: dict[str, Any], tmp_path: Path
+) -> None:
+    facts["host"] = _host(ram_total_bytes=4 * _GIB)
     report = _run(tmp_path, _ollama(["qwen2.5:7b-instruct"]))
     assert report.verdict is dr.Verdict.NOT_READY
     assert report.verdict.exit_code == 2
-    assert report.key_status.source == "no_keyring"
-    assert report.fixable
 
 
 def test_report_does_not_read_the_keyring_when_told_not_to(

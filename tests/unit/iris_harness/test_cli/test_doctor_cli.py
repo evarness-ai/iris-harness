@@ -134,8 +134,8 @@ def test_no_key_without_a_keyring_prints_the_export_line(env: dict[str, Any]) ->
     assert len(exports) == 1
     assert vault_keys.is_fernet_key(exports[0].split("=", 1)[1])
     assert "shell profile" in result.output
-    # This process still has no key until the owner exports it.
-    assert result.exit_code == 2
+    # This process still has no key until the owner exports it; the demo still runs (#246).
+    assert result.exit_code == 1
 
 
 def test_no_key_with_a_keyring_stores_one(env: dict[str, Any]) -> None:

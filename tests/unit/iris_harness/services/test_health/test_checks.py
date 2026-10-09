@@ -28,7 +28,6 @@ def _governor_declared(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("IRIS_GOVERNOR_BASE_URL", "http://governor:8080")
 
 
-
 @dataclass(frozen=True)
 class _FakeHost:
     """Stand-in for iris_harness.services.system.status.HostStatus."""

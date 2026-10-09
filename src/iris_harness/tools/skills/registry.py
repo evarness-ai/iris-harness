@@ -145,7 +145,9 @@ def _install_hint(package: SkillPackage) -> str:
     """``; install it with: pip install '...'`` when an extra supplies the missing package."""
     extra = package.manifest.requires.extra
     has_package = any(item.startswith("package:") for item in package.missing_prerequisites)
-    return f"; install it with: pip install 'iris-harness[{extra}]'" if extra and has_package else ""
+    return (
+        f"; install it with: pip install 'iris-harness[{extra}]'" if extra and has_package else ""
+    )
 
 
 def _describe_missing(item: str) -> str:

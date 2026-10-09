@@ -38,9 +38,7 @@ def test_declared_but_unconfigured_default_falls_back_without_a_warning(
     assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
-def test_undeclared_default_still_warns(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_undeclared_default_still_warns(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     rt = _runtime(tmp_path)
     with caplog.at_level(logging.INFO, logger="iris_harness.runtime.channel_wiring"):
         _resolve_default_channel(rt, "telegramm")

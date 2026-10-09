@@ -10,6 +10,9 @@ on a fresh machine, on every change.
 
 - **macOS on Apple Silicon, or Linux** (x86_64 or arm64). On Windows, use WSL2.
 - **16 GB of RAM** for real use. 8 GB runs the demo only: it uses a scripted model.
+- **[uv](https://docs.astral.sh/uv/getting-started/installation/) or
+  [pipx](https://pipx.pypa.io/stable/installation/)** to install the tool. Neither
+  ships with Python. If you have `pip`, `pip install uv` is the shortest route.
 - **Python 3.12 or 3.13.** `uv` fetches one for you if you have neither.
 - **[Ollama](https://ollama.com/download)** for the local model. The demo does not
   need it, so you can install it later.
@@ -34,6 +37,20 @@ The `[email]` extra adds the Gmail client libraries. Without it IRIS is still th
 assistant over IMAP. Either way you get one command, `iris`, in an isolated
 environment of its own. To upgrade later, run `uv tool upgrade iris-harness` (or
 `pipx upgrade iris-harness`).
+
+### Put `iris` on your PATH
+
+Both tools put `iris` in `~/.local/bin`, which a fresh machine often does not have on
+its PATH. If the install ends with a warning that `~/.local/bin` is not on your PATH,
+or `iris` is reported as not found, add it:
+
+<!-- ci: skip edits the shell startup files of the machine it runs on -->
+```bash
+uv tool update-shell        # or: pipx ensurepath
+```
+
+Then open a new terminal. The change only applies to shells started afterwards. To use
+`iris` in the current shell right away, run `export PATH="$HOME/.local/bin:$PATH"`.
 
 ## Check the machine: `iris doctor`
 

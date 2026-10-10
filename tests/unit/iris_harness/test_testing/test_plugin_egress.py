@@ -22,6 +22,7 @@ from iris_harness.kernel.governance.plugin_egress import (
     bind_egress_kernel,
     egress_scope,
 )
+from iris_harness.runtime import egress_transport
 from iris_harness.runtime.governed_http import GovernedHttp, current_http
 from iris_harness.sdk import PluginAPI
 from iris_harness.sdk.audit import AuditLog
@@ -177,12 +178,27 @@ def test_a_manifest_read_from_disk_declares_the_same_egress(tmp_path: Path) -> N
     assert len(sent) == 1
 
 
-def test_a_real_transport_under_no_network_fails_and_the_outcome_row_says_so() -> None:
+def test_a_real_transport_under_no_network_fails_and_the_outcome_row_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The outcome row for a refused connect says ``ConnectError``.
+
+    ``no_network()`` refuses the socket connect but not the name lookup, so the governed client
+    would otherwise do a live ``getaddrinfo`` here, and on a runner whose resolver is down or
+    slow the lookup fails first and the row says ``EgressDenied`` (no address) instead. That is
+    what failed the 3.13 job of run 38021010687. The resolver seam is pinned to a public address,
+    so the test reaches the connect step on any machine, with or without DNS."""
     # (the harness refuses sockets itself; the outer guard says the same for a bare test)
-    with no_network():
-        with harness(plugins=[_weather()], fake_model=_script_for(FORECAST)) as h:
-            _run("chat", h)
-            post = _rows(h, "post_egress")
+    with monkeypatch.context() as pinned:
+        pinned.setattr(
+            egress_transport,
+            "_resolve",
+            lambda host, port, **_: [(2, 1, 6, "", ("93.184.216.34", port))],
+        )
+        with no_network():
+            with harness(plugins=[_weather()], fake_model=_script_for(FORECAST)) as h:
+                _run("chat", h)
+                post = _rows(h, "post_egress")
     assert [r.egress.get("error") for r in post if r.egress] == ["ConnectError"]
 
 

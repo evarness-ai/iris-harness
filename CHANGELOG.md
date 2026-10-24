@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `evarness plugin new` pinned the generated plugin to `evarness>=0.1,<0.2`, so it could not be installed beside 0.2.x: the stable tier's version, which the pin is derived from, was never bumped at 0.2.0. The tier is now 0.2.0, and a test holds the generated pin to the running package version.
 - `evarness auth gmail login`'s success line said the account was registered in `data/evarness.db`, a checkout path; it names the Evarness home's database and the next command.
 
 ## [0.2.3] - 2026-10-20

@@ -3,7 +3,7 @@
 # deprecation cycle (docs/reference/stable-api.md); everything else in the tree is
 # internal and may change in any release. `evarness.testing.check_stable_imports`
 # reads this file, and tests/unit/test_stable_tier.py holds the tree to it.
-version: 0.1.0
+version: 0.2.0
 
 # Whole packages: every module under each, and in every module exactly the names its
 # `__all__` lists. A name missing from `__all__` is internal even inside these packages.

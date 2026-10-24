@@ -1,4 +1,4 @@
-# Stable API (0.1.0)
+# Stable API (0.2.0)
 
 What a plugin may import and rely on. Anything here changes only after a deprecation
 cycle; everything else in the tree is internal and may change in any release (OSS plan
